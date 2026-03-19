@@ -1,7 +1,6 @@
 # OmicsStack
 
-OmicsStack is an open-source **R Shiny** platform and **Dockerized** application for unified single- and multi-omics analysis.  
-It combines preprocessing, statistics, machine learning, visualization, and biological interpretation in one interface, with dedicated modules for **glycomics**, **metabolomics**, and **multi-omics integration**.  
+OmicsStack is an open-source **R Shiny** platform and **Dockerized** application for unified single- and multi-omics analysis. It combines preprocessing, statistics, machine learning, visualization, and biological interpretation in one interface, with dedicated modules for **glycomics**, **metabolomics**, and **multi-omics integration**.  
 An embedded context-aware AI assistant (**Jibosky**) provides real-time guidance for analysis decisions and interpretation.
 
 ---
