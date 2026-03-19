@@ -272,8 +272,3 @@ If OmicsStack supports your research, please cite the repository and release ver
 >Fowowe M, Daramola O, Oluokun A, Sandilya V, Onigbinde S & Mechref Y. *OmicsStack: An Open-Source Web Server and Docker Image Incorporating ML/AI for the Processing, Visualization and Integration of Single-Omics and Multi-Omics Datasets.*
 
 ---
-
-## License
-
-Add your preferred open-source license here (e.g., MIT, GPL-3.0, Apache-2.0).  
-If you have not selected one yet, add a license file before public release clarity/compliance.
