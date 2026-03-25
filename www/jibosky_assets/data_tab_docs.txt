@@ -1,0 +1,191 @@
+=== COMPREHENSIVE DATA TAB UI ELEMENTS AND OPTIONS ===
+
+**DATA UPLOAD & ORGANIZATION:**
+- File formats supported: CSV, TSV, TXT, XLSX
+- Standard data organization: Features in rows, samples in columns (required)
+- Feature names/IDs: Must be in first column (required)
+- Metadata sheets: Optional sheets for group assignments, batch labels, covariates
+- Group column: Specifies which group each sample belongs to (e.g., 'Treatment', 'Control')
+- Batch column: Identifies batch/technical source for batch correction
+- Case sensitivity: Column names are case-sensitive; must match exactly
+- Special characters in feature names: Handled automatically; avoid very long names with special symbols
+- Duplicate feature names: App will append numeric suffixes if detected
+- Encoding: Must be UTF-8 encoded (standard for most spreadsheet programs)
+- Decimal separators: Must use period (.) not comma (,) for decimals
+- Scientific notation: Supported and automatically converted
+- Minimum requirements: At least 3 samples and 5 features recommended
+
+**SAMPLE ID COLUMN OPTIONS:**
+- Checkbox: \"Samples are rows and features are columns\" (Option 2)
+- When UNCHECKED (default): Data assumed in matrix format (features as rows, samples as columns)
+- When CHECKED: Allows specifying optional Sample ID Column name
+- Optional text input: Appears only when checkbox is checked (e.g., 'SampleID', 'Sample_Name')
+- Matrix format: Default format, simpler uploads, no additional config needed
+- Traditional format: Checked box enables sample column specification for custom layouts
+- Use matrix format when: Standard omics data structure with samples in columns
+- Use traditional format when: Your data has samples in rows with metadata columns
+
+**MISSING VALUE HANDLING STRATEGY:**
+Core choice: Impute missing values OR remove features with missing data
+- Impute: Estimate missing values using statistical methods (retains features, fills gaps)
+- Remove: Delete features with any/many missing values (reduces dataset, ensures completeness)
+- Filter before imputation: Optional checkbox to pre-filter before applying imputation method
+
+**MISSING VALUE IMPUTATION METHODS:**
+Options: 'none', 'knn', 'mean', 'median', 'zero', 'lod', 'qrilc', 'mindet', 'bpca', 'svd', 'half_min', 'remove'
+- none: Skip imputation (use only if data is complete, all non-missing)
+- knn: K-Nearest Neighbors - estimates based on similar features (default k=10). Best for: data with missing patterns, correlation structure preserved
+- mean: Replace with row mean (simple, fast, may reduce variance). Best for: large datasets, rapid analysis
+- median: Replace with row median (robust to outliers). Best for: skewed data distributions
+- zero: Replace with zeros (useful for MNAR data below detection limit). Best for: proteomics, metabolomics with detection limits
+- lod: Limit of Detection - uses LOD/2 or LOD/sqrt(2). Best for: when detection limit is known and documented
+- qrilc: Quantile Regression for Left-Censored data - assumes MNAR, models lower tail. Best for: missing not at random assumptions
+- mindet: Minimum deterministic - replaces with minimum observed value. Best for: conservative approach to missing data
+- bpca: Bayesian PCA - probabilistic, preserves correlations. Best for: correlation-dependent analyses, small-medium datasets
+- svd: Singular Value Decomposition - matrix completion approach. Best for: low-rank data structures
+- half_min: Half of minimum - replaces with 50% of row minimum. Best for: detection limit scenarios
+- remove: Remove features with any missing values (reduces dataset size). Best for: strict completeness requirement, feature-rich data
+
+**IMPUTATION BY GROUP:**
+- Checkbox: \"Impute by group\" - applies imputation separately within each group
+- When enabled: Uses only same-group samples for estimating missing values
+- Advantages: Respects group-specific distributions, reduces cross-group bias
+- Disadvantages: Requires sufficient samples per group
+- Recommended: Enable for studies with distinct biological groups
+
+**MISSING VALUE FILTERING THRESHOLD:**
+- Parameter: \"Missing Value Threshold\" (percentage, default varies)
+- Function: Removes features with >X% missing values BEFORE imputation
+- Example: 50% threshold = remove any feature missing in >50% of samples
+- Best for: Pre-filtering when many features have sparse data
+- Interact with: \"Filter before imputation\" checkbox
+
+**KNN IMPUTATION PARAMETERS:**
+- Parameter k: Number of nearest neighbors (default: 10, range: 3-50)
+- When k=10: Uses 10 most similar features for estimation
+- Higher k: More conservative, smoother estimates, less sensitive to outliers
+- Lower k: More local estimates, preserves feature-specific variation
+- Tuning: Start with k=10; increase if results seem over-smoothed
+
+**MIN & MINPROB PARAMETERS:**
+- Min fraction: Fraction of minimum (e.g., 0.5 = half minimum)
+- MinProb shift: Lower shift for distribution (default 0)
+- MinProb scale: Scale factor for distribution (default 1)
+- MNAR assumption: Both assume Missing Not At Random
+
+**NORMALIZATION METHODS:**
+Options: 'sum', 'zscore', 'median', 'quantile', 'pqn', 'vsn', 'cyclic_loess', 'none'
+- sum: Total Sum Normalization - scales to equal total intensity per sample. Best for: compositional data, metabolomics
+- zscore: Z-score standardization - centers at 0, unit variance. Best for: comparing features with different scales
+- median: Median normalization - scales to equal median. Best for: robust to outliers, proteomics
+- quantile: Quantile normalization - equalizes distributions (strong assumption). Best for: microarray data, when distribution matching critical
+- pqn: Probabilistic Quotient Normalization - median quotient vs reference. Best for: dilution correction, metabolomics, NMR
+- vsn: Variance Stabilizing Normalization - calibrates variance vs mean. Origin: Microarray methods, stabilizes heteroscedasticity
+- cyclic_loess: Iterative pairwise LOESS - removes non-linear trends. Best for: complex batch effects, array-like platforms
+- none: No normalization (data already normalized)
+
+**LOG2 TRANSFORMATION TIMING:**
+- log2: Log2 transformation - stabilizes variance, improves normality. Standard for: fold change calculations, downstream testing
+- \"Apply Log2 before normalization\": Transforms raw data first, then normalizes
+- \"Apply Log2 after normalization\": Normalizes first, then applies log2
+- Choose \"before\": When raw data has wide range, aids normalization
+- Choose \"after\": Standard approach, recommended for most analyses
+
+**BATCH CORRECTION:**
+Options: 'combat', 'limma', 'sva', 'ruv', 'none'
+- combat: ComBat - empirical Bayes method, adjusts mean and variance (most popular, robust). Requires: batch labels. Best for: known batch structure
+- limma: removeBatchEffect - linear model approach (simple, effective). Requires: batch metadata. Best for: quick processing, linear batch effects
+- sva: Surrogate Variable Analysis - identifies hidden batch effects without labels (unsupervised). Best for: unknown batch structure, latent factors
+- ruv: Remove Unwanted Variation - uses negative controls or replicate samples. Requires: control features list. Best for: when controls available
+- none: No batch correction
+
+Batch correction requirements: Batch metadata column identifying sample batch/source must be uploaded
+
+**BATCH CORRECTION DECISION TREE:**
+- Do you have batch labels? YES → Use ComBat or limma. NO → Use SVA or skip
+- Are batches confounded with biology? YES → Be cautious, consider SVA. NO → Safe to correct
+- Known batch structure? YES → ComBat. UNKNOWN → SVA
+- Need speed? YES → limma. NO → ComBat (more robust)
+
+**STATISTICAL ANALYSIS METHODS:**
+Options: 't-test', 'wilcoxon', 'anova', 'kruskal', 'limma', 'deseq2', 'edger', 'limma-voom', 'sam', 'paired_t', 'signed_rank', 'permanova'
+- t-test: Student's t-test - parametric, assumes normality, 2 groups (most common, robust). Recommended: For normally distributed data
+- wilcoxon: Wilcoxon rank-sum (Mann-Whitney U) - non-parametric, 2 groups, no normality needed. Recommended: For non-normal data, small samples
+- anova: Analysis of Variance - parametric, 3+ groups, tests overall difference (F-test). Recommended: Multiple groups, normal data
+- kruskal: Kruskal-Wallis - non-parametric ANOVA, 3+ groups, rank-based. Recommended: Non-normal data, 3+ groups
+- limma: Linear Models for Microarray - moderated t-test, borrows information across features (powerful, flexible). Recommended: Microarray, RNA-seq, stable variance estimation
+- deseq2: DESeq2 - designed for RNA-seq counts, negative binomial distribution, size factor normalization. Recommended: RNA-seq count data ONLY, negative binomial
+- edger: edgeR - RNA-seq counts, empirical Bayes, TMM normalization. Recommended: RNA-seq counts, alternative to DESeq2
+- limma-voom: limma with voom - converts counts to log-CPM with precision weights (fast RNA-seq alternative). Recommended: RNA-seq, faster than DESeq2, similar power
+- sam: Significance Analysis of Microarrays - permutation-based, controls FDR empirically. Recommended: When strong FDR control needed
+- paired_t: Paired t-test - for matched samples (e.g., before/after treatment). Recommended: Repeated measures, paired designs
+- signed_rank: Wilcoxon signed-rank - non-parametric paired test. Recommended: Non-normal paired data
+- permanova: Permutational MANOVA - multivariate test, distance-based. Recommended: Multivariate comparisons, beta-diversity
+
+**POST-HOC TESTS (for ANOVA/Kruskal):**
+Options: 'tukey', 'bonferroni', 'holm', 'hochberg', 'hommel', 'bh', 'by', 'none'
+- tukey: Tukey HSD - all pairwise, controls FWER (family-wise error rate), balanced/conservative. Recommended: 3-5 groups, equal sample sizes
+- bonferroni: Bonferroni correction - divide alpha by # tests, very conservative. Recommended: Few comparisons, max strictness
+- holm: Holm-Bonferroni - step-down procedure, less conservative than Bonferroni. Recommended: Sequential testing, slightly less strict
+- hochberg: Hochberg - step-up procedure, more powerful than Holm. Recommended: Similar to Holm but fewer false negatives
+- hommel: Hommel - closed testing, balanced power across comparisons. Recommended: Balanced power/control trade-off
+- bh: Benjamini-Hochberg - controls FDR (False Discovery Rate), more powerful than FWER methods. Recommended: ⭐ DEFAULT, exploratory analyses, many tests
+- by: Benjamini-Yekutieli - FDR for dependent tests, conservative. Recommended: When test dependencies suspected
+- none: No post-hoc correction (NOT RECOMMENDED, increases false positives)
+
+**MULTIPLE TESTING CORRECTION (Overall):**
+Options: 'bonferroni', 'holm', 'hochberg', 'hommel', 'bh', 'by', 'none'
+Same options as post-hoc tests above. Default: BH (Benjamini-Hochberg) for FDR control across all features/comparisons
+
+**BOOTSTRAP ANALYSIS:**
+- Enable Bootstrap: Yes/No checkbox - performs resampling to estimate stability
+- Bootstrap Replicates: 100-10000 (default 1000) - number of resampling iterations
+- Bootstrap Parallel: Checkbox to use parallel processing (faster for large datasets)
+- Outputs: Bootstrap confidence intervals, stability metrics, uncertainty quantification
+- When to use: When confidence intervals needed, stability estimation important
+- Incompatible with: DESeq2, edgeR, limma-voom (have built-in uncertainty estimation)
+- Replicates guidance: 1000 typical, 5000-10000 for high precision
+
+**PAIRED ANALYSIS:**
+- Checkbox: \"Paired analysis\" - indicates samples are matched/repeated measures
+- When enabled: Uses paired t-test or signed-rank instead of unpaired versions
+- Requirements: Equal samples per group, properly matched pairs
+- Example scenarios: Pre/post treatment, matched case-control, longitudinal measurements
+
+**FEATURE FILTERING & CUTOFF PARAMETERS:**
+- Minimum Detection: Remove features below detection threshold (e.g., all values <10)
+- CV Threshold: Coefficient of Variation % (e.g., keep only CV >10%)
+  - Lower CV: More stable/consistent features
+  - Higher CV: More variable features retained
+- Missing Value Threshold: Maximum % missing allowed (e.g., remove if >50% missing)
+
+**P-VALUE VS FDR CUTOFF DISTINCTION:**
+- P-value cutoff: Raw p-value threshold (default 0.05), NOT corrected for multiple testing
+- FDR cutoff: False Discovery Rate (default 0.05), adjusted for multiple testing
+- P-value stringency levels:
+  - 0.05: Standard (typical)
+  - 0.01: Stringent (strict)
+  - 0.001: Very stringent (extreme)
+- Use FDR: When many features tested (standard in omics)
+- Use raw p-value: Only if few comparisons made
+- Fold Change cutoff: Minimum |log2 FC| (e.g., 1.0 = 2-fold change, 1.5 = 3-fold change)
+
+**FEATURE REQUIREMENT MINIMUMS:**
+- Minimum samples: 3 minimum (but 5+ recommended per group)
+- Minimum features: 5 minimum (but 50+ recommended)
+- Minimum groups: 2 for t-test/wilcoxon; 3 for ANOVA/kruskal
+- Minimum samples per group: 2 absolute, 3+ recommended
+- Statistical tests require: n≥3 per group for reliable p-values
+
+**ENCODING & FORMAT SPECIFICATIONS:**
+- Encoding: UTF-8 required (standard default)
+- Decimal separator: Period (.) must be used, NOT comma (,)
+- Thousands separator: NOT supported (use 1000 not 1,000)
+- Scientific notation: Supported (1e-5, 1.23E+10)
+- Missing value representation: Empty cell, NA, N/A, or #N/A all accepted
+- Row/column headers: Required; must be unique except for feature names
+
+When users ask about these options, explain what they mean, when to use them, implications for analysis, and recommend best practices based on their data type and research question.
+
+===  END DATA TAB DOCUMENTATION ===
+

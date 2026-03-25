@@ -1,0 +1,225 @@
+=== COMPREHENSIVE ML FEATURE SELECTION TAB UI ELEMENTS AND OPTIONS ===
+
+**ML FEATURE SELECTION OVERVIEW:**
+Purpose: Identify important features using machine learning methods, reduce dimensionality, improve model performance, and gain interpretability
+- **Pre-filtering:** Optional feature reduction before ML selection (Variance, Correlation, PCA-based)
+- **5 Selection Methods:** LASSO/ElasticNet, Random Forest, Permutation Importance, RFE, Boruta
+- **Results:** Feature importance rankings, selected features, stability analysis, model performance metrics
+- **Downstream:** Selected features automatically available in downstream analyses (Statistical Tests, GSEA, ML Models)
+
+**PRE-FILTERING OPTIONS (Optional):**
+- Filtering Method dropdown (default: None):
+  - \"None\": Skip pre-filtering, use all features
+  - \"Variance Threshold\": Remove low-variance features
+    - Variance Threshold parameter (0-1, default 0.01): Features below this variance removed
+    - Best for: Removing quasi-constant features before expensive ML computations
+  - \"Correlation Filter\": Keep features correlated with target/groups
+    - Correlation Cutoff (0-1, default 0.1): Keep features with |r| >= cutoff
+    - Best for: Fast univariate screening, removing completely independent features
+  - \"PCA Top N Features\": Use features selected from Dimensionality Reduction tab
+    - Requires: PCA analysis run and features made global first
+    - Best for: Leveraging PCA dimension reduction as pre-filter
+
+**LASSO/ELASTICNET METHOD:**
+
+*Overview:* L1 (LASSO) and L1+L2 (ElasticNet) regularization automatically select features by shrinking coefficients to zero. Alpha controls L1 vs L2 balance.
+
+*Problem Type:* Select analysis type
+- Binary Classification: 2 groups (binomial family)
+- Multi-class Classification: 3+ groups (multinomial)
+- Continuous Regression: Numeric/continuous response
+- Count Data (Poisson): Count-based responses
+- Cox Survival: Survival/time-to-event data
+- Multiple Response Gaussian: Multiple continuous responses
+- Grouped Multinomial: Grouped multi-class data
+
+*Group Selection (binary/multi-class only):*
+- Group 1 and Group 2 dropdowns (binary)
+- Multi-class groups dropdown (multi-class): Leave blank for all groups
+
+*Core Parameters:*
+- Auto-tune Alpha checkbox: Enable grid search for optimal alpha (recommended)
+  - When ON: Shows Alpha Grid Search settings (Min, Max, Grid Points)
+  - When OFF: Shows manual Alpha slider (0.0-1.0)
+  - Alpha interpretation: 1.0=Pure LASSO (L1 only), 0.5=Balanced, 0.0=Ridge (L2 only)
+- Lambda Selection: Cross-validation (default) vs Manual value
+  - CV Method: lambda.min (minimum error) vs lambda.1se (simpler model, 1-SE rule)
+  - Manual: Enter numeric lambda value (higher = more regularization, fewer features)
+- CV Folds: Cross-validation folds (3-20, default 10)
+
+*Standardize & Intercept:*
+- Standardize Features (checkbox, default: TRUE): Scale features to unit variance
+- Include Intercept (checkbox, default: TRUE): Add intercept term
+
+*Class Imbalance Handling:*
+- Use Sample Weights checkbox: Enable for imbalanced classes
+  - Weight Method: Inverse (1/class frequency), Balanced (sklearn-style), Custom
+  - Custom Weights: Comma-separated weights for each class
+- Purpose: Give more importance to underrepresented classes
+
+*Advanced:*
+- Coefficient Constraints: Optional lower/upper bounds for coefficients
+- Enhanced Stability Analysis: Bootstrap/resampling-based stability
+  - Methods: Enhanced Bootstrap, Stability Selection (Meinshausen & Bühlmann), Randomized LASSO, Stability Path, All Methods (Consensus)
+  - Threshold: Frequency cutoff for feature selection (0.1-0.9, default 0.6)
+
+**RANDOM FOREST IMPORTANCE METHOD:**
+
+*Overview:* Feature importance based on decrease in node impurity (Gini) or permutation-based importance. Good for non-linear relationships.
+
+*Problem Type:* Binary Classification, Multi-class Classification, Continuous Regression
+
+*Group Selection (binary/multi-class only):*
+- Group 1 and Group 2 (binary) or Multi-class groups dropdown
+
+*Core Parameters:*
+- Number of Trees (100-5000, default 500): More trees = better stability but slower. For stability analysis, 200-300 recommended.
+- mtry (Variables per Split): Leave blank for auto (sqrt(p) classification, p/3 regression)
+- Minimum Node Size: Leave blank for auto (1 classification, 5 regression)
+- Maximum Terminal Nodes: Leave blank for unlimited
+
+*Advanced Options:*
+- Calculate Proximity Matrix: Enable for MDS plots and outlier detection (slower)
+- Local Variable Importance: Case-wise importance scores (memory intensive)
+- Class Weights: Handle imbalance with balanced (inverse frequency) or custom weights
+- Balanced Sampling (sampsize): Equal samples per class during bootstrap
+- Partial Dependence Analysis: Analyze single feature marginal effects
+
+*Enhanced Stability Analysis:*
+- Methods: Enhanced Bootstrap, Subsampling (reduced overfitting), Cross-Validation, Noise Injection, All Methods (Consensus)
+- Performance Tip: Computation time = Trees × Bootstrap Samples. Start with Trees=200, Samples=75 for speed; use Trees=500, Samples=200 for accuracy.
+
+**RECURSIVE FEATURE ELIMINATION (RFE) METHOD:**
+
+*Overview:* Systematically removes features and rebuilds models until optimal subset found. RFECV uses CV to auto-determine size.
+
+*RFE Method Selection:*
+- RFE: Manual removal process
+- RFECV: Cross-validation determines optimal size automatically
+
+*Problem Type:* Binary Classification, Multi-class Classification, Regression
+
+*Group Selection (binary/multi-class only):*
+- Group 1 and Group 2 (binary) or Multi-class groups dropdown
+
+*CV Configuration (RFECV only):*
+- CV Method: k-Fold (default), Repeated k-Fold, LOOCV (Leave-One-Out), Bootstrap, Leave-Group-Out
+- Number of Folds: 2-20 (default 5)
+- Repeats (for repeated CV): 1-10
+- Bootstrap Samples or LGOCV proportion: Varies by method
+
+*Feature Selection Strategy:*
+- Selection Function: pickSizeTolerance (default), pickSizeBest, pickSizeOneStandardError
+- Performance Tolerance (if tolerance selected): Percentage tolerance around best performance
+
+*Feature Subset Configuration:*
+- Subset Strategy: Auto (powers of 2), Linear Sequence, Custom Sizes
+- Step Size (linear) or Custom Sizes (comma-separated list)
+
+*Performance & Parallelization:*
+- Parallel Processing: Enable for faster computation
+- Number of Cores (1-8): CPU cores to use
+- Maximum/Minimum Features: Range to test
+
+*Evaluation Metric:*
+- Accuracy, Kappa, ROC AUC, Sensitivity, Specificity, Precision, Recall, F1
+
+*Base Model:*
+- Currently: Random Forest only
+- RF Parameters: Number of Trees (50-2000), Variables per Split (mtry)
+
+**BORUTA METHOD:**
+
+*Overview:* All Relevant Feature Selection - compares feature importance to shadow/randomized features. Classifies features as Confirmed, Tentative, or Rejected.
+
+*Problem Type:* Binary Classification, Multi-class Classification, Regression
+
+*Group Selection (binary/multi-class only):*
+- Group 1 and Group 2 (binary) or Multi-class groups dropdown
+
+*Core Parameters:*
+- Maximum Runs (10-500, default 100): Iterations until convergence
+- P-Value Threshold (0.001-0.1, default 0.01): Statistical significance cutoff
+- Apply Tentative Rough Fix: Auto-decide tentative features at end
+
+*Base Classifier Selection:*
+- Random Forest (ranger/randomForest): Fast, handles mixed types, default
+- Gradient Boosting (GBM): Powerful but slower
+- XGBoost: Optimized boosting, fast
+
+*Classifier-Specific Parameters:*
+- RF Trees: 100-2000 (default 500)
+- GBM Trees: 50-500
+- XGB Rounds: 50-300
+
+*Importance Source (for RF only):*
+- getImpRfGini: Gini impurity decrease
+- getImpRfZ: Z-score normalized importance (default, recommended)
+- getImpRfRaw: Raw importance counts
+- Custom VIM: Custom importance metric
+
+*Advanced:*
+- Enable Trace Output: Detailed iteration logging
+
+*Interpretation:* Confirmed = definitely important, Tentative = possibly important, Rejected = not important
+
+**PERMUTATION IMPORTANCE METHOD:**
+
+*Overview:* Model-agnostic importance: measures performance increase when feature values randomly shuffled. Doesn't require feature elimination.
+
+*Problem Type:* Binary Classification, Multi-class Classification, Continuous Regression
+
+*Group Selection (binary/multi-class only):*
+- Group 1 and Group 2 (binary) or Multi-class groups dropdown
+
+*Core Parameters:*
+- Number of Permutations (10-1000, default 100): More permutations = higher accuracy
+- Evaluation Focus: Classification Accuracy, AUC (Area Under Curve), F1 Score (Precision-Recall)
+
+*Results Interpretation:*
+- Positive importance: Feature degradation = important feature
+- Negative importance: Rare, indicates redundancy or multicollinearity
+- Zero importance: Feature contributes nothing
+
+**ML FEATURE SELECTION RESULTS & INTERPRETATION:**
+
+*Output Tabs (varies by method):*
+- Feature Importance Plot: Bar chart of top features and their importance scores
+- Feature Rankings Table: Numeric scores for all tested features
+- Selected Features: List of features passing selection criteria
+- Model Performance: Accuracy, AUC, other metrics
+- Stability Analysis: Frequency plots, consensus scores (if enabled)
+- Method-Specific Outputs: Loadings (LASSO), OOB errors (RF), Stability path (if requested)
+
+*Using Selected Features Downstream:*
+- \"Use [Method] Top N Features for Downstream Analysis\" checkbox: Automatically propagates selected features
+- Available in: Statistical Tests (filter to selected features), GSEA/Pathway Analysis, ML Models
+- Without checking: All features remain in downstream analyses
+
+**METHOD COMPARISON & SELECTION GUIDE:**
+
+| Method | Speed | Interpretability | Non-linearity | When to Use |
+|--------|-------|------------------|---------------|------------|
+| **LASSO** | Fast | Very High | No | Linear relationships, want coefficients, class imbalance common |
+| **Random Forest** | Medium | Medium | Yes | Non-linear patterns, mixed feature types, small-med datasets |
+| **Permutation** | Medium | Medium | Model-agnostic | Model-agnostic importance, post-hoc analysis |
+| **RFE** | Slow | Medium | Depends on base | Optimal subset size unknown, want systematic removal |
+| **Boruta** | Medium | High | Depends on classifier | Want ALL relevant features (not just top-k), confirmed/tentative classifications |
+
+**BEST PRACTICES:**
+
+1. **Start with pre-filtering:** Remove obvious noise (low variance) before expensive ML selection
+2. **Choose method by goal:**
+   - Linear model interpretation: LASSO
+   - Best non-linear: Random Forest or RFE with RF base
+   - All relevant features: Boruta
+   - Speed priority: Permutation Importance or LASSO
+3. **Use stability analysis:** Especially for small datasets (n<100) to identify robust, reproducible features
+4. **Validate selection:** Check if top-ranked features make biological sense
+5. **Handle class imbalance:** Enable weights if classes severely imbalanced (e.g., <20% minority class)
+6. **Parallel processing:** Enable for RFE with large feature sets (n_features>5000)
+7. **Downstream integration:** Check \"Use Top N Features\" to propagate selection to downstream analyses
+
+When users ask about ML feature selection, explain which method best fits their data type and research goal, what each parameter controls, how to interpret results and confidence, and recommend best practices for robustness.
+
+===  END ML FEATURE SELECTION TAB DOCUMENTATION ===

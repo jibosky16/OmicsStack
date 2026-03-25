@@ -1,0 +1,71 @@
+=== COMPREHENSIVE DISTRIBUTION ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+
+### DISTRIBUTION ANALYSIS TAB OVERVIEW
+
+The Distribution Analysis tab visualizes feature value distributions across sample groups using statistical plot types (boxplots, violin plots, ridgeline plots, swarm plots, strip plots). This is essential for assessing data quality, detecting outliers, comparing group distributions, and validating statistical assumptions.
+
+**PLOT TYPE SELECTION:**
+- **Boxplot** (default): Shows quartiles (boxes), median (line), and outliers (points). Compact and publication-ready. Best for: comparing medians and spread across groups, identifying outliers at a glance
+- **Violin Plot**: Shows full probability density distribution (width indicates frequency). Reveals multimodal distributions. Best for: complex distributions with multiple peaks, small/medium datasets
+- **Ridgeline**: Overlaid density curves for each group, stacked vertically. Best for: many groups (5+), comparing distribution shapes while minimizing overlap
+- **Swarm Plot**: Individual points scattered horizontally to avoid overlap. Best for: small-medium datasets (n<200), seeing each individual sample value
+- **Strip Plot**: Individual points with jitter overlap (allows overlap). Best for: large datasets, quick overview, speed priority
+
+**FEATURE SET SELECTION:**
+- \"All Features\" visualizes every feature (slow if >2000 features, large file outputs). Use when: comprehensive data exploration, validating filtering assumptions
+- \"PCA Top N Features\" uses principal components' top contributors (faster, focused). Use when: exploring major variance drivers, optimizing visualization performance
+- \"ML-Selected Features\" uses machine learning-selected biomarkers (fastest, most targeted). Use when: focusing on validated biomarkers, confirming ML selection patterns
+
+**FEATURE SELECTION:**
+- **Select Feature** dropdown: Choose single feature for detailed visualization. Search by name/ID for quick access
+- **Display Type** (Feature Names vs IDs): \"Feature Names\" shows interpretable gene/metabolite names; \"IDs\" shows internal database identifiers
+- **Feature Set Status**: Shows current selected set and any filtering applied
+- **Feature Count**: Displays total features available in selected set
+
+**FILTERING OPTIONS:**
+- **FDR Cutoff** (0-0.1, default 0.05, ROTS method only): Multiple testing correction. Shows only features passing FDR threshold. Lower values = stricter filtering (fewer features); higher values = lenient (more features included). Only appears when ROTS statistical method selected in Data tab
+
+**VISUALIZATION OPTIONS:**
+- **Show Individual Points** (enabled by default): Overlays actual sample values on plot. Disabled shows only distribution envelope (cleaner for large n). Important for detecting clustering and individual outliers
+- **Show Error Bars** (enabled by default): Displays confidence intervals or standard error. Useful for assessing variability; disable for cleaner appearance with large sample sizes
+- **Show Statistics** (enabled by default): Annotates plots with p-values and test names (ANOVA, Kruskal-Wallis, t-test). Disable if testing in Data tab; use for quick significance checking
+
+**APPEARANCE CUSTOMIZATION:**
+- **Color Palette** (10 options: Default, Set 1, Metro, Sunset, Ocean, Forest, Berry, Citrus, Stone, Candy, Skyline). Choose for: group distinction, accessibility (colorblind-friendly options: Ocean, Forest), publication style
+- **Plot Height** (300-2000 px, default 500): Increase for tall layouts, multiple plots. Larger heights improve readability of many features
+- **Plot Width** (400-2000 px, default 500): Increase for better label visibility. Match to display width (monitor/publication dimensions)
+
+**OUTPUT TABS:**
+- **Plot Tab**: Interactive/static visualization with selected options. Interactive features: zoom, pan, hover information
+- **Statistics Tab**: Test results including p-values, test type (ANOVA/Kruskal-Wallis/t-test), effect sizes, degrees of freedom. Used for publication and detailed statistical reporting
+- **Data Table Tab**: Underlying numeric values in sortable/searchable table. Useful for: extracting specific values, validation, downstream analysis
+
+**DOWNLOAD OPTIONS:**
+- **Download Plot**: Exports current plot as PNG (single feature). Use for: publications, presentations, quick sharing
+- **Generate All Plots**: Creates plots for all features in selected set, packages as ZIP. Use for: batch processing, comprehensive reports (warning: large file if All Features selected)
+
+**STATISTICAL TESTING LOGIC:**
+App automatically selects appropriate tests: ANOVA (normally distributed, >2 groups), Kruskal-Wallis (non-normal, >2 groups), t-test (2 groups). Pairwise comparisons use Tukey or Mann-Whitney. p-values displayed on plots when Show Statistics enabled.
+
+**DISTRIBUTION INTERPRETATION:**
+- **Boxplot median position**: High/low within box indicates skewness
+- **Box width**: Larger = greater interquartile range (more variability)
+- **Outlier points**: Values >1.5×IQR beyond quartiles (identified as biological or technical outliers)
+- **Violin width**: Wider = more samples at that value (density peak)
+- **Bimodal distributions**: Two peaks indicate potential subpopulation mixing
+
+**BEST PRACTICES:**
+1. Start with \"All Features\" + Boxplot to assess overall data distribution
+2. Use Violin plots if expecting complex, multimodal distributions
+3. Enable \"Show Individual Points\" for datasets <500 samples; disable for large n (cleaner appearance)
+4. Disable error bars if points already show variability clearly
+5. Use \"ML-Selected Features\" to focus on validated biomarkers
+6. Compare distribution shapes before statistical tests (check normality visually)
+7. For publication: use Boxplot + Static theme, disable individual points if cluttered
+8. Validate distribution assumptions before interpreting p-values
+9. Use Ridgeline for 5+ groups to compare distribution shapes without overlap
+10. Download \"All Plots\" for supplementary material showing all features tested
+
+When users ask about plot types, feature selection, filtering, statistical tests, visualization options, distribution interpretation, or best practices for the Distribution Analysis tab, explain what each parameter controls, which plot type best suits their biological question, how to interpret distribution shapes and statistical results, and provide recommendations for data quality assessment and statistical validation.
+
+===  END DISTRIBUTION ANALYSIS TAB DOCUMENTATION ===

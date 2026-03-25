@@ -1,0 +1,181 @@
+=== COMPREHENSIVE DIMENSIONALITY REDUCTION TAB UI ELEMENTS AND OPTIONS ===
+
+**DIMENSIONALITY REDUCTION OVERVIEW:**
+Purpose: Reduce data from high-dimensional space to 2D for visualization and pattern discovery
+- PCA: Variance-based, linear, interpretable, good for correlated features
+- sPCA: Sparse PCA, automatic feature selection, interpretable, fewer variables selected
+- UMAP: Non-linear, preserves local structure, great for complex patterns
+- t-SNE: Non-linear, excellent visualization, slow, good for validation
+
+**PCA (PRINCIPAL COMPONENT ANALYSIS) TAB:**
+
+*Analysis Type:*
+- \"All Groups\" (default): Analyzes all samples together regardless of group
+- \"Pairwise Comparison\": Generates separate PCA plots for each pair of groups
+- When \"Pairwise\" selected: Shows Group 1 and Group 2 dropdowns to select which groups to compare
+- Best for \"All Groups\": When you want to see overall sample structure
+- Best for \"Pairwise\": When comparing specific biological conditions
+
+*Core Parameters:*
+- Scale Data (checkbox, default: TRUE): Standardize features to unit variance (recommended)
+  - Enable when: Features have different scales/units (standard recommendation)
+  - Disable when: Features already on same scale, want to weight by original variance
+- Add Confidence Ellipses (checkbox, default: TRUE): Draw 95% confidence regions around groups
+  - Ellipses help visualize: Group separation and overlap
+  - Requires: Minimum 3-4 samples per group for reliable ellipses
+- Ellipse Confidence Level (0.90-0.99, default: 0.95): Statistical confidence for ellipse boundary
+  - 0.90: Narrower ellipses, less conservative
+  - 0.95: Standard approach (recommended)
+  - 0.99: Wider ellipses, very conservative
+
+*Display Options:*
+- Show Sample Labels (checkbox, default: FALSE): Display individual sample names on points
+  - Use when: Small datasets, need to identify specific samples
+  - Disable when: Many samples (overcrowded plot)
+- Show Sample Counts in Legend (checkbox, default: TRUE): Display n=X for each group
+- Top N Features (numeric, leave empty for all): Keep only top N features by variance contribution
+  - Use when: Feature reduction needed, very high-dimensional data (>1000 features)
+  - Default: Use all features available
+  - Range: 5-1000
+- Feature Ranking Method (radio buttons, default: \"Overall Contribution\"):
+  - \"Overall Contribution (sum of squared loadings)\": Features contributing most across PC1 and PC2
+  - \"PC1 Contribution\": Features that load heavily on PC1 (first component)
+  - \"PC2 Contribution\": Features that load heavily on PC2 (second component)
+  - \"PC1 + PC2 Combined\": Top contributors to both components combined
+
+*Feature Selection:*
+- Use PCA Top N features for downstream analysis (checkbox, default: FALSE): Feeds selected features to other analyses
+
+*Color Customization:*
+- Use Custom Colors (checkbox, default: FALSE): Customize colors for each group
+
+*Plot Grid Controls (for Pairwise mode):*
+- Grid Columns (numeric, default: 2, range 1-4): How many plots per row
+- Plot Height (px, default: 400, range 200-800): Individual plot height
+- Plot Width (px, default: 400, range 200-800): Individual plot width
+
+*PCA Output Tabs:*
+- PCA Plot: Main score plot showing samples in PC1 vs PC2 space
+- Variance Explained: Bar plot showing % variance explained by each component
+- Loadings: Shows which features contribute most to PC1 and PC2
+- Feature Contributions: Detailed feature contribution analysis
+- Results Table: Numeric PC scores for all samples
+
+**sPCA (SPARSE PCA) TAB (mixOmics):**
+
+*Analysis Type:*
+- \"All Groups\" (default): sPCA across all samples
+- \"Pairwise Comparison\": Separate sPCA for each group pair
+
+*sPCA-Specific Parameters:*
+- Number of Components (numeric, default: 2, range 1-10): How many principal components to calculate
+- Variables to keep for PC1 (numeric, default: 50, range 5-500): # of features selected for first component
+  - Lower (5-20): Aggressive sparsity, fewer features selected
+  - Higher (50-200): More permissive, retains more features
+  - Typical: 30-50 for most datasets
+- Variables to keep for PC2 (numeric, default: 50, range 5-500): # of features for second component
+
+*Data Preprocessing:*
+- Scale Data (checkbox, default: TRUE): Standardize to unit variance
+- Center Data (checkbox, default: TRUE): Center features to zero mean
+
+*Visualization Options:*
+- Add Confidence Ellipses (checkbox, default: TRUE): Group confidence regions
+- Ellipse Confidence Level (0.90-0.99, default: 0.95): Statistical confidence for ellipse
+- Show Sample Labels (checkbox, default: FALSE): Display sample names
+- Show Sample Counts in Legend (checkbox, default: TRUE): Show n for each group
+
+*Feature Visualization:*
+- Show Feature Names (checkbox in Loadings tab, default: TRUE): Display feature names vs numeric IDs
+
+*Color Customization:*
+- Use Custom Colors (checkbox, default: FALSE): Customize group colors
+
+*sPCA Plot Grid Controls (Pairwise mode):*
+- Grid Columns (numeric, default: 2)
+- Plot Height (px, default: 400)
+- Plot Width (px, default: 400)
+- Show Legend (checkbox, default: TRUE): Display or hide legend
+
+*sPCA Output Tabs:*
+- sPCA Plot: Score plot with selected features only
+- Variance Explained: % variance by each sparse component
+- Loadings: Features selected (non-zero loadings) for each component
+- Selected Variables: Table of selected features and their loadings
+- Results Table: Sample scores for sparse components
+
+**UMAP (UNIFORM MANIFOLD APPROXIMATION & PROJECTION) TAB:**
+
+*UMAP-Specific Parameters:*
+- Number of Neighbors (numeric, default: 15, range 2-100): Local neighborhood size
+  - Lower (2-5): Emphasizes local structure, preserves fine patterns
+  - Default (15): Balanced local/global structure (recommended)
+  - Higher (50-100): Emphasizes global structure, smoother embedding
+- Minimum Distance (numeric, default: 0.1, range 0.0-0.99): Minimum spacing between points
+  - Lower (0.01-0.1): Allows tight clusters, more detail
+  - Default (0.1): Balanced approach
+  - Higher (0.3-0.5): Spreads points apart, smoother visualization
+- Spread (numeric, default: 1.0, range 0.1-5.0): Scale of embedded coordinates
+
+*Data Preprocessing:*
+- Scale Data (checkbox, default: TRUE): Standardize features to unit variance
+
+*Visualization Options:*
+- Add Confidence Ellipses (checkbox, default: TRUE): Group confidence regions
+- Show Sample Labels (checkbox, default: FALSE): Display sample names
+- Plot Width (px, default: 800, range 400-2000): Adjust plot width
+- Plot Height (px, default: 600, range 400-1600): Adjust plot height
+
+**t-SNE (t-DISTRIBUTED STOCHASTIC NEIGHBOR EMBEDDING) TAB:**
+
+*t-SNE-Specific Parameters:*
+- Perplexity (numeric, default: 30, range 5-100): Local neighborhood size
+  - Lower (5-15): Emphasizes local structure
+  - Default (30): Standard (recommended)
+  - Higher (50-100): More global structure emphasis
+  - Constraint: perplexity < n_samples/3
+- Maximum Iterations (numeric, default: 1000, range 100-5000): Optimization iterations
+- Theta (numeric, default: 0.5, range 0.0-1.0): Speed/Accuracy trade-off
+  - 0.0-0.3: Slower, very accurate (use for final plots)
+  - 0.5: Default, balanced (recommended)
+  - 0.7-1.0: Faster but less accurate (use for exploration)
+- Random Seed (numeric, default: 42): Reproducibility (always set for reproducible results)
+
+*Data Preprocessing:*
+- Scale Data (checkbox, default: TRUE): Standardize to unit variance
+
+*Visualization Options:*
+- Add Confidence Ellipses (checkbox, default: TRUE): Group confidence regions
+- Show Sample Labels (checkbox, default: FALSE): Display sample names
+- Plot Width (px, default: 800)
+- Plot Height (px, default: 600)
+
+**DIMENSIONALITY REDUCTION GUIDANCE:**
+
+*Method Comparison:*
+- PCA: Fast, interpretable, linear, good for first look, loadings show feature contributions
+- sPCA: Fast, fewer features selected, still interpretable, best for feature discovery (only non-zero loadings)
+- UMAP: Good for both structure and speed, non-linear, fewer parameters to tune, preserves local structure
+- t-SNE: Best visualization quality, non-linear, perplexity critical, slower computation
+
+*When to Use Each:*
+- Start with: PCA (fast, interpretable, understand overall structure)
+- If PCA shows overlap: Try sPCA (select different features) or UMAP (non-linear)
+- For final publication figures: t-SNE (beautiful) or UMAP (faster)
+- For reproducibility: PCA or sPCA (set seed for t-SNE)
+- For feature discovery: sPCA (shows which features selected) or PCA loadings (show contributions)
+
+*Best Practices:*
+1. Always scale data (unless already normalized)
+2. Check group separation in multiple methods (robustness)
+3. sPCA loadings show exactly which features distinguish groups
+4. PCA loadings most interpretable for understanding separations
+5. UMAP/t-SNE: distances between points less meaningful, visual separation most important
+6. For reproducibility especially in t-SNE: Always set random seed
+7. Confidence ellipses require 3-4+ samples per group minimum
+
+7. Confidence ellipses require 3-4+ samples per group minimum
+
+When users ask about dimensionality reduction, explain which method suits their data, what parameters mean, how to interpret results (especially PCA/sPCA loadings), and how to use outputs downstream.
+
+===  END DIMENSIONALITY REDUCTION TAB DOCUMENTATION ===

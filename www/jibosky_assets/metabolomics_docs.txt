@@ -1,0 +1,104 @@
+=== COMPREHENSIVE METABOLOMICS TAB UI ELEMENTS AND OPTIONS ===
+
+### METABOLOMICS TAB OVERVIEW
+
+The Metabolomics tab provides comprehensive analysis of metabolite identification, classification, and pathway enrichment. It integrates chemical taxonomy classification, metabolic pathway mapping, and biological context analysis for metabolomics data.
+
+**DATA SOURCE SELECTION:**
+- "Pairwise Comparison" uses significant metabolites from statistical analysis results. Use when: analyzing differential metabolites between two conditions
+- "Intersection Analysis" uses metabolites from intersection/overlap analysis. Use when: focusing on metabolites common or unique to multiple comparisons
+- "Manual Input" allows direct entry of metabolite IDs. Use when: analyzing external metabolite lists or validating specific compounds
+
+**PAIRWISE COMPARISON OPTIONS:**
+- **Group 1** and **Group 2**: Select groups for differential metabolite identification
+- **P-value Threshold**: Significance cutoff for metabolite inclusion
+- **Log2 Fold-Change Threshold**: Biological significance filter
+
+**METABOLITE ID MAPPING:**
+The system attempts to identify and annotate metabolites using multiple databases:
+- **HMDB (Human Metabolome Database)**: Comprehensive metabolite information
+- **KEGG (Kyoto Encyclopedia of Genes and Genomes)**: Pathway associations
+- **PubChem**: Chemical structure and properties
+- **ChEBI**: Chemical Entities of Biological Interest
+- **LipidMaps**: Specialized lipid classification
+
+**ID MAPPING RESULTS:**
+- Shows mapping success rate (percentage of metabolites successfully identified)
+- Displays original IDs alongside matched database identifiers
+- Provides confidence scores for ambiguous mappings
+- Allows manual curation for unmatched or incorrectly matched IDs
+
+**CHEMICAL CLASSIFICATION (ClassyFire):**
+- Hierarchical chemical taxonomy based on structure:
+  - **Kingdom**: Organic compounds, Organic salts, etc.
+  - **Superclass**: Lipids and lipid-like molecules, Organic acids, etc.
+  - **Class**: Fatty acyls, Glycerolipids, Amino acids, etc.
+  - **Subclass**: Fatty acids, Glycerophospholipids, etc.
+  - **Direct Parent**: Most specific structural classification
+
+**CLASSIFICATION VISUALIZATION:**
+- **Sunburst Plot**: Interactive hierarchical visualization of chemical classes
+  - Inner rings show broad categories (Kingdom/Superclass)
+  - Outer rings show specific classes
+  - Click to drill down into subcategories
+  - Hover for metabolite counts and percentages
+- **Classification Table**: Detailed list of all metabolites with their chemical classes
+
+**PATHWAY ENRICHMENT:**
+Tests whether identified metabolites are enriched in specific metabolic pathways:
+- **KEGG Pathways**: Canonical metabolic pathways (glycolysis, TCA cycle, etc.)
+- **SMPDB (Small Molecule Pathway Database)**: Disease-specific pathways
+- **Reactome**: Metabolic reactions and processes
+
+**ENRICHMENT PARAMETERS:**
+- **Pathway Database**: Select which pathway database to query
+- **Background Set**: 
+  - "Analyzed metabolites" uses only metabolites measured in experiment
+  - "All metabolites" uses full database for background
+- **P-value Cutoff**: Significance threshold for pathway enrichment
+- **Minimum Pathway Size**: Exclude very small pathways (may be noise)
+- **Maximum Pathway Size**: Exclude very large pathways (non-specific)
+
+**ENRICHMENT RESULTS:**
+- **Pathway Name**: Name of enriched metabolic pathway
+- **P-value**: Statistical significance of enrichment
+- **FDR (q-value)**: Multiple testing corrected p-value
+- **Hits**: Number of query metabolites in pathway
+- **Total**: Total metabolites in pathway
+- **Enrichment Ratio**: Observed/Expected ratio (fold enrichment)
+
+**VISUALIZATION OUTPUTS:**
+- **Bar Plot**: Top enriched pathways with significance
+- **Dot Plot**: Enrichment ratio vs significance with point size showing hit count
+- **Pathway Network**: Interconnected pathways with shared metabolites
+
+**INTERPRETATION GUIDANCE:**
+- High enrichment ratio + low p-value = strong pathway involvement
+- Multiple related pathways enriched suggests coordinated metabolic changes
+- Consider biological context (disease state, treatment) when interpreting
+- Validate key pathways with literature and experimental evidence
+
+**EXPORT OPTIONS:**
+- **Download Classification Data**: CSV with all metabolite classifications
+- **Download ID Mapping**: CSV with original IDs and database matches
+- **Download Pathway Results**: CSV with all enrichment statistics
+- **Download Visualizations**: PNG/PDF of plots
+
+**BEST PRACTICES:**
+1. Ensure metabolite IDs are in standard format (HMDB, KEGG, name, InChI, SMILES)
+2. Review ID mapping results for accuracy before analysis
+3. Use "Analyzed metabolites" as background for experiment-specific enrichment
+4. Focus on pathways with FDR < 0.1 and hits >= 3 for reliable interpretation
+5. Cross-reference pathway results with chemical classification for biological coherence
+6. Consider tissue-specific pathway databases when available
+7. Validate key findings with targeted metabolomics or functional assays
+
+**INTEGRATION WITH OTHER ANALYSES:**
+- Compare metabolomics pathways with protein/gene enrichment for multi-omics validation
+- Use K-means clusters to identify co-regulated metabolites
+- Correlate metabolite levels with other molecular layers in Multi-Omics Integration
+- Validate biomarker candidates with ROC/PR analysis
+
+When users ask about metabolite identification, chemical classification, metabolic pathway enrichment, or metabolomics interpretation, explain database selection, parameter optimization, and biological significance of findings.
+
+=== END METABOLOMICS TAB DOCUMENTATION ===

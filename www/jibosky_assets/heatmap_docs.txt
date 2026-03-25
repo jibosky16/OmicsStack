@@ -1,0 +1,55 @@
+=== COMPREHENSIVE HEATMAP TAB UI ELEMENTS AND OPTIONS ===
+
+### HEATMAP TAB OVERVIEW
+
+The Heatmap tab generates interactive and static visualizations of expression patterns across samples using hierarchical clustering. This is essential for pattern discovery, validation of analyses, and publication-quality visualization.
+
+**ANALYSIS TYPE SELECTION:**
+- \"All Groups\" creates a single heatmap comparing all samples. Use when: exploring overall expression patterns, validating PCA/clustering results, presenting comprehensive group comparison
+- \"Pairwise Comparison\" creates separate heatmaps for selected group pairs. Use when: focusing on specific biological comparisons, simplifying visualization when many groups exist, testing hypothesis-driven contrasts
+
+**FEATURE SET SELECTION:**
+- \"All Features\" includes all measurements (slow for >5000 features, may show noise). Use when: exploring comprehensive patterns, validating that filtering won't change conclusions
+- \"PCA Top N Features\" uses principal components to select most variable features (faster, cleaner patterns). Use when: optimizing visualization speed, focusing on major expression drivers, high-dimensional datasets
+- \"ML-Selected Features\" uses machine learning feature selection results. Use when: focusing on biomarkers, validating ML results visually, combining statistical and biological significance
+
+**FILTERING CRITERIA:**
+- **P-value cutoff** (0.00001-0.1, default 0.05): Filters features by statistical significance. Lower values are stricter, select based on desired Type I error tolerance
+- **FDR cutoff** (0-0.1, conditional for ROTS method): Multiple testing correction. Use stricter values (0.01-0.05) for conservative filtering with many features
+- **Log2 Fold-Change cutoff** (0-10, default 1.0): Biological significance threshold. Use 1.0-2.0 for meaningful expression changes, adjust based on expected magnitude of effect
+
+**CLUSTERING OPTIONS:**
+- **Cluster Rows** (enabled by default): Performs hierarchical clustering on features, groups similar expression patterns together. Creates dendrograms on left margin (readability depends on feature count)
+- **Cluster Columns** (disabled by default): Performs hierarchical clustering on samples, reveals sample relationships. Enable to discover sample groupings not captured by experimental design
+- **Show Row Names**: Displays feature identifiers. Disable when >500 features (causes label crowding). Row/column order shown by dendrogram even when names hidden
+- **Label Type** (Features vs IDs): \"Features\" shows gene names/metabolite identifiers (interpretable); \"IDs\" shows internal database identifiers (useful when names unclear)
+
+**COLOR CUSTOMIZATION:**
+- **Low Color** (default green): Represents low/downregulated expression. Change for colorblind accessibility (use deuteranopia-friendly orange instead of green)
+- **Mid Color** (default black): Midpoint color for diverging schemes. Use white for high-contrast schemes, black emphasizes extremes
+- **High Color** (default red): Represents high/upregulated expression. Standard red-green scheme; consider blue-yellow for colorblind accessibility
+- **Missing Value Color** (default gray): Shows filtered-out or NA values, helps identify data gaps. Make visually distinct from data colors
+
+**DISPLAY OPTIONS:**
+- **Cell Size**: Adjust \"Small\" (dense, many cells visible), \"Compact\" (balanced), \"Medium\" (larger for detail), \"Large\" (single feature focus). Choose based on feature count and output medium (screen vs publication)
+
+**OUTPUT TABS:**
+- **Interactive Heatmap** (Plotly): Hover over cells to see exact values, sample/feature names, statistical values. Zoom, pan, download as PNG. Useful for exploration and presentations
+- **Static Heatmap** (ggplot2): Publication-ready format, precise reproducibility, smaller file size. Better for papers and reports. Dendrograms shown as line trees
+
+**HEATMAP INTERPRETATION:**
+Cells colored by expression intensity (green=low, red=high by default). Horizontal dendrograms group features with similar patterns across samples. Vertical dendrograms group samples with similar expression profiles. Patterns indicate co-regulation, potential functional modules, or batch effects.
+
+**BEST PRACTICES:**
+1. Start with \"All Groups\" + \"ML-Selected Features\" for focused biomarker visualization
+2. Use \"PCA Top N Features\" for exploratory analysis with >2000 features
+3. Set Log2FC>1 for biologically meaningful changes; use p<0.05 for statistical stringency
+4. Enable \"Cluster Columns\" to discover unexpected sample relationships
+5. For presentations, use \"Compact\" or \"Medium\" cell size; for papers, use \"Static Heatmap\"
+6. Validate heatmap patterns against ML results from Feature Selection tab
+7. Use colorblind-friendly schemes if accessibility required (orange-purple diverging)
+8. Download \"Interactive\" for exploratory presentations, \"Static\" for peer review
+
+When users ask about heatmap generation, filtering, clustering, visualization options, color schemes, or heatmap interpretation, explain what each parameter controls, how to choose appropriate settings for their biological question, and provide guidance on translating heatmap patterns into biological insights.
+
+===  END HEATMAP TAB DOCUMENTATION ===

@@ -1,0 +1,128 @@
+=== COMPREHENSIVE ENRICHMENT ANALYSIS UI ELEMENTS AND OPTIONS ===
+
+**DATA SOURCE SELECTION:**
+- Intersection Analysis: Uses features identified from intersection analysis (requires prior intersection analysis)
+- Pairwise Comparison: Uses differentially expressed features from statistical analysis (requires statistical analysis with thresholds)
+- Manual Input: Allows direct input of gene/protein identifiers via file upload or text paste
+- Source selection determines which genes/proteins will be analyzed for functional enrichment
+
+**PAIRWISE COMPARISON SETTINGS:**
+- Group 1 vs Group 2: Select two different groups to compare (must have been defined in data upload)
+- Feature Set to Use: All Features, PCA Top N Features, or ML-Selected Features (filters input gene list)
+- Significance Thresholds: p-value cutoff (default 0.05) and Log2FC cutoff (default 1.0) for filtering significant features
+- Include Upregulated/Downregulated: Checkboxes to include or exclude up/down-regulated features separately
+- Feature Set Status: Shows how many features are selected based on current filters
+
+**MANUAL INPUT OPTIONS:**
+- Input Method: File Upload or Paste List
+- File Upload: Supports single column (.txt), CSV, or tab-delimited files
+- Column Selection: For multi-column files, specify which column contains the identifiers
+- P-value and Fold Change columns: Optional columns for GSEA analysis (required for ranked gene lists)
+- Text Paste: Direct input of identifiers, one per line
+
+**ENRICHMENT TOOLS:**
+- g:Profiler (gprofiler2): Fast, comprehensive tool with multiple databases (GO, KEGG, Reactome, etc.)
+- ClusterProfiler: R-based tool with extensive visualization options and GSEA support
+- Enrichr: Web-based tool with extensive libraries (KEGG, GO, disease databases, drug perturbations, etc.)
+- ReactomePA: Specialized for Reactome pathway analysis
+- topGO: GO-specific tool with advanced statistical methods and graph visualization
+
+**ORGANISM SELECTION:**
+- Supported organisms: Human, Mouse, Rat, Fruit fly, Zebrafish, Arabidopsis, Yeast, E. coli
+- ID Type: Gene Symbol, UniProt, Entrez Gene ID, Ensembl Gene ID (must match your input data)
+- Critical: Organism and ID type must be correctly specified for accurate enrichment results
+
+**TOOL-SPECIFIC SETTINGS:**
+
+**g:Profiler Options:**
+- Significant only: Checkbox to use only significant genes (uncheck for GSEA)
+- Multiple testing correction: g:SCS (recommended), Bonferroni, FDR
+- Data sources: GO:BP, GO:MF, GO:CC, KEGG, Reactome, TF, miRNA, HPA, CORUM, HP, WikiPathways
+- Statistical domain size: Annotated genes (recommended), All known genes, Custom background
+- Custom background: Use full uploaded dataset or manual input of background genes
+
+**ClusterProfiler Options:**
+- Analysis Type: GO (ORA), KEGG (ORA), Reactome (ORA), Disease Ontology (ORA), WikiPathways (ORA), MSigDB (ORA), or GSEA versions
+- GO Ontology: Biological Process (BP), Molecular Function (MF), Cellular Component (CC)
+- MSigDB Categories: Hallmark, Positional, Curated, Motif, Computational, GO, Oncogenic, Immunologic
+- P-value/Q-value cutoffs: Statistical significance thresholds
+- Gene set size limits: Minimum and maximum genes per pathway/gene set
+- Background settings: Default database or custom background (full dataset or manual input)
+- GSEA parameters: Scoring method (standard/positive/negative), ranking metric (log2FC/signed p-value/t-statistic)
+
+**Enrichr Options:**
+- Database selection: Extensive list including GO, pathways, diseases, transcription factors, protein interactions, tissues, drugs, etc.
+- P-value cutoff: Statistical significance threshold
+- Background options: Default database or custom background (full dataset or manual input)
+
+**ReactomePA Options:**
+- P-value/Q-value cutoffs: Statistical significance thresholds
+- Background options: Default database or custom background (full dataset or manual input)
+
+**topGO Options:**
+- GO Ontology: BP, MF, CC
+- Algorithm: Classic, Elim, Weight, Weight01, Parent-Child
+- Test Statistic: Fisher Exact, Kolmogorov-Smirnov, t-test, Global test, Sum test
+- P-value threshold: Statistical significance cutoff
+- Node size: Minimum genes per GO term
+- Number of terms: Maximum terms to display
+- Multiple testing correction: Benjamini-Hochberg, Bonferroni, FDR
+- Background options: Default database or custom background (full dataset or manual input)
+
+**CUSTOM BACKGROUND SETTINGS:**
+- Available for most tools when "Custom background" is selected
+- Background Source: Use full uploaded feature universe or manual input
+- Manual Input: Text area for pasting background gene identifiers (same ID type as input genes)
+- Purpose: More accurate enrichment when your experiment doesn't include all possible genes
+
+**VISUALIZATION OPTIONS:**
+- Plot Type: Bar plot, Dot plot, Gene-Concept Network, Enrichment Map, GSEA plots, etc.
+- Number of terms: How many top enriched terms to display (5-50)
+- Color Theme: Default, Viridis, Plasma, Blues, Reds, Greens, Purple-Orange, Blue-Red
+- GSEA Plot 2: Advanced GSEA visualization with multiple gene sets, p-value table, expression profile, gene ranking
+- Manhattan Plot: For g:Profiler results with highlighting capabilities
+- GO Graph: For topGO results showing GO term relationships
+
+**NETWORK VIEW OPTIONS:**
+- Network Type: Term-Gene Network, Term Similarity Network, KEGG Pathview
+- Max Terms: Number of terms to include in network (5-100)
+- Similarity Cutoff: For term similarity networks (0.2-1.0)
+- KEGG Pathview: Visualize gene expression on actual pathway diagrams (requires KEGG pathway selection)
+
+**ANALYSIS TYPES:**
+- Over-Representation Analysis (ORA): Tests if significant genes are over-represented in gene sets (requires significance thresholds)
+- Gene Set Enrichment Analysis (GSEA): Tests if gene sets are enriched in ranked gene lists (uses all genes, requires fold change data)
+- Key difference: ORA uses only significant genes; GSEA uses ranked list of all genes
+
+**OUTPUTS AND RESULTS:**
+- Enrichment Results Table: Shows enriched terms with p-values, FDR, gene counts, etc.
+- Visualization Plots: Various plot types showing enrichment results
+- Network Views: Interactive networks showing relationships between terms and genes
+- Download options: Results tables, plots, and network visualizations
+
+**INTERPRETATION GUIDANCE:**
+- P-value: Raw statistical significance (lower = more significant)
+- FDR/Adjusted p-value: Corrected for multiple testing (recommended threshold: 0.05)
+- Gene Ratio: Fraction of your genes in the pathway (higher = more relevant)
+- Background: Statistical universe used for enrichment calculation
+- Multiple testing correction: Essential for omics data due to large number of tests
+
+**COMMON ISSUES AND SOLUTIONS:**
+- No enriched terms found: Check organism/ID type, try less stringent cutoffs, verify gene identifiers
+- Wrong ID type: Ensure input genes match selected ID type (e.g., UniProt vs Gene Symbol)
+- Custom background issues: Background genes must use same ID type as input genes
+- GSEA requirements: Needs fold change data and pairwise comparison
+- Large gene lists: May need to increase gene set size limits or use more specific databases
+
+**BEST PRACTICES:**
+- Use appropriate organism and ID type for your data
+- Start with g:Profiler for comprehensive analysis
+- Use FDR-adjusted p-values (not raw p-values) for significance
+- Include custom background when your experiment doesn't represent all possible genes
+- For GSEA, ensure you have fold change data from pairwise comparisons
+- Validate results with multiple tools when possible
+- Focus on biologically relevant pathways, not just statistically significant ones
+
+When users ask about enrichment analysis options, explain what they control, when to use them, and how they affect results. Guide users toward appropriate settings based on their data type and research question.
+
+=== END ENRICHMENT ANALYSIS DOCUMENTATION ===

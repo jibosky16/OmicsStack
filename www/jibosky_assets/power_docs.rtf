@@ -1,0 +1,254 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2580
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\fnil\fcharset0 LucidaGrande;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 === COMPREHENSIVE POWER ANALYSIS TAB UI ELEMENTS AND OPTIONS ===\
+\
+### POWER ANALYSIS TAB OVERVIEW\
+Purpose: Determine optimal sample sizes for detecting differences of various effect sizes, assess statistical power of current study design, identify features requiring larger samples\
+\
+**POWER ANALYSIS WORKFLOW:**\
+1. Select two groups to compare (or enable ANOVA/Kruskal-Wallis global power for 3+ groups)\
+2. Configure significance level (\uc0\u945 ), effect sizes to test, target power, and sample size range\
+3. Run power analysis\
+4. Review current study power and required sample sizes for target power\
+5. Examine power curves by feature, ranking features by current power\
+6. Download plots and summary tables for reporting\
+\
+**GROUP SELECTION:**\
+- **Group 1 and Group 2** (select inputs): Choose two groups for pairwise comparison\
+  - Group 1: Typically control/reference group\
+  - Group 2: Typically treatment/case group\
+  - Order matters: Results show Group2 vs Group1 comparison\
+- **ANOVA/Kruskal-Wallis Global Power** (conditional UI, appears when 3+ groups present):\
+  - Checkbox: "Analyze global power across all groups"\
+  - When enabled: Computes F-test (ANOVA) or H-test (Kruskal-Wallis) power instead of pairwise t-test\
+  - Use when: Interested in overall group differences, comparing multiple groups simultaneously\
+  - Note: Pairwise group dropdowns disabled when global power enabled\
+\
+**CORE PARAMETERS:**\
+\
+*Significance Level (\uc0\u945 ):*\
+- **Slider** (0.01-0.10, default 0.05): Type I error rate (false positive probability)\
+- Lower \uc0\u945  = more stringent, reduces false positives but increases false negatives (requires larger sample size)\
+- Standard: 0.05 (typical), 0.01 (stringent for multiple testing)\
+\
+*Effect Sizes to Test:*\
+- **Multi-select** (default: 0.5, 0.8, 1.2): Magnitude of difference to detect\
+  - Small (0.2): Cohen's d = 0.2, ~10-15% difference\
+  - Small-Medium (0.5): Cohen's d = 0.5, ~25-30% difference\
+  - Medium (0.8): Cohen's d = 0.8, ~35-45% difference  \
+  - Large (1.2): Cohen's d = 1.2, ~55-65% difference\
+  - Custom: Enter user-defined effect size (0.1-3.0)\
+- Multiple selection: Tests all selected effect sizes simultaneously, creates separate power curves\
+- **Custom Effect Size** (conditional, numeric 0.1-3.0): Appears when "Custom" selected\
+  - Use for: Project-specific effect sizes, pilot data-informed estimates\
+\
+*Target Power (%):*\
+- **Numeric input** (50-99, default 80): Desired probability of detecting true effect\
+- Standard: 80% (typical minimum, balances Type I and Type II errors), 90% (higher rigor), 95% (very high rigor for critical studies)\
+- Used to calculate minimum sample size required to achieve target power\
+- Trade-off: Higher power requires larger sample sizes\
+\
+*Sample Size Range to Test:*\
+- **Slider** (5-500, default 10-200): Range of sample sizes per group for power curve calculation\
+- Lower bound: Minimum sample size per group to test (typically 5-10)\
+- Upper bound: Maximum sample size per group to test (set based on feasibility)\
+- Step size: 5 (calculations performed at 10, 15, 20, ..., 200)\
+- Recommendation: Set upper bound at 2-3\'d7 current sample size for practical planning\
+\
+**DISPLAY OPTIONS:**\
+\
+*Label Type:*\
+- **Radio buttons** (default "Feature Names"):\
+  - **Feature Names**: Display gene/metabolite names (interpretable, recommended)\
+  - **IDs**: Display internal database identifiers (use when names unclear, duplicated, or very long)\
+\
+**POWER ANALYSIS RESULTS TABS:**\
+\
+*Tab 1: Summary*\
+- **Power Analysis Summary Table**: Comprehensive table showing for each feature and effect size:\
+  - Feature: Feature name or ID\
+  - Effect Size: Tested effect size value\
+  - Current Power: Power achieved with current sample size (%)\
+  - Required n for Target Power: Minimum sample size per group to reach target power (e.g., 80%)\
+  - Current Sample Size: Actual n per group in uploaded data\
+  - Download button: Export table as Excel/CSV\
+- **Sample Size Requirements** (two plots side-by-side):\
+  - **Average Sample Size Requirements**: Bar plot showing average n needed for target power by effect size (averaged across all features)\
+    - X-axis: Effect size\
+    - Y-axis: Average sample size required per group\
+    - Red dashed line: Current sample size\
+  - **Median Sample Size Requirements**: Bar plot showing median n needed for target power by effect size (robust to outliers)\
+    - Use median when: Feature variance highly variable\
+    - Interpretation: 50% of features require \uc0\u8804 this sample size to achieve target power\
+    - Recommendation: Use median for study planning (more conservative than average)\
+\
+*Tab 2: Power Curves*\
+- **Feature-Specific Power Curves**: Line plots showing power vs sample size for selected feature\
+  - X-axis: Sample size per group (e.g., 10, 15, 20, ..., 200)\
+  - Y-axis: Statistical power (0-1 or 0-100%)\
+  - Lines: One line per effect size (colored/styled differently)\
+  - Vertical dashed red line: Current sample size (n)\
+  - Horizontal dashed gray line: Target power (e.g., 80%)\
+  - Interpretation: Where line crosses target power line = required n for that effect size\
+- **Feature Selection** (dropdown): Choose which feature to visualize\
+  - Searchable dropdown with all feature names\
+  - Default: First feature alphabetically\
+- **Download button**: Save current power curve plot as high-resolution image\
+- **Use for**: Understanding sample size-power trade-off for specific biomarkers\
+\
+*Tab 3: Feature Ranking*\
+- **Purpose**: Identify which features have sufficient/insufficient power at current sample size\
+- **Features Ranked by Current Power**: Horizontal bar plot showing top 20 features by current power\
+  - X-axis: Current statistical power (0-100%)\
+  - Y-axis: Feature names (sorted by power, highest at top)\
+  - Color: Power category \
+    - Adequate (green): \uc0\u8805 target power (e.g., \u8805 80%)\
+    - Moderate (orange): 60-79% of target power (e.g., 48-79%)\
+    - Low (red): <60% of target power (e.g., <48%)\
+  - Labels on bars: Show current power % and required n for 80% power\
+    - Format: "65.3% / n=45" means 65.3% current power, needs n=45 for 80%\
+- **Effect Size Selection** (dropdown): Choose which effect size to rank by\
+  - Rankings differ by effect size (larger effects 
+\f1 \uc0\u8594 
+\f0  higher power)\
+- **Interpretation**: Features at top = well-powered (likely to detect if effect exists), features at bottom = underpowered (may need larger sample or focus on larger effects)\
+- **Download buttons**: \
+  - Download ranking plot: Save bar chart\
+  - Download ranking table: Export full ranking as CSV/Excel\
+\
+*Tab 4: Feature Categorization*\
+- **Purpose**: Summarize power distribution across all features\
+- **Feature Categorization Pie Chart**: Pie chart showing proportion of features in each power category\
+  - Slices: Three categories (Adequate, Moderate, Low)\
+  - Labels: Count and percentage in each category\
+    - Example: "120 features (45.5%)"\
+  - Color: Green (adequate), orange (moderate), red (low)\
+  - Interpretation: Larger green slice = more features adequately powered\
+- **Feature Categorization Table**: Table summarizing counts, mean power, and details by category\
+  - Columns: Category, Count, Mean Power\
+  - Sortable by any column\
+- **Effect Size Selection** (dropdown): Choose which effect size to categorize by\
+  - Categorization changes with effect size\
+- **Download buttons**: \
+  - Download pie chart: Save visualization\
+  - Download categorization table: Export summary statistics\
+\
+*Tab 5: Global Power (appears only when 3+ groups and global power enabled)*\
+- **Global F-Test/H-Test Power Distribution**: Histogram showing distribution of power across features\
+  - X-axis: Statistical power (0-1)\
+  - Y-axis: Number of features (count)\
+  - Facets/Colors: By effect size (separate histogram per effect size)\
+  - Vertical red line: Target power threshold (e.g., 0.80)\
+  - Interpretation: Right-skewed distribution = most features well-powered, left-skewed = most features underpowered\
+- **Global Power Curve by Feature**: Power curve for selected feature using global test (F-test or H-test)\
+  - Similar to Tab 2 but for F-test/H-test instead of pairwise t-test\
+  - X-axis: Sample size per group\
+  - Y-axis: Power (0-1)\
+  - Lines: One per effect size\
+- **Interpretation**: Global power typically higher than pairwise for same effect size (tests overall difference across all groups, not specific pairs)\
+- **Use when**: Screening for any group differences before post-hoc pairwise comparisons\
+\
+**POWER ANALYSIS INTERPRETATION:**\
+\
+*Understanding Power:*\
+- Power = probability of correctly rejecting null hypothesis when true effect exists\
+- 80% power = if true difference exists, 80% chance of detecting it as significant (p<\uc0\u945 )\
+- 20% false negative rate = 20% chance of missing true effect (Type II error)\
+- Affected by: sample size (larger = higher power), effect size (larger = higher power), \uc0\u945  (larger = higher power), variance (lower = higher power)\
+- Power \uc0\u8800  probability that result is true (that's Bayesian posterior probability, different concept)\
+\
+*Current Study Power:*\
+- Shows power achieved with current sample size (n per group from uploaded data)\
+- High power (>80%) = study adequately powered for effect sizes tested, confident in negative results\
+- Moderate power (50-80%) = study marginally powered, negative results inconclusive\
+- Low power (<50%) = study severely underpowered, likely to miss true effects\
+- Use to: Justify sample size in methods, interpret non-significant results (low power = inconclusive, not absence of effect)\
+\
+*Sample Size Requirements:*\
+- Minimum n per group to achieve target power (e.g., 80%)\
+- Varies by feature due to different variances (some features easier to detect than others)\
+- Use average/median n as rule-of-thumb for study planning\
+- Individual feature requirements guide prioritization (features with lower n = easier to detect, prioritize for validation)\
+- Add 10-20% buffer for dropouts/exclusions in prospective studies\
+\
+*Power Curves:*\
+- Visualize power-sample size trade-off (diminishing returns as n increases)\
+- Steep curve = small increases in n yield large power gains (efficient, target this range)\
+- Flat curve = diminishing returns, large n increases for small power gains (inefficient)\
+- Current n position: Left of target = underpowered (need more samples), right of target = overpowered (adequate or excess)\
+- Inflection point: Where curve steepness changes (optimal sample size region)\
+\
+*Feature Ranking:*\
+- Top-ranked features = high current power, easiest to detect, prioritize for validation studies\
+- Bottom-ranked features = low current power, hardest to detect, require larger n or may have high biological variance\
+- Use to: Select features for follow-up studies, explain why some features non-significant despite biology\
+- Context matters: Low power doesn't mean feature unimportant, just harder to detect statistically\
+\
+*Effect Size Considerations:*\
+- Small effects (0.2-0.5) require very large samples (often 100-500 per group for 80% power)\
+- Medium effects (0.8) achievable with moderate samples (30-50 per group for 80% power)\
+- Large effects (1.2+) detectable with small samples (10-20 per group for 80% power)\
+- Biological relevance \uc0\u8800  statistical effect size (small effects can be clinically/biologically meaningful)\
+- Consider: Feasibility (can you recruit required n?), biology (what effect size is expected?), impact (what effect size is clinically meaningful?)\
+\
+**BEST PRACTICES:**\
+\
+1. **Planning New Studies**:\
+   - Run power analysis on pilot data (even n=5-10 per group gives estimates)\
+   - Use median sample size requirements (robust to outlier features, more conservative)\
+   - Add 10-20% buffer for dropouts/exclusions in prospective studies\
+   - Consider feasibility: if median n >200, may need to lower target power (75% vs 80%), focus on larger effects, or reduce feature dimensionality\
+   - Document assumptions: effect sizes, target power, variance estimates\
+\
+2. **Interpreting Current Studies**:\
+   - Check current power BEFORE interpreting non-significant results\
+   - Low power (<50%) + non-significant = inconclusive (need larger sample, cannot rule out true effect)\
+   - High power (>80%) + non-significant = likely true null (effect size smaller than tested, or no effect)\
+   - Report power alongside p-values in methods/results sections\
+   - For underpowered studies: Report effect size estimates with confidence intervals (show direction/magnitude even if non-significant)\
+\
+3. **Effect Size Selection**:\
+   - Use biologically/clinically meaningful effect sizes when known (e.g., 20% change considered clinically significant)\
+   - Test range of effect sizes (small, medium, large) to understand sample size trade-offs\
+   - Pilot data: Use observed effect sizes as estimates (but adjust for winner's curse - pilot estimates often inflated)\
+   - Smaller detectable effect \uc0\u8800  better study (may not be biologically relevant, requires impractical sample sizes)\
+\
+4. **Multi-Feature Considerations**:\
+   - Features vary widely in variance 
+\f1 \uc0\u8594 
+\f0  power varies widely across features\
+   - Focus on median/average n (don't design study for worst-case feature, that's inefficient)\
+   - Underpowered features may still be detected if true effect size larger than tested\
+   - Feature prioritization: high-powered features = confident detections, low-powered = exploratory/hypothesis-generating\
+\
+5. **Global vs Pairwise Power**:\
+   - Global power (ANOVA/Kruskal) tests "any difference among groups" (omnibus test)\
+   - Pairwise power tests specific group pair (targeted comparison)\
+   - Global power typically higher for same effect size (more degrees of freedom, tests multiple differences simultaneously)\
+   - Use global for initial screening (is there any group effect?), pairwise for specific comparisons (which groups differ?)\
+   - Post-hoc tests after global: Reduce power due to multiple testing correction\
+\
+6. **Limitations**:\
+   - Assumes normality (t-test) or uses empirical distributions from current data\
+   - Assumes equal variance across groups (may overestimate power if heteroscedasticity present)\
+   - Effect sizes derived from current data (may not generalize to new populations/conditions)\
+   - Multiple testing correction not incorporated (actual power lower with FDR/Bonferroni correction applied)\
+   - Pilot data: Small pilots give noisy effect size estimates (power calculations uncertain)\
+\
+7. **Reporting**:\
+   - Methods: State power analysis conducted, target power (e.g., 80%), effect sizes tested (e.g., 0.5, 0.8, 1.2), sample size recommendations (e.g., median n=45 per group)\
+   - Justification: Explain choice of effect sizes (literature-informed, pilot data-informed, clinically meaningful)\
+   - Results: Report current study power for key comparisons (e.g., "median power = 65% for medium effect size d=0.8")\
+   - Results: Report sample size needed for target power (e.g., "80% power requires n=50 per group for medium effects")\
+   - Supplementary: Include power curves for key features, feature ranking table showing distribution of power\
+   - Underpowered studies: Acknowledge limitations, report effect sizes with CIs, suggest follow-up sample sizes\
+\
+When users ask about power analysis, explain power concept clearly (probability of detecting true effects), sample size determination process, effect size interpretation (biological vs statistical significance), and how to use results for both study planning (prospective) and result interpretation (retrospective).\
+\
+===  END POWER ANALYSIS TAB DOCUMENTATION ===\
+}

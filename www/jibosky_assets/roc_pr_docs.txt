@@ -1,0 +1,298 @@
+=== COMPREHENSIVE ROC/PR ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+
+### ROC/PR ANALYSIS TAB OVERVIEW
+Purpose: Evaluate individual feature performance as biomarkers using ROC (Receiver Operating Characteristic) and PR (Precision-Recall) curves, calculate AUC/AUPRC metrics, compare multiple features, and identify optimal classification biomarkers for group discrimination
+
+**GROUP COMPARISON:**
+
+*rocGroup1 & rocGroup2 (selectizeInputs):*
+- rocGroup1: Control/Reference group (negative class in ROC terminology)
+- rocGroup2: Case/Comparison group (positive class, what you're trying to detect)
+- Binary comparison required (ROC/PR analysis works on 2-group comparisons)
+- Group assignment matters: Swap groups to invert interpretation (sensitivity becomes specificity)
+- Example: Control vs Treatment → measures how well features discriminate treatment response
+
+**FEATURE SELECTION:**
+
+*roc_feature_source (selectInput):*
+- \"All Features\": Evaluate all measured features (comprehensive but may include noise)
+- \"PCA Top N Features\": Use top N features from PCA loadings (variance-driven selection)
+- \"ML-Selected Features\": Use features from ML feature selection (LASSO, RF, RFE, Boruta, Permutation)
+- Default: \"All Features\"
+- Recommendation: Use \"ML-Selected Features\" for focused biomarker validation, \"All Features\" for discovery
+
+*roc_feature_set_status (dynamic UI):*
+- Shows availability status of selected feature source
+- Displays feature counts or warnings if prerequisite analyses needed
+- Helps users verify data availability before running analysis
+
+**ANALYSIS PARAMETERS:**
+
+*Significance Thresholds (Feature Pre-filtering):*
+- rocPvalCutoff (numeric, default: 0.05, range 0.001-0.1): P-value threshold for including features in ROC analysis
+  - Lower (0.001-0.01): Only highly significant features, fewer curves, focused analysis
+  - Default (0.05): Standard statistical significance
+  - Higher (0.05-0.1): More features, exploratory, may include weak biomarkers
+- roc_fdr_cutoff (numeric, default: 0.05, range 0-0.1): FDR threshold (ROTS only)
+  - Only visible when sig_method = \"ROTS\"
+  - Controls false discovery rate in multiple testing
+  - Use when analyzing hundreds/thousands of features
+- rocLogFCCutoff (numeric, default: 1.0, range 0.5-4): Log2 fold change threshold
+  - 0.5 = 1.4-fold change (permissive, includes subtle changes)
+  - 1.0 = 2-fold change (standard, recommended)
+  - 2.0 = 4-fold change (stringent, large effect sizes only)
+- Purpose: Pre-filter features before ROC computation (reduces noise, focuses on differentially expressed features)
+
+*Display Options:*
+- rocShowCombined (checkbox, default: TRUE): Show combined ROC curve (average of all features)
+  - TRUE: Displays combined curve representing overall discrimination ability
+  - FALSE: Shows only individual feature curves
+  - Combined curve useful for overall model performance assessment
+- rocUseSelectedMolecules (checkbox, default: FALSE): Enable specific feature selection
+  - FALSE: Analyze all features passing thresholds (automated selection)
+  - TRUE: Manually select specific features to analyze
+  - Use for focused analysis on candidate biomarkers or hypothesis testing
+- rocSelectedMolecules (selectizeInput, multiple = TRUE): Manually select specific features
+  - Only visible when rocUseSelectedMolecules = TRUE
+  - Type-ahead search functionality for finding features
+  - Select 1+ features for targeted ROC/PR analysis
+  - Overrides threshold-based selection when enabled
+- rocMaxCurves (numeric, default: 10, range 1-50): Maximum number of curves to display
+  - Controls visual complexity (too many curves → cluttered plot)
+  - 5-10: Clear visualization, focus on top performers
+  - 20-30: Comprehensive view, useful for comparison
+  - 50: Maximum, only for detailed exploration
+  - Features ranked by AUC, top N shown
+
+**VISUALIZATION OPTIONS:**
+
+*roc_label_type (radioButtons):*
+- \"Feature Names\": Use descriptive feature names (e.g., \"Gene_XYZ\", \"Protein_ABC\")
+- \"IDs\": Use feature IDs (e.g., row numbers, database IDs)
+- Default: \"Feature Names\" (more interpretable)
+- Choose IDs if feature names are long or non-descriptive
+
+*rocColorPalette (selectInput):*
+- **Sequential palettes (good for ordered data):**
+  - viridis: Perceptually uniform, colorblind-friendly, default (recommended)
+  - plasma: High contrast, good for emphasis
+  - inferno: Warm colors, good for presentations
+  - magma: Dark background compatible
+  - cividis: Optimized for colorblind viewers
+- **Qualitative palettes (good for categorical distinction):**
+  - Set1: Bright, distinct colors (max 9 curves)
+  - Set2: Softer, pastel colors (max 8 curves)
+  - Set3: Light, subtle colors (max 12 curves)
+  - Dark2: Dark, rich colors (max 8 curves)
+  - Paired: Pairs of related colors (max 12 curves)
+  - Spectral: Rainbow spectrum (max 11 curves)
+- Default: \"viridis\" (best for most use cases)
+- Choose qualitative palettes (Set1, Dark2, Paired) when comparing distinct features
+
+*Plot Dimensions:*
+- rocWidth (numeric, default: 8, range 4-20): Plot width in inches
+- rocHeight (numeric, default: 6, range 4-20): Plot height in inches
+- Standard: 8×6 inches (suitable for reports, presentations)
+- Large: 12-16 inches (posters, detailed inspection)
+- Small: 4-6 inches (supplementary materials, compact figures)
+
+**OUTPUT TABS:**
+
+*Tab 1: ROC Curves*
+- **rocPlot**: ROC curve visualization
+  - X-axis: False Positive Rate (FPR) = 1 - Specificity = FP/(FP+TN)
+  - Y-axis: True Positive Rate (TPR) = Sensitivity = Recall = TP/(TP+FN)
+  - Diagonal line (y=x): Random classifier (AUC = 0.5, no discrimination)
+  - Curves above diagonal: Better than random (good biomarkers)
+  - Curves below diagonal: Worse than random (inverted relationship, consider flipping)
+  - Top-left corner (0,1): Perfect classifier (100% sensitivity, 0% FPR)
+- **rocTable**: AUC (Area Under Curve) results for each feature
+  - AUC = 1.0: Perfect discrimination (no overlap between groups)
+  - AUC = 0.9-1.0: Excellent biomarker
+  - AUC = 0.8-0.9: Good biomarker
+  - AUC = 0.7-0.8: Fair biomarker
+  - AUC = 0.6-0.7: Poor biomarker
+  - AUC = 0.5: No discrimination (random)
+  - AUC < 0.5: Inverted relationship (flip groups or negate feature)
+- **downloadRocPlotBtn**: Download ROC plot as high-resolution image
+- **downloadRocDataBtn**: Download AUC table and ROC coordinates
+
+*Tab 2: PR Curves (Precision-Recall)*
+- **prPlot**: Precision-Recall curve visualization
+  - X-axis: Recall = Sensitivity = TPR = TP/(TP+FN)
+  - Y-axis: Precision = Positive Predictive Value (PPV) = TP/(TP+FP)
+  - Baseline (horizontal line): Random classifier = proportion of positives
+  - Curves above baseline: Better than random
+  - Top-right corner (1,1): Perfect classifier
+  - PR curves more informative than ROC for imbalanced datasets
+- **prTable**: AUPRC (Area Under Precision-Recall Curve) results
+  - AUPRC = 1.0: Perfect precision and recall
+  - AUPRC > baseline: Better than random (baseline = prevalence of positive class)
+  - AUPRC values lower than AUC for same data (normal, especially with imbalance)
+  - Compare to baseline, not absolute thresholds (baseline varies by class balance)
+- **downloadPrPlotBtn**: Download PR plot
+
+*Tab 3: Combined View*
+- **combinedPlot**: Side-by-side ROC and PR curves for direct comparison
+  - Left panel: ROC curves
+  - Right panel: PR curves
+  - Same color coding for each feature across both plots
+  - Facilitates ROC vs PR comparison for each biomarker
+- **combinedTable**: Combined results showing both AUC and AUPRC metrics
+  - Columns: Feature name, AUC (ROC), AUPRC (PR), Fold change, p-value
+  - Sortable by any metric
+  - Use to identify features strong in both ROC and PR (robust biomarkers)
+- **downloadCombinedPlotBtn**: Download combined plot
+
+**ROC CURVE INTERPRETATION:**
+
+*Understanding ROC Curves:*
+- **Purpose**: Evaluate classifier performance across all possible decision thresholds
+- **X-axis (FPR)**: Proportion of negatives incorrectly classified as positive (false alarms)
+- **Y-axis (TPR/Sensitivity)**: Proportion of positives correctly identified
+- **Curve shape**: Trade-off between sensitivity and specificity at different thresholds
+- **AUC interpretation**: Probability that classifier ranks random positive instance higher than random negative instance
+
+*Key Points on ROC Curve:*
+- **Top-left**: High sensitivity, low FPR (best operating point, few false alarms)
+- **Top-right**: High sensitivity, high FPR (catch all positives but many false alarms)
+- **Bottom-left**: Low sensitivity, low FPR (conservative, miss many positives)
+- **Bottom-right**: Low sensitivity, high FPR (worst, miss positives and many false alarms)
+
+*Selecting Operating Point (Threshold):*
+- **Maximize sensitivity**: Top-right region (screening tests, don't miss any cases)
+- **Maximize specificity**: Bottom-left region (confirmatory tests, minimize false positives)
+- **Balance**: Top-left corner, or use Youden's Index (sensitivity + specificity - 1)
+- **Cost-sensitive**: Weight sensitivity/specificity by misclassification costs
+
+*ROC Curve Patterns:*
+- **Steep rise near origin**: Good separation at low FPR (ideal for confirmatory tests)
+- **Gradual rise**: Poor separation, difficult to find good threshold
+- **Concave (bowed upward)**: Good biomarker, better than linear
+- **Near diagonal**: Poor biomarker, little discriminatory power
+
+**PRECISION-RECALL CURVE INTERPRETATION:**
+
+*Understanding PR Curves:*
+- **Purpose**: Evaluate performance when positive class is rare or imbalanced (e.g., disease prevalence 5%)
+- **X-axis (Recall)**: Same as sensitivity, proportion of positives found
+- **Y-axis (Precision)**: Proportion of positive predictions that are correct
+- **Baseline**: Random classifier = prevalence (e.g., 10% prevalence → baseline AUPRC = 0.1)
+- **PR curves sensitive to class imbalance**: Highlights performance on minority class
+
+*Key Differences from ROC:*
+- ROC optimistic for imbalanced data (high TN count inflates specificity)
+- PR focuses on positive class performance (ignores true negatives)
+- PR curves can have non-monotonic shape (precision can decrease as recall increases)
+- Use PR when positive class is rare (<10%) or cost of false positives is high
+
+*PR Curve Patterns:*
+- **High precision at high recall**: Excellent biomarker, maintains accuracy even when finding most positives
+- **Precision drops rapidly with recall**: Poor biomarker, many false positives to find true positives
+- **Flat high precision**: Good biomarker, consistent positive predictive value
+- **Sawtooth pattern**: Small dataset or discrete predictions
+
+*When to Use PR vs ROC:*
+- **Use ROC curves when:**
+  - Classes roughly balanced (40-60% prevalence)
+  - Both false positives and false negatives equally important
+  - Want to evaluate across all possible thresholds comprehensively
+  - Comparing to published literature (ROC more common)
+- **Use PR curves when:**
+  - Severe class imbalance (<10% or >90% prevalence)
+  - Positive class is rare (disease diagnosis, fraud detection)
+  - False positives more costly than false negatives (or vice versa)
+  - Want realistic assessment of positive class performance
+
+**COMBINED VIEW INTERPRETATION:**
+
+*Comparing ROC and PR for Same Features:*
+- High AUC + High AUPRC: Robust biomarker, works well regardless of balance
+- High AUC + Low AUPRC: Good separation but poor precision (many false positives in imbalanced setting)
+- Low AUC + High AUPRC: Rare, suggests issues (recheck data or analysis)
+- Low AUC + Low AUPRC: Poor biomarker, not useful for classification
+
+*Interpreting Discrepancies:*
+- ROC looks good, PR looks bad: Likely class imbalance, high TN count masking poor precision
+- Both look good: Robust biomarker, use with confidence
+- Both look bad: Not a useful biomarker, discard or combine with other features
+
+**DOWNLOAD OPTIONS:**
+
+1. downloadRocPlotBtn: Download ROC curves
+   - Format: PNG (default, 300 DPI) or PDF (vector)
+   - Includes all visible curves, legend, axis labels
+   
+2. downloadRocDataBtn: Download ROC analysis data
+   - Format: CSV or Excel
+   - Contents: AUC values, feature names, p-values, fold changes, ROC coordinates
+   
+3. downloadPrPlotBtn: Download PR curves
+   - Format: PNG or PDF
+   - Includes precision-recall curves for all features
+   
+4. downloadCombinedPlotBtn: Download combined ROC+PR plot
+   - Format: PNG or PDF
+   - Side-by-side comparison, publication-ready
+
+**BEST PRACTICES:**
+
+1. **Group Assignment:**
+   - Assign control/reference as Group 1, case/treatment as Group 2 (standard convention)
+   - AUC > 0.5: Group 2 has higher feature values (upregulated)
+   - AUC < 0.5: Group 1 has higher values (downregulated), consider swapping or negating
+
+2. **Threshold Selection:**
+   - Start with default (p < 0.05, Log2FC > 1.0) to focus on significant features
+   - Stringent thresholds (p < 0.01, Log2FC > 1.5): High-confidence biomarkers only
+   - Lenient thresholds (p < 0.1, Log2FC > 0.5): Exploratory, include weak signals
+
+3. **Feature Source Strategy:**
+   - \"All Features\": Discovery mode, identify novel biomarkers
+   - \"ML-Selected Features\": Validation mode, confirm ML selections are good biomarkers
+   - \"PCA Top N\": Variance-driven selection, good for exploratory analysis
+
+4. **Visualization Tips:**
+   - Limit to 10-15 curves for clarity (use rocMaxCurves)
+   - Use qualitative palettes (Set1, Dark2) for distinct feature comparison
+   - Use sequential palettes (viridis) for ranking/ordering by performance
+   - Increase plot size (10-12 inches) for presentations/posters
+
+5. **ROC vs PR Decision:**
+   - Balanced data (30-70% prevalence): Use ROC curves (standard, interpretable)
+   - Imbalanced data (<10% or >90%): Use PR curves (realistic performance)
+   - Unsure: Check Combined View, compare both metrics
+
+6. **Interpreting Results:**
+   - Top biomarkers: AUC > 0.85 (ROC) or AUPRC significantly above baseline (PR)
+   - Validate top biomarkers in independent dataset (avoid overfitting)
+   - Single-feature AUC = 0.9+ is rare (excellent biomarker, verify)
+   - Combining multiple features often improves performance (build multivariate model)
+
+7. **Common Pitfalls:**
+   - Overfitting: High AUC on training data doesn't guarantee real performance (need validation)
+   - Ignoring class imbalance: ROC can be misleadingly optimistic
+   - Comparing AUCs across different datasets: Baseline prevalence matters
+   - Using AUC alone: Check curve shape (steep vs gradual rise) and operating point
+
+8. **Specific Molecule Selection Workflow:**
+   - Enable \"Select Specific Molecules\" checkbox
+   - Type feature names in search box (autocomplete available)
+   - Select 2-5 features for focused comparison
+   - Use to validate candidate biomarkers or compare known markers
+
+9. **Performance Benchmarks:**
+   - AUC 0.9-1.0: Excellent biomarker, consider for clinical translation
+   - AUC 0.8-0.9: Good biomarker, useful for research or panels
+   - AUC 0.7-0.8: Moderate biomarker, may work in combination
+   - AUC < 0.7: Poor single biomarker, explore feature combinations or discard
+
+10. **Statistical Considerations:**
+    - AUC confidence intervals: Use bootstrap or DeLong's test (not built-in, external analysis)
+    - Multiple testing: When evaluating many features, adjust p-values (already done in pre-filtering)
+    - Small sample size: AUC estimates unstable (n<30 per group), interpret cautiously
+    - Cross-validation: App uses all data (no CV), external validation recommended
+
+When users ask about ROC/PR analysis, explain group assignment logic, ROC vs PR curve differences, AUC vs AUPRC interpretation, when to use each curve type, how class imbalance affects interpretation, threshold selection for operating points, specific molecule selection workflow, color palette choices, and best practices for identifying robust single-feature biomarkers.
+
+===  END ROC/PR TAB DOCUMENTATION ===

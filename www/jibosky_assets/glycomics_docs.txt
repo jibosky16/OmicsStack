@@ -1,0 +1,88 @@
+=== COMPREHENSIVE GLYCOMICS TAB UI ELEMENTS AND OPTIONS ===
+
+### GLYCOMICS TAB OVERVIEW
+
+The Glycomics tab provides specialized analysis for glycan (carbohydrate) structures, including notation parsing, structural visualization, and glycan-specific statistical analysis. This is essential for glycoproteomics and glycobiology studies.
+
+**NOTATION SYSTEM SELECTION:**
+The system supports multiple glycan notation formats:
+- **Five-Number System**: Hex_HexNAc_Fuc_NeuAc_NeuGc format (e.g., 5_4_1_2_0)
+- **Four-Number System**: Hex_HexNAc_Fuc_Sia format (e.g., 5_4_1_2)
+- **Oxford Notation**: Symbolic notation (e.g., F(6)A2G2S2)
+- **Custom**: User-defined notation patterns
+
+**NOTATION PARSING:**
+- Automatically extracts monosaccharide composition from feature names
+- Validates glycan structures against known rules
+- Reports parsing success rate and problematic entries
+- Supports manual correction of parsing errors
+
+**MONOSACCHARIDE COMPONENTS:**
+- **Hex (Hexose)**: Mannose, Galactose, Glucose
+- **HexNAc (N-acetylhexosamine)**: GlcNAc, GalNAc
+- **Fuc (Fucose)**: Core and antenna fucosylation
+- **NeuAc (N-acetylneuraminic acid)**: Common sialic acid
+- **NeuGc (N-glycolylneuraminic acid)**: Non-human sialic acid
+- **Phospho**: Phosphorylated glycans
+- **Sulfate**: Sulfated glycans
+
+**DERIVED TRAITS CALCULATION:**
+The system calculates biologically meaningful glycan traits:
+- **Sialylation**: Degree of sialic acid modification
+- **Fucosylation**: Core vs antenna fucose content
+- **Galactosylation**: Terminal galactose presence
+- **Branching**: Mono-, bi-, tri-, tetra-antennary structures
+- **Bisecting GlcNAc**: Presence of bisecting residue
+- **High Mannose**: Mannose-rich structures
+
+**STRUCTURAL VISUALIZATION:**
+- **2D Glycan Drawings**: SNFG (Symbol Nomenclature for Glycans) representations
+- **Composition Plots**: Monosaccharide distribution across samples
+- **Trait Heatmaps**: Derived trait patterns across groups
+
+**STATISTICAL ANALYSIS:**
+- Group-wise comparison of glycan abundances
+- Derived trait comparisons between conditions
+- Multiple testing correction for glycan features
+- Effect size calculation for glycan changes
+
+**ANALYSIS OPTIONS:**
+- **Normalization**: Total area, median, or reference glycan normalization
+- **Trait Aggregation**: Mean, median, or weighted aggregation of glycan traits
+- **Significance Testing**: Parametric and non-parametric options
+
+**GLYCAN TRAIT INTERPRETATION:**
+- Increased sialylation often associated with inflammation or cancer
+- Core fucosylation changes linked to liver disease and cancer
+- Galactosylation changes associated with aging and autoimmunity
+- Branching complexity related to disease progression
+
+**VISUALIZATION OUTPUTS:**
+- **Glycan Profile Plot**: Individual glycan abundances by group
+- **Trait Comparison Plot**: Derived trait distributions
+- **Structure Gallery**: Visual representation of significant glycans
+
+**EXPORT OPTIONS:**
+- **Download Parsed Glycans**: CSV with monosaccharide compositions
+- **Download Derived Traits**: CSV with calculated glycan traits
+- **Download Statistics**: CSV with statistical results
+- **Download Visualizations**: PNG/PDF of glycan plots
+
+**BEST PRACTICES:**
+1. Verify notation parsing accuracy before analysis
+2. Use appropriate normalization for your glycomics platform
+3. Focus on derived traits for biological interpretation
+4. Validate structural assignments with MS/MS data when available
+5. Consider glycosite-specific analysis for glycoproteomics
+6. Compare findings with glycan databases (GlyGen, GlyConnect)
+7. Account for technical variation in complex glycan measurements
+
+**GLYCOMICS-SPECIFIC CONSIDERATIONS:**
+- Glycan isomers may require additional separation data
+- Site-specific glycosylation patterns add another dimension
+- Species differences in glycosylation (human vs mouse)
+- Technical platform affects glycan coverage and quantification
+
+When users ask about glycan analysis, notation parsing, glycan traits, glycobiology, or glycan visualization, explain the specialized parameters, biological significance, and interpretation guidelines.
+
+=== END GLYCOMICS TAB DOCUMENTATION ===

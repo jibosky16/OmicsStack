@@ -1,0 +1,433 @@
+=== COMPREHENSIVE MULTI-OMICS INTEGRATION TAB UI ELEMENTS AND OPTIONS ===
+
+### MULTI-OMICS INTEGRATION TAB OVERVIEW
+Purpose: Integrate and analyze multiple omics datasets simultaneously to uncover cross-layer biological insights, shared variation patterns, and inter-omics relationships
+
+**WORKFLOW OVERVIEW:**
+1. Load previously saved analyses (.oms files) from the Data tab or browse for external files
+2. Select integration method based on research question (MOFA for exploration, DIABLO for biomarker discovery, Correlation for network analysis, Pathway for functional integration)
+3. Configure method-specific parameters
+4. Run integration analysis
+5. Explore results across multiple visualization tabs
+6. Save trained models for reproducibility and downstream analysis
+
+**DATA LOADING OPTIONS:**
+
+*Load Saved Analyses Section:*
+- **Browse for .oms files**: Upload previously saved analysis files from file browser
+  - Click "Browse" button, select one or more .oms files
+  - Files must contain normalized data with sample metadata
+- **Load from session saved analyses**: Select from analyses saved during current session in the Data tab
+  - Checkbox selection interface showing available analyses
+  - Displays: Analysis name, omics type, number of features/samples
+- **Multi-select**: Select 2+ analyses for N-integration (matching samples across datasets)
+  - Minimum 2 datasets required, maximum depends on method (MOFA/DIABLO support unlimited, others typically 2-3)
+  - Select analyses representing different omics layers (transcriptomics, proteomics, metabolomics, etc.)
+
+*File Format:*
+- .oms format: OmicsStack native format containing normalized data, metadata, feature names, sample groupings, and analysis parameters
+- Requirement: Analyses must have overlapping samples for integration (sample IDs matched automatically)
+- Metadata extraction: Group assignments, batch information, and experimental variables automatically extracted from loaded analyses
+
+*Loaded Analyses Summary:*
+- Real-time display of loaded datasets showing: omics type, number of features, number of samples, group information
+- Sample matching summary: Shows common samples across datasets, warns if sample overlap insufficient (<50% overlap)
+
+**INTEGRATION METHOD SELECTION:**
+
+Four integration methods available, each suited for different research questions:
+
+**1. MOFA - Multi-Omics Factor Analysis:**
+- **Type**: Unsupervised, factor-based decomposition
+- **Purpose**: Identify shared and dataset-specific sources of variation across omics layers
+- **Best for**: Exploratory analysis, understanding data structure, identifying latent factors driving variation
+- **How it works**: Decomposes multi-omics data into latent factors, each capturing coordinated variation across datasets. Factors can be shared (explain variation in multiple datasets) or specific (dataset-unique patterns)
+- **Output**: Factor scores per sample, variance explained per factor per dataset, top contributing features per factor
+- **Strengths**: Handles missing data, identifies both shared and unique variation, interpretable factors
+- **Limitations**: Unsupervised (doesn't use group labels), requires sufficient sample size (n>20 recommended)
+- **Badge**: ⭐ Recommended, Unsupervised
+
+**2. DIABLO - Multi-Block PLS-DA:**
+- **Type**: Supervised, discriminant analysis
+- **Purpose**: Identify features across multiple omics that discriminate between biological groups
+- **Best for**: Biomarker discovery, classification, supervised integration when groups are known
+- **How it works**: Extends PLS-DA to multiple datasets, finding components that maximize covariance between datasets while discriminating groups. Selects subset of features per dataset contributing to group separation
+- **Output**: Sample scores per component, selected features per dataset (keepX), classification performance, feature loadings
+- **Strengths**: Directly targets group differences, performs feature selection, provides classification accuracy
+- **Limitations**: Requires group labels, can overfit with small sample sizes, assumes linear relationships
+- **Badge**: ⭐ Recommended, Supervised
+
+**3. Cross-Omics Correlation Network:**
+- **Type**: Network-based, correlation analysis
+- **Purpose**: Identify pairs of features across omics with significant correlations, build inter-omics networks
+- **Best for**: Discovering feature-feature relationships, understanding cross-talk between omics layers, network biology
+- **How it works**: Computes pairwise correlations between all features across datasets, filters by correlation threshold and p-value, constructs network graph showing connections
+- **Output**: Correlation matrix, edge list (significant pairs), network plot, node degree (connectivity), top connected features
+- **Strengths**: Model-agnostic, directly interpretable, identifies specific feature pairs
+- **Limitations**: Pairwise only (doesn't capture higher-order interactions), can be noisy with many features, requires multiple testing correction
+- **Badge**: Network-based, Unsupervised
+
+**4. Pathway-Level Integration:**
+- **Type**: Pathway/functional enrichment-based
+- **Purpose**: Map all omics to biological pathways, identify concordant pathway changes across layers
+- **Best for**: Functional interpretation, identifying pathways affected across multiple omics, mechanistic insights
+- **How it works**: Maps features from each omics to pathways (KEGG, Reactome, GO), performs enrichment analysis per dataset, identifies pathways significant in multiple datasets (concordant pathways)
+- **Output**: Enriched pathways per dataset, concordant pathways (significant across datasets), pathway overlap visualizations
+- **Strengths**: Biologically interpretable, reduces complexity via pathway aggregation, connects omics to known biology
+- **Limitations**: Limited to annotated pathways (missing novel biology), pathway databases biased toward well-studied genes, requires ID mapping
+- **Badge**: Network-based, Unsupervised
+
+**METHOD SELECTION DECISION TREE:**
+- **Do you have group labels?** YES → Consider DIABLO (supervised). NO → Use MOFA or Correlation
+- **Goal is biomarker discovery?** YES → DIABLO (feature selection + classification). NO → MOFA (exploration) or Correlation (network)
+- **Want to understand overall data structure?** YES → MOFA (factor decomposition)
+- **Want specific feature-feature relationships?** YES → Correlation Network
+- **Want functional/pathway interpretation?** YES → Pathway Integration
+- **Exploratory vs hypothesis-driven?** Exploratory → MOFA, Hypothesis-driven → DIABLO or Pathway
+- **Large feature sets (>5000)?** MOFA or Pathway (reduce dimensionality); avoid full Correlation (computationally intensive)
+
+**MOFA PARAMETERS:**
+
+*Essential Parameters:*
+- **Number of Factors** (slider, 2-20, default 10): How many latent factors to learn
+  - Lower (2-5): Simpler models, may miss variation
+  - Default (10): Balanced for most datasets
+  - Higher (15-20): Captures more variation, may include noise
+  - Rule: Adjust based on variance explained (target 50-70% total)
+  - Recommendation: Start with 10, increase if variance explained is low (<50% total)
+- **Max Iterations** (numeric, 100-5000, default 1000): Maximum training iterations
+  - Lower (100-500): Faster but may not converge
+  - Default (1000): Sufficient for most datasets
+  - Higher (2000-5000): Ensures convergence for complex data
+  - Watch convergence plot to determine if more iterations needed
+- **Convergence Threshold** (slider, 0.0001-0.01, default 0.001): Stopping criterion for training
+  - Lower (0.0001): Stricter convergence, longer training
+  - Default (0.001): Standard balance
+  - Higher (0.01): Looser convergence, faster but less precise
+- **Output Filename** (text input, optional): Save trained model to specific .hdf5 file
+  - Leave blank: Temporary file used (model not saved permanently)
+  - Specify name: Model saved to working directory (e.g., "mofa_analysis_results.hdf5")
+  - Use for: Reproducibility, sharing models, loading in Python/R later
+
+*Sample Grouping Variable (Optional):*
+- **Purpose**: Enable supervised MOFA variant (uses group information to inform factor learning)
+- **Source**: Automatically extracted from loaded analyses (Biological Groups, Experimental Groups, Other Groupings)
+- **Display**: Organized dropdown showing available grouping variables with categories (Biological vs Experimental)
+- **When to use**: When you want factors to capture group-specific variation, improve interpretability
+- **When to skip**: For purely unsupervised exploration, when groups may confound biological variation
+
+*Advanced Options (Collapsed by default, click to expand):*
+- **Scale features** (checkbox, default TRUE): Standardize features to zero mean, unit variance before analysis
+  - Enable (recommended): Prevents features with large magnitude from dominating
+  - Disable: When features already scaled or want to preserve magnitude information
+- **Enable sparsity** (checkbox, default FALSE): Use sparse factors (L1 regularization) to select subset of important features per factor
+  - Enable: Improves interpretability, identifies key features per factor
+  - Disable: All features contribute (dense loadings)
+  - Trade-off: Sparsity aids interpretation but may miss subtle coordinated patterns
+  - Recommended: Enable for feature discovery, disable for comprehensive variation modeling
+- **Random Seed** (numeric, 1-1000000, default 42): Set for reproducible results across runs
+  - Always set for reproducibility (especially for publications)
+  - Different seeds may yield slightly different factor orders but similar variance explained
+- **Drop non-informative factors** (checkbox, default TRUE): Automatically remove factors with variance below threshold during training
+  - Enable (recommended): Removes noise factors, cleaner results
+  - Disable: Keeps all factors regardless of variance contribution
+  - Threshold typically <1% variance explained per factor
+
+**DIABLO PARAMETERS:**
+
+*Grouping Variable:*
+- **Grouping Variable** (select input, auto-populated): Choose biological/experimental grouping for supervised analysis
+  - Source: Extracted from loaded analyses metadata
+  - Categories: Biological Groups (e.g., Disease vs Control), Experimental Groups (e.g., Batch, Treatment)
+  - Requirement: Groups must have sufficient samples per group (n≥5 per group recommended)
+  - Multi-class supported: Can handle 2+ groups (binary or multi-class classification)
+
+*Core Parameters:*
+- **Number of Components** (slider, 2-10, default 2): PLS-DA components to compute
+  - 2: Sufficient for binary classification, easy visualization
+  - 3-5: Better for multi-class or capturing complex patterns
+  - >5: Risk of overfitting, use with caution
+  - Rule: Number of components < min(n_samples, n_features) / 10
+- **Features to Keep per Component** (slider, 5-100, default 50): How many features selected per dataset per component
+  - Lower (5-20): Aggressive feature selection, minimal biomarker signature
+  - Default (50): Moderate selection
+  - Higher (80-100): Permissive, retains more features
+  - Trade-off: Fewer features = simpler model, easier interpretation; More features = better performance, harder to validate
+- **Auto-tune parameters** (checkbox, default FALSE): Perform cross-validation to optimize number of components and keepX values
+  - Enable: Finds optimal parameters automatically via CV (slow, 5-30 minutes)
+  - Disable: Uses user-specified values (fast)
+  - Recommended: Enable for final analysis, disable for exploratory runs
+  - CV scheme: Stratified k-fold (preserves group proportions)
+
+**CORRELATION NETWORK PARAMETERS:**
+
+*Correlation Method:*
+- **Pearson**: Linear correlation, assumes normal distribution. Use for: continuous data, linear relationships
+- **Spearman**: Rank-based correlation, robust to outliers. Use for: non-normal data, monotonic relationships
+- **Kendall**: Tau correlation, robust, slower. Use for: small sample sizes, ordinal data
+
+*Filtering Thresholds:*
+- **Correlation Threshold** (slider, 0-1, default 0.7): Minimum |correlation| to include edge in network
+  - Lower (0.3-0.5): More edges, noisier network, captures weak relationships
+  - Default (0.7): Moderate stringency, strong relationships
+  - Higher (0.8-0.9): Fewer edges, very strong relationships only
+  - Recommendation: Start at 0.7, adjust based on network density (target 50-200 edges for visualization)
+- **P-value Cutoff** (slider, 0.001-0.1, default 0.05): Statistical significance threshold for correlation
+  - Standard: 0.05 (typical)
+  - Stringent: 0.01 or 0.001 (reduce false positives)
+  - Multiple testing: Consider Bonferroni/FDR correction for many comparisons
+- **Top Features per Dataset** (numeric, 10-500, default 50): Limit analysis to top N most variable features per dataset (reduces computational burden)
+  - Use when: >1000 features per dataset (otherwise too slow)
+  - Selection: Top N by variance or coefficient of variation
+  - Trade-off: Faster computation, may miss low-variance but important features
+  - Recommendation: 50-100 for exploratory analysis, all features for comprehensive analysis if feasible
+
+**PATHWAY INTEGRATION PARAMETERS:**
+
+*Pathway Database:*
+- **KEGG**: Kyoto Encyclopedia of Genes and Genomes - metabolic and signaling pathways
+- **Reactome**: Curated biological pathways, detailed molecular interactions
+- **GO Biological Process**: Gene Ontology terms describing biological processes
+
+*Enrichment Settings:*
+- **P-value Cutoff** (slider, 0.001-0.1, default 0.05): Enrichment significance threshold
+- **Show only concordant pathways** (checkbox, default TRUE): Display only pathways significant in 2+ datasets
+  - Enable: Focuses on cross-omics coordinated pathways (recommended)
+  - Disable: Shows all enriched pathways per dataset
+  - Use concordant for: Identifying robust cross-layer signals, prioritizing pathways for validation
+
+**INTEGRATION RESULTS TABS:**
+
+*Tab 1: Sample Matching*
+- **Sample Match Plot**: Venn diagram showing sample overlap between datasets
+  - Circles represent datasets, overlaps show common samples
+  - Numbers indicate sample counts in each region
+  - Use to: Verify sufficient overlap before integration (>50% common samples recommended)
+- **Sample Match Table**: Lists common samples, shows which datasets each sample appears in, displays missing data percentages
+  - Sortable/filterable by sample ID
+  - Missing data column: % of features missing per sample per dataset
+
+*Tab 2: Visualization*
+- **MOFA**: Factor scores plot (PC-like scatter) showing samples colored by groups, factors as axes
+  - X-axis: Factor 1 (highest variance)
+  - Y-axis: Factor 2 (second highest variance)
+  - Points: Samples, colored by group (if grouping variable specified)
+- **DIABLO**: Component scores plot showing sample separation by discriminant components
+  - Clear group clustering = successful discrimination
+  - Overlapping groups = poor discrimination or insufficient components
+- **Correlation**: Heatmap of top cross-omics correlations
+  - Rows/Columns: Features from different datasets
+  - Color: Correlation strength (red=positive, blue=negative)
+  - Hierarchical clustering reveals feature modules
+- **Download button**: Save plot as high-resolution image
+
+*Tab 3: Feature Importance*
+- **MOFA**: Variance explained per factor per dataset (bar plot)
+  - X-axis: Factors
+  - Y-axis: Variance explained (%)
+  - Bars grouped by dataset (different colors)
+  - Interpretation: High bars in multiple datasets = shared factor, high in one = dataset-specific
+- **DIABLO**: Top selected features per block (bar plot of importance scores)
+  - X-axis: Feature importance (loading magnitude)
+  - Y-axis: Feature names
+  - Facets: One panel per dataset/block
+  - Top features = biomarkers discriminating groups
+- **Correlation**: Most connected features (node degree plot)
+  - X-axis: Number of connections (node degree)
+  - Y-axis: Feature names
+  - Color by dataset
+  - High-degree features = hub features, central to cross-omics network
+- **Feature Importance Table**: Sortable/searchable table with numeric scores, factor/block assignments, feature names
+
+*Tab 4: Cross-Omics Network*
+- **MOFA**: Heatmap of factor activity across samples (shows which factors active in which samples/groups)
+  - Rows: Factors
+  - Columns: Samples
+  - Color: Factor score (red=high activity, blue=low activity)
+  - Use to: Identify sample-specific factor patterns, validate factor-group associations
+- **Correlation**: Network graph visualization (nodes = features colored by dataset, edges = correlations, thickness = correlation strength)
+  - Node size: Proportional to degree (number of connections)
+  - Node color: Dataset (e.g., blue=transcriptomics, red=metabolomics)
+  - Edge color: Correlation direction (red=positive, blue=negative)
+  - Edge thickness: Correlation magnitude
+  - Layout: Force-directed (features with strong correlations positioned closer)
+  - Interactive: Hover over nodes/edges to see feature names and correlation values
+- **Download button**: Save network plot or export edge list
+
+*Tab 5: Data Overview (MOFA only)*
+- **Purpose**: Visualize input data structure before analysis
+- **Plot**: Heatmap showing views (datasets) vs groups with dimensionality (features × samples) and missing data percentage
+- **Use**: Verify data loaded correctly, check for extreme missingness, understand input structure
+
+*Tab 6: Feature Scatter (MOFA only)*
+- **Purpose**: Examine relationship between top contributing features and factor scores
+- **Controls**:
+  - **Select View**: Choose which omics dataset to plot features from
+  - **Select Factor**: Choose which factor to use for x-axis
+  - **Number of Features** (slider 1-20, default 5): How many top features to plot
+  - **Add Linear Regression** (checkbox, default TRUE): Overlay regression line showing feature-factor relationship
+  - **Color by**: Factor (continuous gradient) or Group (categorical)
+- **Plot**: Scatter plots showing feature expression vs factor score for top contributing features
+- **Interpretation**: Strong linear relationship = feature drives factor; color by group reveals group-specific patterns
+
+*Tab 7: Dimensionality Reduction (MOFA only)*
+- **Purpose**: Non-linear visualization of MOFA factors using UMAP or t-SNE
+- **Method** (dropdown): UMAP (faster, preserves global structure) or t-SNE (better local structure)
+- **Color by** (dropdown): Any grouping variable from metadata (auto-populated from loaded analyses)
+- **Perplexity** (slider, 5-50, default 30, t-SNE only): Neighborhood size parameter
+  - Lower (5-15): Emphasizes local structure
+  - Default (30): Balanced
+  - Higher (40-50): Emphasizes global structure
+- **Compute Reduction button**: Run algorithm (may take 10-60 seconds)
+- **Plot**: 2D scatter of samples, colored by selected variable
+- **Use**: Validate MOFA results, visualize sample clustering, check for batch effects
+
+*Tab 8: Dimension Naming (MOFA only)*
+- **Purpose**: Rename factors and views for clearer interpretation and publication
+- **Factor Names section**: Text inputs for each factor (e.g., rename "Factor1" to "Cell Cycle Factor")
+- **View Names section**: Text inputs for each view/dataset (e.g., rename "Dataset1" to "Transcriptomics")
+- **Apply Names button**: Updates all plots and tables with new names
+- **Persistence**: Names saved with model if exported
+
+*Tab 9: Save Model (MOFA only)*
+- **Purpose**: Save trained MOFA model for reproducibility and future use
+- **Model Name** (text input): User-friendly name for the model
+- **Description** (text input, optional): Brief description of analysis purpose/conditions
+- **Download as RDS** (button): R native format, can be loaded in R/Shiny, includes all model components
+  - Use for: R-based workflows, Shiny app loading, native R data structures
+  - File size: Compact, typically 1-50 MB
+- **Download as HDF5** (button, if rhdf5 installed): Hierarchical data format, compatible with MOFA2 Python package, enables cross-platform use
+  - Use for: Python workflows, cross-platform sharing, MOFA2 Python analysis
+  - File size: Larger than RDS but more portable
+
+**INTERPRETATION GUIDELINES:**
+
+*MOFA Results Interpretation:*
+- **Variance Explained**: 
+  - High variance in one view = dataset-specific factor (e.g., technical batch, assay artifact)
+  - High variance across multiple views = shared biological factor (cross-layer coordination)
+  - Total variance explained: 40-70% typical for multi-omics, >70% excellent
+- **Factor Loadings**: 
+  - Top features with high absolute loadings drive the factor
+  - Positive/negative loadings indicate direction of association
+  - Compare feature annotations across views to infer biological meaning
+- **Factor Scores**:
+  - Sample positions along factor axis show factor activity
+  - Cluster by group = factor captures group differences
+  - Continuous gradient = factor captures continuous biological process (e.g., disease severity, time)
+
+*DIABLO Results Interpretation:*
+- **Component Scores**: 
+  - Clear group separation = successful discrimination
+  - Overlapping groups = poor discrimination (consider more components or different features)
+- **Selected Features**: 
+  - Features with high loadings are biomarkers distinguishing groups
+  - Compare selected features across blocks to identify cross-omics biomarker signatures
+- **Classification Performance**: 
+  - Accuracy >80% = good, >90% = excellent
+  - Check for overfitting if performance unrealistically high (use cross-validation)
+
+*Correlation Network Interpretation:*
+- **Node Degree**: 
+  - High-degree nodes = hub features, central to cross-omics relationships
+  - Low-degree nodes = peripheral features, specific interactions
+- **Edge Patterns**:
+  - Positive correlations = co-regulation, functional relationships
+  - Negative correlations = antagonistic relationships, regulatory feedback
+  - Clusters of highly connected features = functional modules
+- **Bipartite Structure**: 
+  - Dataset1 features → Dataset2 features edges show direct inter-omics connections
+  - Use to prioritize feature pairs for experimental validation
+
+*Pathway Integration Interpretation:*
+- **Concordant Pathways**: 
+  - Significant in multiple datasets = robust biological signal, prioritize for follow-up
+  - Direction concordance (all up or all down) = coordinated regulation
+  - Direction discordance = compensatory regulation or temporal dynamics
+- **Dataset-Specific Pathways**:
+  - Significant in one dataset only = layer-specific regulation, post-transcriptional control
+  - May indicate measurement layer differences (e.g., RNA vs protein abundance)
+
+**BEST PRACTICES:**
+
+1. **Data Preparation**:
+   - Ensure analyses normalized separately before loading (don't combine raw data from different platforms)
+   - Use consistent sample naming across datasets (case-sensitive matching)
+   - Minimum 20 samples recommended for MOFA/DIABLO, 10 for Correlation/Pathway
+   - Remove extreme outliers in individual datasets before integration
+
+2. **Method Selection**:
+   - Start with MOFA for exploratory analysis, understand data structure
+   - Use DIABLO if you have clear biological groups and want biomarkers
+   - Use Correlation for targeted analysis of specific feature relationships
+   - Use Pathway for functional interpretation and connecting to prior knowledge
+
+3. **Parameter Tuning**:
+   - MOFA: Start with 10 factors, check variance explained. If <40% total, increase to 15-20
+   - DIABLO: Use auto-tune for optimal component/feature numbers (slower but more robust)
+   - Correlation: Start with threshold=0.7, p<0.05. Lower threshold if too few edges, raise if too many
+   - All methods: Set random seed for reproducibility
+
+4. **Result Validation**:
+   - Check sample matching tab first - ensure sufficient overlap (>50% of samples common)
+   - Compare results across methods (e.g., MOFA factors vs DIABLO components - should identify similar patterns)
+   - Validate top features from integration in Distribution Analysis tab
+   - Check if identified relationships make biological sense (literature search)
+
+5. **Computational Considerations**:
+   - MOFA: Fast (<1 min for 100 samples × 1000 features × 3 datasets)
+   - DIABLO: Medium (1-5 min, longer with auto-tune)
+   - Correlation: Slow for large feature sets (>5000 per dataset). Use "Top Features" filter
+   - Pathway: Fast if annotation databases loaded, slow if need to download
+
+6. **Output Usage**:
+   - Export feature importance tables for pathway enrichment in Enrichment Analysis tab
+   - Use selected features (DIABLO, sparse MOFA) to filter downstream analyses
+   - Export MOFA factors as new "features" for ML models (factor scores become predictors)
+   - Use correlation networks to prioritize experimental validation (test predicted relationships)
+
+7. **Common Pitfalls**:
+   - Sample mismatch: Ensure sample IDs identical across datasets (including case, spaces, special characters)
+   - Batch effects: Check if factors/components capture technical batches rather than biology (use Data Overview and color by batch)
+   - Overfitting: DIABLO can overfit with small n. Use cross-validation, check performance on held-out data
+   - Interpretation: MOFA/DIABLO components are linear combinations - consider non-linear relationships may be missed
+   - Missing data: MOFA handles missing values, but extreme missingness (>50%) degrades performance
+
+8. **Reporting Results**:
+   - Methods: State integration method, parameters used (n factors, convergence threshold, etc.)
+   - Performance: Report variance explained (MOFA), classification accuracy (DIABLO), network statistics (Correlation)
+   - Features: List top contributing features per factor/component/module with loadings/scores
+   - Validation: Describe how results validated (cross-validation, independent cohort, literature support)
+   - Code: Share saved models (.rds/.hdf5) and analysis parameters for reproducibility
+
+**TROUBLESHOOTING:**
+
+*Issue: "Insufficient sample overlap" warning*
+- Cause: <50% of samples common across datasets
+- Solution: Check sample ID spelling/formatting, ensure analyses from same experiment, remove datasets with poor overlap
+
+*Issue: MOFA factors explain very low variance (<30% total)*
+- Cause: Data too noisy, insufficient signal, factors insufficient
+- Solution: Increase number of factors to 15-20, check data quality, consider more stringent feature filtering before integration
+
+*Issue: DIABLO shows perfect separation but unrealistic accuracy (>99%)*
+- Cause: Overfitting due to small sample size or feature leakage
+- Solution: Reduce keepX (select fewer features), increase cross-validation folds, check for batch-group confounding
+
+*Issue: Correlation network has no edges (or too many edges)*
+- Too few: Threshold too strict, small sample size reducing power
+  - Solution: Lower correlation threshold to 0.5-0.6, increase p-value cutoff to 0.1
+- Too many: Threshold too lenient, spurious correlations
+  - Solution: Raise correlation threshold to 0.8, decrease p-value cutoff to 0.01, use top features filter
+
+*Issue: Pathway analysis finds no concordant pathways*
+- Cause: Datasets measure different biology, pathways affected independently, insufficient annotations
+- Solution: Lower p-value threshold, try different pathway database, check dataset-specific pathways for insights
+
+*Issue: MOFA factors correlate with batch/technical variables*
+- Cause: Batch effects not fully corrected in preprocessing
+- Solution: Re-run Data tab with batch correction enabled, add batch as covariate in supervised MOFA
+
+When users ask about multi-omics integration, explain method selection rationale, parameter meanings, result interpretation guidelines, validation strategies, and troubleshooting common issues. Always recommend starting with MOFA for exploratory analysis before moving to supervised methods.
+
+===  END MULTI-OMICS INTEGRATION TAB DOCUMENTATION ===

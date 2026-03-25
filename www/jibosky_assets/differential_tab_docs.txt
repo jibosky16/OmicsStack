@@ -1,0 +1,88 @@
+=== COMPREHENSIVE DIFFERENTIAL ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+
+### DIFFERENTIAL ANALYSIS TAB OVERVIEW
+
+The Differential Analysis tab compares groups to identify significantly differentially expressed/abundant features using MA plots and volcano plots. This is essential for discovering biomarkers, validating biological hypotheses, and identifying features driving group differences.
+
+**GROUP COMPARISON:**
+- **Group 1 and Group 2** (selectizeInputs): Pairwise comparison selection. Choose two groups from your experimental design to compare. Order matters: results show Group1/Group2 ratio (positive log2FC = higher in Group 1, negative = higher in Group 2)
+
+**FEATURE SET SELECTION:**
+- \"All Features\" analyzes every feature (comprehensive but may include noise). Use when: exploring all potential biomarkers, validating that filtering doesn't change conclusions, comprehensive screening
+- \"PCA Top N Features\" uses principal component contributors (faster, focused on variance drivers). Use when: prioritizing major expression patterns, optimizing computational speed, high-dimensional data (>5000 features)
+- \"ML-Selected Features\" uses machine learning selections (most targeted, validated biomarkers). Use when: confirming ML results visually, focusing on statistically robust features, downstream validation experiments
+
+**SIGNIFICANCE THRESHOLDS:**
+- **p-value Cutoff** (0.001-0.1, default 0.05): Statistical significance threshold. Lower values = stricter filtering (fewer false positives, more false negatives). Standard: 0.05 for exploratory, 0.01 for confirmatory, 0.001 for very stringent
+- **FDR Cutoff** (0-0.1, default 0.05, ROTS method only): False Discovery Rate for multiple testing correction. Controls expected proportion of false positives among significant features. Use 0.01-0.05 for conservative filtering
+- **Log2FC Cutoff** (0.5-4, default 1.0): Biological significance threshold (fold change magnitude). Log2FC=1 means 2-fold change, Log2FC=2 means 4-fold. Use 0.5-1.0 for sensitive detection, 1.5-2.0 for robust changes, >2 for dramatic differences
+
+**VISUALIZATION OPTIONS - COLOR SCHEME:**
+- **Upregulated Color** (default red #FF4C4C): Features significantly higher in Group 1 (positive log2FC, low p-value). Change for colorblind accessibility or publication style
+- **Downregulated Color** (default blue #4C4CFF): Features significantly lower in Group 1 (negative log2FC, low p-value). Blue-orange schemes recommended for deuteranopia accessibility
+- **Non-significant Color** (default gray #CCCCCC): Features not meeting significance criteria. Keep subtle to emphasize significant features
+
+**VISUALIZATION OPTIONS - FEATURE LABELS:**
+- **Label Type** (No Labels/Feature Names/IDs): \"No Labels\" = cleaner plots; \"Feature Names\" = interpretable gene/metabolite names; \"IDs\" = database identifiers. Use labels for <50 significant features
+- **Max Features to Label** (1-100, default 10): Controls label density. Increase for detailed annotation (risk: crowding), decrease for cleaner plots. Recommended: 5-15 for presentations, 20-50 for detailed analysis
+- **Features to Label** (All Significant/Top N/All Features): \"All Significant\" labels everything passing thresholds; \"Top N\" shows most significant only (cleaner); \"All Features\" labels everything (cluttered, rarely useful)
+
+**VISUALIZATION OPTIONS - PLOT DIMENSIONS:**
+- **Width (inches)** (4-20, default 8): Export width. Standard: 7-8 for single column, 12-14 for double column publications
+- **Height (inches)** (4-20, default 6): Export height. Standard: 6 for square-ish plots, 8-10 for tall volcano plots with many features
+
+**MA PLOT GRID CONTROLS:**
+- **Grid Columns** (1-4, default 2): Layout for multiple comparisons. 2 columns = balanced, 3-4 = compact but smaller plots
+- **Plot Height (px)** (200-800, default 400): Individual plot height in grid. Increase for better readability
+- **Plot Width (px)** (200-800, default 400): Individual plot width in grid. Match to screen or export dimensions
+- **Show Legend** (default FALSE): Displays color legend on grid. Enable for standalone figures; disable if using figure caption
+
+**VOLCANO PLOT GRID CONTROLS:**
+Same as MA plot grid controls. Volcano plots typically benefit from slightly taller dimensions (500px height) to accommodate y-axis range.
+
+**OUTPUT TABS:**
+- **MA Plot Tab**: Displays M-A plot grid. M-axis (y) = log₂(fold change), A-axis (x) = log₂(average expression). Horizontal red line = no change (M=0). Points above/below = up/downregulated. Useful for: detecting intensity-dependent bias, validating normalization, identifying expression-dependent differences
+- **Volcano Plot Tab**: Displays volcano plot grid. X-axis = log₂(fold change) (left=down, right=up), Y-axis = -log₁₀(p-value) (top=significant). Points in upper corners = significant and large fold change. Useful for: identifying top biomarkers simultaneously by significance and magnitude, visualizing statistical vs biological significance trade-offs
+- **Results Table Tab**: Searchable/sortable table with all statistics (feature names, log2FC, p-values, FDR, average expression). Use for: extracting specific values, finding features by name, exporting numeric results
+- **Summary Tab**: Text summary of analysis including total features tested, significant features count, upregulated/downregulated counts, threshold settings. Use for: methods sections, quick overview
+
+**MA PLOT INTERPRETATION:**
+- **M-axis (y-axis)**: log₂(fold change) = log₂(Group1/Group2). Positive = higher in Group 1, negative = higher in Group 2
+- **A-axis (x-axis)**: log₂(average expression) = mean of log-transformed values across both groups. Left = low abundance, right = high abundance
+- **Horizontal distribution**: Should be symmetric around M=0 if no systematic bias. Asymmetry suggests technical issues or real biological shift
+- **Red points**: Significant features passing both p-value and log2FC thresholds
+- **Gray points**: Non-significant (fail p-value OR log2FC threshold)
+- **Funnel shape**: Expected at low A-values (low expression) due to higher variance
+
+**VOLCANO PLOT INTERPRETATION:**
+- **Upper-right quadrant**: Upregulated AND significant (key biomarkers higher in Group 1)
+- **Upper-left quadrant**: Downregulated AND significant (key biomarkers higher in Group 2)
+- **Lower region**: Non-significant (regardless of fold change magnitude)
+- **Left/right extremes with low y**: Large fold change but not significant (low sample size or high variance)
+- **Top center**: Significant but small fold change (statistical power but limited biological magnitude)
+- **Ideal biomarkers**: Upper corners (high fold change AND high significance)
+
+**DOWNLOAD OPTIONS:**
+- **Download MA Grid**: Exports grid of MA plots for all comparisons as single PNG/PDF. Use for: supplementary materials, comprehensive view
+- **Download Volcano Grid**: Exports grid of volcano plots for all comparisons. Use for: supplementary materials, side-by-side comparison
+- **Download MA Plot**: Exports current single MA plot. Use for: main figures, focused presentation
+- **Download Volcano Plot**: Exports current single volcano plot. Use for: main figures, biomarker highlighting
+- **Download Analysis Results**: Exports statistical results table as CSV/Excel. Use for: downstream analysis, pathway enrichment, sharing numeric data
+
+**BEST PRACTICES:**
+1. Start with default thresholds (p<0.05, Log2FC>1) for exploratory analysis
+2. Adjust p-value stricter (0.01 or 0.001) for confirmatory studies or large feature sets
+3. Use Log2FC>1.5 for biologically meaningful changes; Log2FC>2 for robust biomarkers
+4. Enable FDR correction (ROTS method) when testing many features (>1000) to control false discoveries
+5. Compare MA and Volcano plots together: MA reveals expression-dependent bias, Volcano highlights top biomarkers
+6. Label top 10-20 features for clarity; avoid labeling all significant features (cluttered)
+7. Use \"ML-Selected Features\" to validate that machine learning captured true differential features
+8. Check Results Table for features near significance boundaries (may be borderline with small threshold changes)
+9. For publications: export at 300+ DPI, use consistent colors across figures, include grid plots in supplements
+10. Validate top biomarkers with Distribution Analysis tab (check if distributions actually differ as expected)
+11. Use 2-column grid for 2-4 comparisons, 3-column for 5-9 comparisons
+12. Symmetric volcano plots (equal up/down features) suggest balanced comparison; asymmetric suggests directional effect
+
+When users ask about group comparisons, feature selection, significance thresholds, MA plots, volcano plots, color schemes, labeling strategies, grid layouts, result interpretation, or best practices for the Differential Analysis tab, explain what each parameter controls, how MA and volcano plots differ in their insights, how to interpret feature positions on plots, how to choose appropriate thresholds for their experimental design, and provide recommendations for identifying robust biomarkers.
+
+===  END DIFFERENTIAL ANALYSIS TAB DOCUMENTATION ===

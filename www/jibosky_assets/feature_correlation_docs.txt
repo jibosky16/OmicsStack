@@ -1,0 +1,81 @@
+=== COMPREHENSIVE FEATURE CORRELATION TAB UI ELEMENTS AND OPTIONS ===
+
+### FEATURE CORRELATION TAB OVERVIEW
+
+The Feature Correlation tab analyzes pairwise correlations between significant features to identify co-expressed or inversely related molecules. This helps discover regulatory relationships, functional modules, and potential biomarker panels.
+
+**ANALYSIS TYPE SELECTION:**
+- "All Groups" calculates correlations using all samples regardless of group. Use when: exploring overall feature relationships, large sample sizes, discovering global patterns
+- "Pairwise Comparison" restricts correlation calculation to two selected groups. Use when: focusing on specific biological conditions, testing condition-specific relationships
+
+**GROUP SELECTION (Pairwise Mode):**
+- **Group 1** and **Group 2**: Select groups for correlation analysis. Only samples from these groups are used in calculations
+
+**FEATURE FILTERING:**
+- **P-value Threshold** (0.00001-0.1, default 0.05): Only include features with statistical significance below this threshold
+- **Log2 Fold-Change Threshold** (0-10, default 0): Minimum absolute fold change for inclusion
+- **Maximum Features** (10-500, default 50): Limits the number of top features analyzed. Higher values increase computation time but show more relationships
+
+**CORRELATION PARAMETERS:**
+- **Correlation Method**: 
+  - "Spearman" (default): Rank-based correlation, robust to outliers, detects monotonic relationships (recommended for omics data)
+  - "Pearson": Linear correlation, assumes normal distribution, sensitive to outliers
+  - "Kendall": Robust rank correlation, best for small sample sizes or many ties
+- **P-value Cutoff** (0.00001-0.5, default 0.05): Only show correlations with significance below this threshold
+- **Minimum Absolute Correlation** (0-1, default 0.5): Filter weak correlations. Use 0.5 for moderate, 0.7 for strong relationships
+
+**VISUALIZATION OPTIONS:**
+- **Correlation Heatmap**: Color-coded matrix showing all pairwise correlations
+  - Red: Positive correlation (features increase together)
+  - Blue: Negative correlation (features move inversely)
+  - Intensity indicates strength of relationship
+- **Correlation Network**: Graph visualization where nodes are features and edges are significant correlations
+  - Edge color indicates positive/negative correlation
+  - Edge thickness indicates correlation strength
+  - Clustered nodes suggest functional modules
+
+**HEATMAP COLOR SCHEME:**
+- **Low Color** (default blue): Represents negative correlations (inverse relationships)
+- **Mid Color** (default white): Zero correlation (no relationship)
+- **High Color** (default red): Positive correlations (co-expression)
+
+**CORRELATION INTERPRETATION:**
+- **Strong Positive (r > 0.7)**: Features are tightly co-regulated, may be in same pathway or respond to same stimulus
+- **Moderate Positive (0.5 < r < 0.7)**: Related but not perfectly coordinated, may share partial pathways
+- **Weak Correlation (|r| < 0.3)**: Essentially independent features
+- **Negative Correlation (r < -0.5)**: Inverse relationship, one increases while other decreases
+
+**STATISTICAL SIGNIFICANCE:**
+- P-values are calculated for each correlation using parametric or permutation tests
+- FDR correction recommended when analyzing many features (>100) to control false discoveries
+- Significant correlation ≠ causation; biological validation required
+
+**NETWORK ANALYSIS INSIGHTS:**
+- **Hub Features**: High-degree nodes (many connections) may be key regulators or pathway hubs
+- **Modules/Clusters**: Tightly interconnected groups suggest functional relationships
+- **Bridges**: Features connecting different modules may be important cross-pathway regulators
+
+**EXPORT OPTIONS:**
+- **Download Correlation Matrix**: CSV file with all pairwise correlation values
+- **Download P-value Matrix**: CSV file with significance values for each pair
+- **Download Significant Pairs**: Filtered list of feature pairs meeting thresholds
+- **Download Heatmap/Network**: PNG/PDF for publication
+
+**BEST PRACTICES:**
+1. Use Spearman correlation for omics data (robust to non-normality)
+2. Start with strict thresholds (|r| > 0.7, p < 0.01) to identify strongest relationships
+3. Relax thresholds gradually to discover weaker but potentially relevant connections
+4. Validate correlation findings with existing pathway databases
+5. Compare correlation patterns across different experimental conditions
+6. Use network visualization to identify hub features for follow-up experiments
+7. Consider partial correlations if confounding variables suspected
+
+**RELATIONSHIP TO OTHER ANALYSES:**
+- Correlating features in same K-means cluster should show positive correlations
+- Hub features in correlation network may overlap with ML-selected biomarkers
+- Strong correlations may indicate same pathway (validate with enrichment analysis)
+- Negative correlations may indicate competing pathways or feedback regulation
+
+When users ask about feature correlations, co-expression analysis, network construction, correlation significance, or relationship discovery, explain method selection, threshold interpretation, and biological implications.
+
+=== END FEATURE CORRELATION TAB DOCUMENTATION ===

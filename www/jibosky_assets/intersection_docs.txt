@@ -1,0 +1,231 @@
+=== COMPREHENSIVE INTERSECTION ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+
+### INTERSECTION ANALYSIS TAB OVERVIEW
+Purpose: Analyze overlaps and unique features across multiple feature sets using Venn diagrams (2-5 sets) or UpSet plots (>5 sets), identify common biomarkers, and understand set relationships
+
+**DATA SOURCE OPTIONS:**
+
+*intersection_source (selectInput):*
+- \"Pairwise Comparisons\": Use feature sets from differential expression/abundance analyses
+- \"Manual Upload\": Upload custom Excel/CSV file with feature sets
+- Default: \"Pairwise Comparisons\"
+- Use pairwise when working with app-generated comparisons, manual for external data or custom gene lists
+
+*intersection_file (fileInput):*
+- Accept formats: .xlsx, .xls, .csv
+- Expected structure: Column headers = set names, rows below = feature names/IDs
+- Example: Column A = \"Treatment_vs_Control\", Column B = \"Drug_vs_Placebo\", rows contain gene names
+- Only visible when intersection_source = \"Manual Upload\"
+
+**FEATURE SET SELECTION (Pairwise Mode):**
+
+*intersection_feature_source (selectInput):*
+- \"All Features\": Use complete dataset (all measured features)
+- \"PCA Top N Features\": Use top N features from PCA loadings (reduces to most variable features)
+- \"ML-Selected Features\": Use features selected by ML methods (LASSO, RF, RFE, Boruta, Permutation)
+- Default: \"All Features\"
+- Recommendation: Use \"ML-Selected Features\" for focused biomarker analysis, \"All Features\" for comprehensive view
+
+*intersection_feature_set_status (dynamic UI):*
+- Displays availability status of selected feature source
+- Shows feature counts or warnings if source not available
+- Helps users understand if prerequisite analyses (PCA/ML) need to be run first
+
+**FILTER CRITERIA (Pairwise Mode):**
+
+*Significance Thresholds:*
+- intersection_pval_cutoff (numeric, default: 0.05, range 0-1): P-value threshold for feature inclusion
+  - Lower (0.001-0.01): More stringent, fewer features, higher confidence
+  - Default (0.05): Standard statistical significance
+  - Higher (0.05-0.1): More lenient, more features, exploratory
+- intersection_fdr_cutoff (numeric, default: 0.05, range 0-0.1): False Discovery Rate threshold
+  - Only available when sig_method = \"ROTS\" (permutation-based statistics)
+  - Controls for multiple testing correction
+  - Lower values = more stringent control
+- intersection_fc_cutoff (numeric, default: 1.0, range 0-10): Log2 fold change threshold
+  - 0.5 = 1.4-fold change (permissive)
+  - 1.0 = 2-fold change (standard, recommended)
+  - 2.0 = 4-fold change (stringent, large effects only)
+
+*Direction Filtering:*
+- intersection_include_up (checkbox, default: TRUE): Include upregulated features
+- intersection_include_down (checkbox, default: TRUE): Include downregulated features
+- Both checked: Analyze all significantly changed features
+- Only up: Focus on activated/increased features
+- Only down: Focus on repressed/decreased features
+- Use direction filtering to focus on specific biological processes
+
+*intersection_set_selection (dynamic UI):*
+- Displays available comparison sets from differential analysis
+- Allows selection of 2+ sets for intersection analysis
+- Dynamically generated based on completed pairwise comparisons
+
+**VENN DIAGRAM OPTIONS (2-5 Sets):**
+
+*venn_engine (radioButtons):*
+- \"ggVennDiagram\": Modern, publication-quality, ggplot2-based engine
+- \"VennDiagram\": Traditional, grid-based rendering
+- Default: \"ggVennDiagram\" (recommended for most uses)
+- ggVennDiagram: Better aesthetics, easier customization, faster
+- VennDiagram: Classic style, may handle edge cases differently
+
+*venn_count_size (numeric, default: 16, range 8-36):*
+- Font size (points) for intersection counts inside Venn regions
+- 8-12: Small, compact for presentations
+- 16: Default, readable in most contexts
+- 24-36: Large, for posters or large displays
+
+*Venn Color Palette:*
+- venn_color1 (default: #E41A1C, red): Color for Set 1
+- venn_color2 (default: #377EB8, blue): Color for Set 2
+- venn_color3 (default: #4DAF4A, green): Color for Set 3
+- venn_color4 (default: #984EA3, purple): Color for Set 4
+- venn_color5 (default: #FF7F00, orange): Color for Set 5
+- Colors use ColorBrewer palette for optimal visual distinction
+- Customize for colorblind-friendly palettes or branding requirements
+
+**UPSET PLOT OPTIONS (>5 Sets):**
+
+*Purpose:* UpSet plots replace Venn diagrams when >5 sets (Venn becomes unreadable). Better for visualizing complex intersections, showing set sizes, and identifying combination patterns.
+
+*Color Options:*
+- upset_main_bar (default: #1F77B4, blue): Color for main intersection size bars (top panel)
+- upset_sets_bar (default: #FF7F0E, orange): Color for individual set size bars (left panel)
+- upset_matrix (default: #2CA02C, green): Color for matrix dots showing set membership (bottom panel)
+
+*upset_nintersects (numeric, default: 30, range 5-100):*
+- Maximum number of intersections to display (shows top N by size)
+- 10-20: Show only largest intersections, simplified view
+- 30: Default, balanced view
+- 50-100: Comprehensive view, may be cluttered with many small intersections
+- Recommendation: Start with 30, increase if missing important intersections
+
+*upset_min_size (numeric, default: 3, range 1-100):*
+- Minimum intersection size to display (filters out small overlaps)
+- 1: Show all intersections including single-feature overlaps
+- 3: Default, removes noise from tiny intersections
+- 10+: Focus only on substantial overlaps
+- Recommendation: Use 3-5 for exploratory analysis, increase for focused analysis
+
+**OUTPUT TABS:**
+
+*Plot Tab:*
+- Displays Venn diagram (when 2-5 sets selected) or UpSet plot (when >5 sets)
+- Automatically switches visualization based on number of sets
+- Interactive rendering with spinner during computation
+- Download button: Save plot as high-resolution image (PNG/PDF)
+- intersectionTypeInfo: Dynamic message explaining which plot type is shown and why
+
+*Results Tab:*
+- intersectionResultsTable: Interactive DataTable showing:
+  - All intersection combinations
+  - Feature names/IDs in each intersection
+  - Intersection sizes (counts)
+  - Set membership patterns
+- Searchable and sortable table
+- Download button: Export results as Excel file with multiple sheets
+  - Sheet 1: Intersection summary (sizes, combinations)
+  - Additional sheets: Feature lists for each intersection
+
+**INTERPRETATION GUIDE:**
+
+*Venn Diagram Interpretation:*
+- Center region: Features common to ALL sets (core biomarkers, conserved across conditions)
+- Pairwise overlaps: Features shared by exactly 2 sets (condition-specific pairs)
+- Unique regions: Features exclusive to one set (unique biomarkers)
+- Larger overlaps: Suggests biological similarity or shared mechanisms
+- No overlap: Suggests distinct biological processes or orthogonal conditions
+
+*UpSet Plot Interpretation:*
+- **Top panel (Main bars):** Intersection sizes - taller bars = more features in that combination
+- **Left panel (Set bars):** Individual set sizes - shows total features per set before intersection
+- **Bottom panel (Matrix):** Set membership - connected dots show which sets are in each intersection
+- **Reading patterns:**
+  - Single dot row: Features unique to one set
+  - Multiple connected dots: Features shared by those specific sets
+  - Largest bar: Most common feature combination (often 1-set or 2-set intersections)
+- **Common patterns:**
+  - Largest bars often at left (unique features) → most features are set-specific
+  - Large bars with multiple dots → strong biological similarity between those sets
+  - Many small bars → high diversity, little conservation across conditions
+
+*Biological Insights:*
+- Large intersections across all sets: Core pathways, housekeeping functions, robust biomarkers
+- Pairwise intersections: Condition-specific relationships, shared mechanisms between two treatments
+- Unique features: Set-specific biomarkers, unique biological responses
+- Empty intersections: Suggests orthogonal processes or insufficient power (adjust thresholds)
+
+**DOWNLOAD OPTIONS:**
+
+1. downloadIntersectionPlotBtn: Download Venn/UpSet plot
+   - Format: PNG (default) or PDF (vector, publication-quality)
+   - Resolution: 300 DPI for PNG
+   - Use for: Figures, presentations, publications
+
+2. downloadIntersectionDataBtn: Download intersection results
+   - Format: Excel (.xlsx) with multiple sheets
+   - Contents: Summary table + feature lists for each intersection
+   - Use for: Downstream analysis, pathway enrichment, validation
+
+**BEST PRACTICES:**
+
+1. **Set Selection Strategy:**
+   - Start with 2-3 sets for focused comparisons
+   - Use 4-5 sets to identify core biomarkers across multiple conditions
+   - >5 sets: Only when necessary, requires UpSet plot (harder to interpret)
+
+2. **Threshold Selection:**
+   - Use consistent thresholds across all comparisons for fair comparison
+   - More stringent (lower p-value, higher FC): Fewer features, higher confidence, may miss biology
+   - More lenient: More features, exploratory, requires validation
+   - Recommended starting point: p < 0.05, Log2FC > 1.0
+
+3. **Feature Source Choice:**
+   - \"All Features\": Comprehensive but may include noise
+   - \"ML-Selected Features\": Focused, validated biomarkers (recommended for interpretation)
+   - \"PCA Top N\": Good for variance-driven discovery
+
+4. **Visualization Selection:**
+   - 2-3 sets: Venn diagram clear and intuitive
+   - 4-5 sets: Venn still works but gets complex
+   - >5 sets: UpSet plot REQUIRED (Venn unreadable)
+
+5. **Manual Upload Tips:**
+   - Use consistent feature naming across all sets
+   - Column headers should be descriptive set names
+   - Remove duplicates within each set
+   - Ensure feature IDs match your analysis naming convention
+
+6. **Color Customization:**
+   - Use colorblind-friendly palettes for accessibility
+   - Maintain consistent colors across related figures
+   - High contrast for small regions (Venn) or matrix dots (UpSet)
+
+7. **Interpretation Workflow:**
+   - First: Check individual set sizes (are they reasonable?)
+   - Second: Identify largest intersection (core features)
+   - Third: Look for meaningful pairwise patterns (biological relationships)
+   - Fourth: Examine unique features (set-specific biology)
+   - Fifth: Export feature lists for pathway enrichment or validation
+
+8. **Common Pitfalls:**
+   - Too many sets (>5): Use UpSet, not Venn
+   - Inconsistent thresholds: Compare apples to apples
+   - Ignoring set sizes: Large sets naturally have more overlaps
+   - Over-interpreting small intersections: May be noise (use upset_min_size filter)
+
+9. **Downstream Applications:**
+   - Export intersection features for pathway enrichment (KEGG, GO, Reactome)
+   - Use core intersections as robust biomarker candidates
+   - Validate unique features experimentally (set-specific biology)
+   - Compare intersections across different threshold settings (sensitivity analysis)
+
+10. **Statistical Considerations:**
+    - Larger sets naturally produce larger overlaps (expected by chance)
+    - Consider hypergeometric test for overlap significance (not built-in, requires external analysis)
+    - UpSet plot does not show statistical significance, only counts
+    - Use intersection results for hypothesis generation, validate findings
+
+When users ask about intersection analysis, explain data source options, threshold selection, Venn vs UpSet plot differences, how to interpret overlaps and unique features, color customization, and best practices for identifying core biomarkers versus set-specific features.
+
+===  END INTERSECTION ANALYSIS TAB DOCUMENTATION ===

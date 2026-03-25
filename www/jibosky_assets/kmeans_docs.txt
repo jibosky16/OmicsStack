@@ -1,0 +1,66 @@
+=== COMPREHENSIVE K-MEANS CLUSTERING TAB UI ELEMENTS AND OPTIONS ===
+
+### K-MEANS CLUSTERING TAB OVERVIEW
+
+The K-Means Clustering tab groups differential features by their expression patterns across conditions. This unsupervised learning approach identifies clusters of co-regulated features that behave similarly across experimental groups.
+
+**ANALYSIS TYPE SELECTION:**
+- "All Groups" clusters features using expression data from all experimental groups. Use when: exploring comprehensive expression patterns, discovering co-regulated feature modules
+- "Pairwise Comparison" clusters features using only data from two selected groups. Use when: focusing on specific comparisons, simplifying cluster interpretation
+
+**GROUP SELECTION (Pairwise Mode):**
+- **Group 1** and **Group 2**: Select which two groups to compare for clustering. Order affects fold change direction visualization but not cluster assignments
+
+**FEATURE FILTERING:**
+- **P-value Threshold** (0.00001-0.1, default 0.05): Only include features with statistical significance below this threshold. Lower values are stricter
+- **Log2 Fold-Change Threshold** (0-10, default 0): Minimum absolute fold change for inclusion. Use 1.0 for biologically meaningful changes
+
+**CLUSTERING PARAMETERS:**
+- **Number of Clusters (K)** (2-50, default 3): How many groups to partition features into. Start with 3-5, use elbow plot or silhouette score to optimize
+- **Number of Starts** (1-100, default 25): Random restarts for centroid initialization. Higher values increase reproducibility but slow computation
+- **Maximum Iterations** (10-1000, default 300): Convergence limit. Default is usually sufficient unless dealing with complex data
+- **Scale Data** (enabled by default): Z-score normalize each feature. Essential for fair comparison when features have different magnitude scales
+
+**ELBOW PLOT (OPTIMAL K SELECTION):**
+- Tests K from 2 to max value and plots within-cluster sum of squares
+- The "elbow" point where the curve bends indicates optimal cluster number
+- Dramatic drops indicate meaningful cluster separation; plateaus suggest diminishing returns
+
+**CLUSTER VISUALIZATION:**
+- **Cluster Profile Plot**: Shows expression pattern (z-score) for each cluster across groups. Lines represent cluster centroids with confidence bands
+- **Cluster Assignment Plot**: Scatter plot showing individual features colored by cluster assignment
+- **Cluster Sizes**: Bar chart showing number of features per cluster
+
+**CLUSTER QUALITY METRICS:**
+- **Within-Cluster Sum of Squares (WSS)**: Total variance within clusters. Lower is better (tighter clusters)
+- **Between-Cluster Sum of Squares (BSS)**: Variance between cluster centroids. Higher is better (well-separated clusters)
+- **Variance Explained**: BSS/(BSS+WSS) percentage. Higher indicates cleaner clustering
+
+**CLUSTER INTERPRETATION:**
+- Features in the same cluster show similar expression trajectories across conditions
+- Upward-trending clusters indicate features upregulated across groups
+- Downward-trending clusters indicate features downregulated across groups
+- Flat clusters may represent stable/housekeeping features
+- Mixed patterns suggest complex regulation
+
+**EXPORT OPTIONS:**
+- **Download Cluster Assignments**: CSV file with feature names and their assigned cluster numbers
+- **Download Cluster Profiles**: CSV with cluster centroid values across groups
+- **Download Plots**: PNG/PDF of visualization for publication
+
+**DOWNSTREAM ANALYSIS:**
+- Export cluster assignments for pathway enrichment (features in same cluster may share biological function)
+- Compare cluster membership with ML feature selection results
+- Use cluster profiles to identify biomarker panels (features that consistently change together)
+
+**BEST PRACTICES:**
+1. Always enable "Scale Data" for meaningful clustering across features with different scales
+2. Start with K=3-5, then use elbow plot to refine
+3. Use higher "Number of Starts" (25-50) for reproducible results
+4. Interpret clusters biologically using downstream enrichment analysis
+5. Validate cluster stability by running multiple times
+6. Large clusters may indicate common biological responses; small clusters may capture unique patterns
+
+When users ask about K-means clustering, cluster optimization, feature grouping, co-regulation analysis, or expression pattern discovery, explain parameter selection, interpretation of results, and integration with other analyses.
+
+=== END K-MEANS CLUSTERING TAB DOCUMENTATION ===

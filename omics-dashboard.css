@@ -1,0 +1,568 @@
+/* General Layout */
+.distribution-viz-container {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 20px;
+  height: calc(100vh - 150px);
+  margin-top: 15px;
+}
+
+.viz-control-panel {
+  background: linear-gradient(to bottom right, #ffffff, #f8f9fa);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  height: 100%;
+  overflow-y: auto;
+}
+
+.viz-header {
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 15px;
+  margin-bottom: 20px;
+  color: #343a40;
+  font-weight: 600;
+}
+
+.viz-controls-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 15px;
+}
+
+.viz-control-item label {
+  font-weight: 500;
+  color: #495057;
+  margin-bottom: 5px;
+}
+
+.viz-action-btns {
+  margin-top: 25px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.viz-btn {
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.viz-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.viz-results-panel {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  height: 100%;
+  overflow: hidden;
+}
+
+.viz-plot-container {
+  height: calc(100vh - 220px);
+  padding: 15px;
+}
+
+.viz-stats-container {
+  height: calc(100vh - 220px);
+  padding: 15px;
+  overflow-y: auto;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 15px;
+}
+
+.viz-table-container {
+  height: calc(100vh - 220px);
+  padding: 15px;
+  overflow-y: auto;
+}
+
+.viz-info-box {
+  margin: 15px 0;
+}
+
+.viz-info-box .alert {
+  padding: 10px 15px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+#distStats {
+  white-space: pre-wrap;
+  font-family: 'Consolas', monospace;
+  font-size: 14px;
+  background: #ffffff;
+  padding: 15px;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+  height: 100%;
+}
+
+.nav-tabs {
+  border-bottom: none;
+  padding: 10px 10px 0 10px;
+}
+
+.nav-tabs .nav-link {
+  border-radius: 8px 8px 0 0;
+  padding: 10px 20px;
+  font-weight: 500;
+}
+
+.nav-tabs .nav-link.active {
+  background-color: #f8f9fa;
+  border-bottom-color: #f8f9fa;
+}
+
+.tab-content {
+  height: calc(100% - 50px);
+}
+
+.tab-pane {
+  height: 100%;
+}
+
+/* Settings Pane Styles */
+.settings-pane {
+  position: fixed;
+  top: 50%;
+  left: -320px; /* Completely hide the main pane */
+  transform: translateY(-50%);
+  width: 320px;
+  height: auto;
+  max-height: 80vh;
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 0 8px 8px 0;
+  box-shadow: 2px 0 15px rgba(0,0,0,0.1);
+  z-index: 9999;
+  transition: left 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+  font-size: 14px;
+  overflow: visible; /* Allow trigger to be visible */
+}
+
+.settings-pane:hover {
+  left: 0; /* Slide in on hover */
+}
+
+.settings-trigger {
+  position: absolute;
+  right: -40px; /* This positions the trigger outside the main pane */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 60px;
+  background: #3498db;
+  border: 1px solid #dee2e6;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+  z-index: 10000; /* Ensure trigger is above everything */
+}
+
+.settings-trigger:hover {
+  background: #2980b9;
+  transform: translateY(-50%) scale(1.05);
+}
+
+.settings-trigger i {
+  color: white;
+  font-size: 18px;
+  animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.settings-content {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.settings-header {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 16px;
+  border-bottom: 1px solid #dee2e6;
+  text-align: center;
+}
+
+.settings-body {
+  padding: 20px;
+}
+
+.settings-section {
+  margin-bottom: 24px;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+}
+
+.settings-section-header {
+  background: #f8f9fa;
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #495057;
+  border-bottom: 1px solid #e9ecef;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-section-body {
+  padding: 16px;
+  background: white;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .settings-pane {
+    width: 280px;
+    left: -240px;
+  }
+  
+  .settings-trigger {
+    right: -40px;
+    width: 40px;
+  }
+}
+
+/* Smooth transitions for all settings pane elements */
+.settings-pane * {
+  transition: all 0.3s ease;
+}
+
+/* ==================== DUAL GROUPING LEVEL TOGGLE ==================== */
+.grouping-level-toggle-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 10px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  border: 1px solid #dee2e6;
+}
+
+.grouping-level-toggle-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #495057;
+  white-space: nowrap;
+}
+
+.grouping-level-toggle-label i {
+  margin-right: 6px;
+  color: #6c757d;
+}
+
+.grouping-level-btn-group {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.grouping-level-btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: relative;
+}
+
+.grouping-level-btn.biological {
+  background: #e9ecef;
+  color: #6c757d;
+  border-right: 1px solid #dee2e6;
+}
+
+.grouping-level-btn.biological.active {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.15);
+}
+
+.grouping-level-btn.biological:hover:not(.active) {
+  background: #d4edda;
+  color: #155724;
+}
+
+.grouping-level-btn.experimental {
+  background: #e9ecef;
+  color: #6c757d;
+}
+
+.grouping-level-btn.experimental.active {
+  background: linear-gradient(135deg, #007bff 0%, #6610f2 100%);
+  color: white;
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.15);
+}
+
+.grouping-level-btn.experimental:hover:not(.active) {
+  background: #cce5ff;
+  color: #004085;
+}
+
+.grouping-level-btn i {
+  margin-right: 6px;
+}
+
+.grouping-level-info {
+  font-size: 12px;
+  color: #868e96;
+  margin-left: 10px;
+  padding: 4px 10px;
+  background: white;
+  border-radius: 15px;
+  border: 1px solid #dee2e6;
+}
+
+/* Hide the toggle when not needed */
+.grouping-level-toggle-container.hidden {
+  display: none;
+}
+
+/* Responsive adjustments for grouping toggle */
+@media (max-width: 768px) {
+  .grouping-level-toggle-container {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 15px;
+  }
+  
+  .grouping-level-btn {
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+}
+/* ==================== END DUAL GROUPING LEVEL TOGGLE ====================
+/* ==================== DIABLO TABLE CELL SELECTION ==================== */
+.dt-cell-selected {
+  background-color: #007bff !important;
+  color: white !important;
+  font-weight: bold !important;
+}
+/* ==================== END DIABLO TABLE CELL SELECTION ==================== */
+
+/* ==================== QC SIGNAL DRIFT CORRECTION STYLES ==================== */
+.correction-section {
+  margin-bottom: 5px;
+}
+
+.qc-drift-section {
+  margin-bottom: 15px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #17a2b8;
+}
+
+.qc-drift-section:hover {
+  background-color: #e9ecef;
+  transition: background-color 0.3s ease;
+}
+
+.qc-metric-card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  margin-bottom: 15px;
+}
+
+.qc-metric-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+}
+
+.qc-detection-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: 5px;
+}
+
+.qc-badge-success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.qc-badge-warning {
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeeba;
+}
+
+.qc-badge-danger {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.qc-badge-info {
+  background-color: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
+
+/* QC Sample highlight in plots */
+.qc-sample-marker {
+  stroke: #e74c3c;
+  stroke-width: 2px;
+  fill: #e74c3c;
+}
+
+/* Drift correction visualization cards */
+.drift-viz-card {
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  padding: 15px;
+  margin-bottom: 15px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.drift-viz-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.drift-info-banner {
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drift-info-banner.info {
+  background-color: #e8f4fd;
+  border: 1px solid #b8daff;
+  color: #004085;
+}
+
+.drift-info-banner.success {
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+.drift-info-banner.warning {
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  color: #856404;
+}
+
+/* Responsive grid for drift metrics */
+.drift-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+/* Progress indicator for drift correction */
+.drift-progress-container {
+  margin: 20px 0;
+}
+
+.drift-progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background-color: #e9ecef;
+  overflow: hidden;
+}
+
+.drift-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.5s ease;
+}
+
+/* QC sample indicator legend */
+.qc-legend {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.qc-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+}
+
+.qc-legend-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.qc-legend-marker.qc {
+  background-color: #e74c3c;
+  border: 2px solid #c0392b;
+}
+
+.qc-legend-marker.sample {
+  background-color: #3498db;
+  border: 2px solid #2980b9;
+}
+
+/* Animation for correction in progress */
+@keyframes pulse-drift {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+.drift-processing {
+  animation: pulse-drift 1.5s infinite;
+}
+
+/* RSD category colors */
+.rsd-excellent { color: #27ae60; font-weight: bold; }
+.rsd-good { color: #2ecc71; }
+.rsd-acceptable { color: #f39c12; }
+.rsd-poor { color: #e74c3c; font-weight: bold; }
+/* ==================== END QC SIGNAL DRIFT CORRECTION STYLES ==================== */
