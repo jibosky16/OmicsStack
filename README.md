@@ -1,8 +1,8 @@
 # OmicsStack
 
-OmicsStack is an open-source **R Shiny** platform and **Dockerized** application for unified single- and multi-omics analysis.  
+OmicsStack is an open-source R Shiny platform and Dockerized application for unified single- and multi-omics analysis.  
 It combines preprocessing, statistics, machine learning, visualization, and biological interpretation in one interface, with dedicated modules for **glycomics**, **metabolomics**, and **multi-omics integration**.  
-An embedded context-aware AI assistant (**Jibosky**) provides real-time guidance for analysis decisions and interpretation.
+An embedded context-aware AI chatbot assistant (Jibosky) provides real-time guidance for analysis decisions and interpretation.
 
 ---
 
@@ -69,7 +69,7 @@ The platform supports both interactive exploration and reproducible output gener
   Multi-dataset upload and integration-oriented analytics for cross-omics signal discovery.
 
 - **Power Analysis**  
-  Feature-level and global power summaries for study planning and sample-size decisions.
+  Provides power analysis summaries for study planning and sample-size decisions.
 
 - **Integrated AI Guidance**  
   Context-aware assistant to help with interpretation, method selection, and analysis rationale.
@@ -125,7 +125,7 @@ These are optional. If no API key is set, the core analytics platform still work
 
 ### Option A: Run with Docker (Recommended)
 
-#### 1) (Optional) Enable Jibosky AI
+#### 1) (Optional) Enable Jibosky AI chatbot
 If you wish to use the built-in AI assistant, you need to provide API keys before building the container. The recommended way is using a `.env` file.
 
 **Mac/Linux:**
@@ -168,7 +168,7 @@ This launches Shiny Server and serves OmicsStack on port `3838`.
 #### 1) Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/OmicsStack.git
+git clone https://github.com/jibosky16/OmicsStack.git
 cd OmicsStack
 ```
 
@@ -205,15 +205,7 @@ shiny::runApp()
 
 ## Data Requirements
 
-OmicsStack accepts standard tabular omics input (e.g., CSV/Excel).  
-Typical workflow assumptions:
-
-- Features and samples are organized in matrix form
-- Group/condition labels are provided or mappable
-- Optional metadata can be included for richer comparisons/integration
-- Missing values and zero handling are configurable in-app
-
-A sample dataset is included to help validate setup and explore workflows quickly.
+OmicsStack accepts standard tabular omics input (e.g., CSV/Excel). A sample dataset is included to help validate setup and explore workflows quickly.
 
 ---
 
@@ -221,8 +213,8 @@ A sample dataset is included to help validate setup and explore workflows quickl
 
 Across modules, OmicsStack supports export of:
 
-- Publication-ready plots (PNG/SVG where applicable)
-- Result tables (CSV/Excel-style exports where supported)
+- Publication-ready plots (PNG/SVG where applicable) with adjustable resolution or quality
+- Result tables (CSV/Excel-style exports where applicable)
 - Module-specific summaries and statistics
 - Saved intermediate results for downstream workflows
 
@@ -249,8 +241,6 @@ OmicsStack is container-ready and deployable to:
 - Local Docker environments
 - VM/server-based Shiny Server
 - Managed Shiny hosting services
-
-A ShinyApps.io deployment has been used in practice (URL can be shared here if public).
 
 ---
 
@@ -304,13 +294,12 @@ For substantial changes, open an issue first to discuss scope and design.
 
 If OmicsStack supports your research, please cite the repository and release version used in your analysis.
 
-**Suggested format (update with your official citation):**
+**Official citation:**
 
-> Author(s). *OmicsStack: Integrated single- and multi-omics analysis platform*. GitHub repository. Year. URL.
+>Fowowe M, Daramola O, Oluokun A, Sandilya V, Onigbinde S & Mechref Y. *OmicsStack: An Open-Source Web Server and Docker Image Incorporating ML/AI for the Processing, Visualization and Integration of Single-Omics and Multi-Omics Datasets.*
 
 ---
 
 ## License
 
-Add your preferred open-source license here (e.g., MIT, GPL-3.0, Apache-2.0).  
-If you have not selected one yet, add a license file before public release clarity/compliance.
+OmicsStack is provided for academic and research use. See the repository for license details.
