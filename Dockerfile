@@ -139,13 +139,43 @@ RUN R --vanilla -e "install.packages(c(\
     'randomForest', \
     'randomForestExplainer', \
     'glmnet', \
-    'mixOmics', \
     'missMDA', \
     'plyr', \
     'multcomp', \
     'agricolae', \
-    'PMCMRplus' \
+    'PMCMRplus', \
+    'caret', \
+    'e1071', \
+    'Boruta', \
+    'ranger', \
+    'gbm', \
+    'xgboost', \
+    'iml', \
+    'MLmetrics', \
+    'rstatix', \
+    'userfriendlyscience', \
+    'car', \
+    'emmeans', \
+    'dunn.test', \
+    'mice', \
+    'foreach', \
+    'doParallel' \
   ), repos='http://cran.r-project.org', dependencies=TRUE)"
+
+# Install machine learning packages from Bioconductor
+RUN R --vanilla -e "BiocManager::install(c(\
+    'mixOmics', \
+    'MOFA2', \
+    'MOFAdata', \
+    'impute', \
+    'Rgraphviz', \
+    'KEGGgraph', \
+    'KEGGREST', \
+    'hmdbQuery', \
+    'rhdf5', \
+    'biodb', \
+    'biodbChebi' \
+  ), update=FALSE, ask=FALSE)"
 
 # Install statistical and utility packages
 RUN R --vanilla -e "install.packages(c(\
@@ -162,7 +192,28 @@ RUN R --vanilla -e "install.packages(c(\
     'userfriendlyscience', \
     'cli', \
     'rlang', \
-    'xfun' \
+    'xfun', \
+    'umap', \
+    'Rtsne', \
+    'svglite', \
+    'Cairo', \
+    'ggridges', \
+    'ggbeeswarm', \
+    'cowplot', \
+    'fmsb', \
+    'yulab.utils', \
+    'zip', \
+    'PubChemR', \
+    'webchem', \
+    'DBI', \
+    'RSQLite', \
+    'RSpectra', \
+    'WGCNA', \
+    'corrplot', \
+    'dynamicTreeCut', \
+    'flashClust', \
+    'reticulate', \
+    'viridisLite' \
   ), repos='http://cran.r-project.org', dependencies=TRUE)"
 
 # Install gprofiler2 and enrichR

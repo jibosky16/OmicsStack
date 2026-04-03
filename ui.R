@@ -5011,7 +5011,7 @@ ui <- tagList(
                                  condition = "input.anova_include_covariates == true",
                                  uiOutput("anova_covariate_selection_ui"),
                                  checkboxInput("anova_type3", "Use Type III SS", value = TRUE, width = "100%"),
-                                 helpText(HTML("<small>ANCOVA adjusts for continuous covariates. Type III SS is recommended for unbalanced groups.</small>"))
+                                 helpText(HTML("<small>ANCOVA adjusts for selected continuous and/or categorical variables. Type III SS is recommended for unbalanced groups and models with factors.</small>"))
                                )
                              ),
                              selectInput(
@@ -5837,6 +5837,7 @@ ui <- tagList(
                                 numericInput("ellipseLevel", "Ellipse Confidence Level",
                                              min = 0.9, max = 0.99, value = 0.95, step = 0.05, width = "100%"),
                                 checkboxInput("showPCALabels", "Show Sample Labels", value = FALSE),
+                                checkboxInput("pca_show_outlier_labels", "Show Outlier Sample Labels", value = FALSE),
                                 checkboxInput("showSampleCounts", "Show Sample Counts in Legend", value = TRUE),
                                 numericInput("pca_top_features", "Top N Features (leave empty for all features)",
                                              value = NULL, min = 1, max = 1000, step = 1, width = "100%"),
@@ -5874,7 +5875,11 @@ ui <- tagList(
                                   column(6, numericInput("pca_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%"))
                                 ),
                                 fluidRow(
-                                  column(6, numericInput("pca_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5, width = "100%"))
+                                  column(6, numericInput("pca_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5, width = "100%")),
+                                  column(6, numericInput("pca_pairwise_label_size", "Pairwise Label Size", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%"))
+                                ),
+                                fluidRow(
+                                  column(6, numericInput("pca_sample_label_size", "Sample Label Size", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%"))
                                 ),
                             )
                      ),

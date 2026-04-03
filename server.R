@@ -705,7 +705,8 @@ server <- function(input, output, session) {
                        placeholder = "Select variables for the model formula",
                        plugins = list('remove_button', 'drag_drop')
                      )),
-      uiOutput("lmrots_formula_preview")
+      uiOutput("lmrots_formula_preview"),
+      uiOutput("lmrots_reference_group_ui")
     )
   })
   
@@ -724,6 +725,75 @@ server <- function(input, output, session) {
             }
           ))
         )
+    )
+  })
+
+  # lmROTS reference-level selector for categorical covariates
+  output$lmrots_reference_group_ui <- renderUI({
+    rots_mode <- input$rots_mode %||% "standard"
+    if (rots_mode != "lmrots") return(NULL)
+    if (is.null(values$metadata) || ncol(values$metadata) == 0) return(NULL)
+
+    vars <- input$lmrots_design_vars
+    if (is.null(vars) || length(vars) == 0) return(NULL)
+
+    available_vars <- intersect(vars, colnames(values$metadata))
+    if (length(available_vars) == 0) return(NULL)
+
+    categorical_vars <- available_vars[sapply(available_vars, function(v) {
+      col_data <- values$metadata[[v]]
+      is.character(col_data) || is.factor(col_data) || is.logical(col_data)
+    })]
+
+    if (length(categorical_vars) == 0) {
+      return(
+        tags$small(
+          style = "display:block; margin-top: 6px; color: #6c757d;",
+          "Reference group selection is available when at least one categorical design variable is selected."
+        )
+      )
+    }
+
+    preferred_var <- categorical_vars[1]
+    group_like <- grep("group|condition|treatment|biological|experimental|pain", categorical_vars,
+                       ignore.case = TRUE, value = TRUE)
+    if (length(group_like) > 0) preferred_var <- group_like[1]
+
+    selected_ref_var <- input$lmrots_reference_var
+    if (is.null(selected_ref_var) || !(selected_ref_var %in% categorical_vars)) {
+      selected_ref_var <- preferred_var
+    }
+
+    ref_values <- trimws(as.character(values$metadata[[selected_ref_var]]))
+    ref_values <- ref_values[!is.na(ref_values) & nzchar(ref_values)]
+    ref_levels <- unique(ref_values)
+
+    if (length(ref_levels) < 2) {
+      return(
+        tags$small(
+          style = "display:block; margin-top: 6px; color: #6c757d;",
+          paste0("Selected variable '", selected_ref_var, "' does not have at least two non-empty levels.")
+        )
+      )
+    }
+
+    selected_ref_level <- input$lmrots_reference_level
+    if (is.null(selected_ref_level) || !(selected_ref_level %in% ref_levels)) {
+      selected_ref_level <- ref_levels[1]
+    }
+
+    tagList(
+      selectInput("lmrots_reference_var",
+                  "Reference Variable",
+                  choices = categorical_vars,
+                  selected = selected_ref_var,
+                  width = "100%"),
+      selectInput("lmrots_reference_level",
+                  "Reference Group (Baseline Level)",
+                  choices = ref_levels,
+                  selected = selected_ref_level,
+                  width = "100%"),
+      helpText("Coefficients for this variable are interpreted relative to the selected baseline level.")
     )
   })
   
@@ -806,7 +876,8 @@ server <- function(input, output, session) {
                      • Random intercept: <code>(1|Individual)</code><br>
                      • Multiple random effects: <code>(1|Individual) + (1|Batch)</code><br>
                      • Random slope: <code>(1 + Time|Individual)</code> (advanced)</small>")),
-      uiOutput("lmerots_formula_preview")
+      uiOutput("lmerots_formula_preview"),
+      uiOutput("lmerots_reference_group_ui")
     )
   })
   
@@ -838,13 +909,84 @@ server <- function(input, output, session) {
     )
   })
 
+  # lmeROTS reference-level selector for categorical fixed effects
+  output$lmerots_reference_group_ui <- renderUI({
+    rots_mode <- input$rots_mode %||% "standard"
+    if (rots_mode != "lmerots") return(NULL)
+    if (is.null(values$metadata) || ncol(values$metadata) == 0) return(NULL)
+
+    fixed_vars <- input$lmerots_fixed_vars
+    if (is.null(fixed_vars) || length(fixed_vars) == 0) return(NULL)
+
+    available_fixed <- intersect(fixed_vars, colnames(values$metadata))
+    if (length(available_fixed) == 0) return(NULL)
+
+    categorical_vars <- available_fixed[sapply(available_fixed, function(v) {
+      col_data <- values$metadata[[v]]
+      is.character(col_data) || is.factor(col_data) || is.logical(col_data)
+    })]
+
+    if (length(categorical_vars) == 0) {
+      return(
+        tags$small(
+          style = "display:block; margin-top: 6px; color: #6c757d;",
+          "Reference group selection is available when at least one categorical fixed-effect variable is selected."
+        )
+      )
+    }
+
+    preferred_var <- categorical_vars[1]
+    group_like <- grep("group|condition|treatment|biological|experimental|pain", categorical_vars,
+                       ignore.case = TRUE, value = TRUE)
+    if (length(group_like) > 0) preferred_var <- group_like[1]
+
+    selected_ref_var <- input$lmerots_reference_var
+    if (is.null(selected_ref_var) || !(selected_ref_var %in% categorical_vars)) {
+      selected_ref_var <- preferred_var
+    }
+
+    ref_values <- trimws(as.character(values$metadata[[selected_ref_var]]))
+    ref_values <- ref_values[!is.na(ref_values) & nzchar(ref_values)]
+    ref_levels <- unique(ref_values)
+
+    if (length(ref_levels) < 2) {
+      return(
+        tags$small(
+          style = "display:block; margin-top: 6px; color: #6c757d;",
+          paste0("Selected variable '", selected_ref_var, "' does not have at least two non-empty levels.")
+        )
+      )
+    }
+
+    selected_ref_level <- input$lmerots_reference_level
+    if (is.null(selected_ref_level) || !(selected_ref_level %in% ref_levels)) {
+      selected_ref_level <- ref_levels[1]
+    }
+
+    tagList(
+      selectInput("lmerots_reference_var",
+                  "Reference Variable (Fixed Effect)",
+                  choices = categorical_vars,
+                  selected = selected_ref_var,
+                  width = "100%"),
+      selectInput("lmerots_reference_level",
+                  "Reference Group (Baseline Level)",
+                  choices = ref_levels,
+                  selected = selected_ref_level,
+                  width = "100%"),
+      helpText("Fixed-effect coefficients for this variable are interpreted relative to the selected baseline level.")
+    )
+  })
+
   # Keep these outputs live even when their containers are hidden via JS.
   # Otherwise Shiny will suspend them at startup and they won't render until
   # some unrelated reactive invalidation occurs (e.g., clicking Process Data).
   outputOptions(output, "lmrots_design_vars_ui", suspendWhenHidden = FALSE)
   outputOptions(output, "lmrots_formula_preview", suspendWhenHidden = FALSE)
+  outputOptions(output, "lmrots_reference_group_ui", suspendWhenHidden = FALSE)
   outputOptions(output, "lmerots_design_vars_ui", suspendWhenHidden = FALSE)
   outputOptions(output, "lmerots_formula_preview", suspendWhenHidden = FALSE)
+  outputOptions(output, "lmerots_reference_group_ui", suspendWhenHidden = FALSE)
   
   # ANOVA Covariates UI (ANCOVA when covariates checkbox is enabled)
   output$anova_covariates_ui <- renderUI({
@@ -900,35 +1042,42 @@ server <- function(input, output, session) {
       )
     }
     
-    # Identify numeric columns for covariates (ANCOVA covariates should be continuous)
+    # Identify usable adjustment columns (continuous and categorical)
     numeric_cols <- c()
     categorical_cols <- c()
     for (col in available_cols) {
       col_data <- values$metadata[[col]]
-      if (is.numeric(col_data) || all(!is.na(suppressWarnings(as.numeric(col_data[!is.na(col_data)]))))) {
+      col_chr <- trimws(as.character(col_data))
+      col_non_empty <- col_chr[!is.na(col_chr) & nzchar(col_chr)]
+      is_numeric_like <- is.numeric(col_data) ||
+        (length(col_non_empty) > 0 && all(!is.na(suppressWarnings(as.numeric(col_non_empty)))))
+
+      if (is_numeric_like) {
         numeric_cols <- c(numeric_cols, col)
       } else {
         categorical_cols <- c(categorical_cols, col)
       }
     }
+
+    usable_cols <- c(numeric_cols, categorical_cols)
     
     tagList(
-      # Covariates selection (continuous)
-      if (length(numeric_cols) > 0) {
+      # Adjustment variable selection (continuous and categorical)
+      if (length(usable_cols) > 0) {
         selectizeInput("anova_covariates", 
-                       "Covariates (continuous variables to control for)",
-                       choices = numeric_cols,
+                       "Adjustment Variables (continuous and categorical)",
+                       choices = usable_cols,
                        selected = NULL,
                        multiple = TRUE,
                        width = "100%",
                        options = list(
-                         placeholder = "Select continuous covariates (e.g., Age, BMI)",
+                         placeholder = "Select adjustment variables (e.g., Age, Sex, Batch)",
                          plugins = list('remove_button', 'drag_drop')
                        ))
       } else {
         div(class = "alert alert-info", style = "margin-top: 10px; padding: 8px;",
             icon("info-circle"),
-            " No numeric columns found in metadata. ANCOVA requires at least one continuous covariate."
+            " No suitable metadata columns found for ANCOVA adjustment variables."
         )
       },
       
@@ -937,9 +1086,9 @@ server <- function(input, output, session) {
           tags$small(
             HTML(paste0(
               "<b>Available metadata columns:</b><br>",
-              "<span style='color: #28a745;'>Numeric (covariates): </span>", 
+              "<span style='color: #28a745;'>Numeric: </span>", 
               if(length(numeric_cols) > 0) paste(numeric_cols, collapse = ", ") else "None", "<br>",
-              "<span style='color: #17a2b8;'>Categorical (excluded): </span>", 
+              "<span style='color: #17a2b8;'>Categorical: </span>", 
               if(length(categorical_cols) > 0) paste(categorical_cols, collapse = ", ") else "None"
             ))
           )
@@ -17854,7 +18003,64 @@ get_legend_grid_layout <- function(n_items) {
             pc_scores$Group <- factor(preserve_group_names(groups_subset), levels = group_levels)
             
             # Add sample labels if requested
-            if(input$showPCALabels) {
+            if (input$pca_show_outlier_labels) {
+              pc_scores$SampleLabels <- NA_character_
+              original_sample_names <- rownames(pca_data_subset)
+              cleaned_sample_names <- get_corrected_column_names(original_sample_names)
+              
+              # Determine outliers within each group separately using PC1/PC2 Mahalanobis distance.
+              # Use the exact threshold used by ggplot2::stat_ellipse(type = "t")
+              conf_level <- input$ellipseLevel %||% 0.95
+              conf_level <- min(max(conf_level, 0.5), 0.999)
+              outlier_idx <- integer(0)
+              
+              for (grp in unique(as.character(pc_scores$Group))) {
+                grp_idx <- which(as.character(pc_scores$Group) == grp)
+                if (length(grp_idx) == 0) next
+                
+                grp_xy <- as.matrix(pc_scores[grp_idx, c("PC1", "PC2"), drop = FALSE])
+                valid_rows <- apply(grp_xy, 1, function(v) all(is.finite(v)))
+                if (sum(valid_rows) < 3) next
+                
+                grp_idx_valid <- grp_idx[valid_rows]
+                grp_xy <- grp_xy[valid_rows, , drop = FALSE]
+                
+                # Use MASS::cov.trob to match ggplot2::stat_ellipse(type = "t") robust covariance
+                cov_est <- tryCatch({
+                  MASS::cov.trob(grp_xy)
+                }, error = function(e) {
+                  list(cov = stats::cov(grp_xy), center = colMeans(grp_xy))
+                })
+                
+                cov_mat <- cov_est$cov
+                center_pt <- cov_est$center
+                
+                if (any(!is.finite(cov_mat))) next
+                
+                # Calculate Mahalanobis distance (squared)
+                md2 <- tryCatch({
+                  stats::mahalanobis(
+                    x = grp_xy,
+                    center = center_pt,
+                    cov = cov_mat + diag(1e-8, 2)
+                  )
+                }, error = function(e) rep(0, nrow(grp_xy)))
+                
+                # Match ggplot2's stat_ellipse(type = "t") threshold EXACTLY
+                n <- nrow(grp_xy)
+                md_threshold <- 2 * stats::qf(conf_level, 2, n - 1)
+                
+                grp_outlier_pos <- which(md2 > md_threshold)
+                if (length(grp_outlier_pos) > 0) {
+                  outlier_idx <- c(outlier_idx, grp_idx_valid[grp_outlier_pos])
+                }
+              }
+              
+              outlier_idx <- sort(unique(outlier_idx))
+              if (length(outlier_idx) > 0) {
+                pc_scores$SampleLabels[outlier_idx] <- cleaned_sample_names[outlier_idx]
+              }
+            } else if (input$showPCALabels) {
               original_sample_names <- rownames(pca_data_subset)
               cleaned_sample_names <- get_corrected_column_names(original_sample_names)
               pc_scores$SampleLabels <- cleaned_sample_names
@@ -17904,7 +18110,8 @@ get_legend_grid_layout <- function(n_items) {
                   legend.title = element_blank(),
                   plot.title = element_text(hjust = 0.5, face = "bold", size = title_size),
                   panel.border = element_rect(color = "black", fill = NA, size = 0.5),
-                  legend.position = ifelse(input$pcaGridLegend, "bottom", "none")
+                  legend.position = ifelse(input$pcaGridLegend, "bottom", "none"),
+                  plot.margin = ggplot2::margin(t = 15, r = 15, b = 15, l = 15, unit = "pt")
                 )
             } else {
               pair_plot <- ggplot(pc_scores, aes(x = PC1, y = PC2, color = Group)) +
@@ -17941,20 +18148,25 @@ get_legend_grid_layout <- function(n_items) {
                   legend.title = element_blank(),
                   plot.title = element_text(hjust = 0.5, face = "bold", size = title_size),
                   panel.border = element_rect(color = "black", fill = NA, size = 0.5),
-                  legend.position = ifelse(input$pcaGridLegend, "bottom", "none")
+                  legend.position = ifelse(input$pcaGridLegend, "bottom", "none"),
+                  plot.margin = ggplot2::margin(t = 15, r = 15, b = 15, l = 15, unit = "pt")
                 )
             }
             
             # Add sample labels if requested
-            if(input$showPCALabels) {
+            if ("SampleLabels" %in% names(pc_scores) && any(!is.na(pc_scores$SampleLabels))) {
+              label_data <- pc_scores[!is.na(pc_scores$SampleLabels) & pc_scores$SampleLabels != "", , drop = FALSE]
               pair_plot <- pair_plot + ggrepel::geom_text_repel(
+                data = label_data,
                 aes(label = SampleLabels),
-                size = 2.5,
-                box.padding = 0.3,
-                point.padding = 0.2,
+                size = input$pca_pairwise_label_size %||% 2.5,
+                box.padding = 0.4,
+                point.padding = 0.25,
                 segment.color = "grey50",
-                max.overlaps = 15,
-                fontface = "bold"
+                max.overlaps = 50,
+                fontface = "bold",
+                inherit.aes = TRUE,
+                show.legend = FALSE
               )
             }
             
@@ -18028,7 +18240,53 @@ get_legend_grid_layout <- function(n_items) {
       values$pca_hover_data <- pc_scores[, c("PC1", "PC2", "Group", "Sample"), drop = FALSE]
       
       # Add sample labels if requested
-      if(input$showPCALabels) {
+      if (input$pca_show_outlier_labels) {
+        pc_scores$SampleLabels <- NA_character_
+        conf_level <- input$ellipseLevel %||% 0.95
+        conf_level <- min(max(conf_level, 0.5), 0.999)
+        outlier_idx <- integer(0)
+        
+        for (grp in unique(as.character(pc_scores$Group))) {
+          grp_idx <- which(as.character(pc_scores$Group) == grp)
+          if (length(grp_idx) == 0) next
+          
+          grp_xy <- as.matrix(pc_scores[grp_idx, c("PC1", "PC2"), drop = FALSE])
+          valid_rows <- apply(grp_xy, 1, function(v) all(is.finite(v)))
+          if (sum(valid_rows) < 3) next
+          
+          grp_idx_valid <- grp_idx[valid_rows]
+          grp_xy <- grp_xy[valid_rows, , drop = FALSE]
+          
+          cov_est <- tryCatch({
+            MASS::cov.trob(grp_xy)
+          }, error = function(e) {
+            list(cov = stats::cov(grp_xy), center = colMeans(grp_xy))
+          })
+          
+          if (any(!is.finite(cov_est$cov))) next
+          
+          md2 <- tryCatch({
+            stats::mahalanobis(
+              x = grp_xy,
+              center = cov_est$center,
+              cov = cov_est$cov + diag(1e-8, 2)
+            )
+          }, error = function(e) rep(0, nrow(grp_xy)))
+          
+          n_points <- nrow(grp_xy)
+          md_threshold <- 2 * stats::qf(conf_level, 2, n_points - 1)
+          
+          grp_outlier_pos <- which(md2 > md_threshold)
+          if (length(grp_outlier_pos) > 0) {
+            outlier_idx <- c(outlier_idx, grp_idx_valid[grp_outlier_pos])
+          }
+        }
+        
+        outlier_idx <- sort(unique(outlier_idx))
+        if (length(outlier_idx) > 0) {
+          pc_scores$SampleLabels[outlier_idx] <- pc_scores$Sample[outlier_idx]
+        }
+      } else if(input$showPCALabels) {
         pc_scores$SampleLabels <- pc_scores$Sample
       }
       
@@ -18124,15 +18382,19 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       # Add sample labels if requested
-      if(input$showPCALabels) {
+      if ("SampleLabels" %in% names(pc_scores) && any(!is.na(pc_scores$SampleLabels))) {
+        label_data <- pc_scores[!is.na(pc_scores$SampleLabels) & pc_scores$SampleLabels != "", , drop = FALSE]
         p <- p + ggrepel::geom_text_repel(
+          data = label_data,
           aes(label = SampleLabels),
-          size = 3.5,
+          size = input$pca_sample_label_size %||% 3.5,
           box.padding = 0.5,
           point.padding = 0.3,
           segment.color = "grey50",
-          max.overlaps = 20,
-          fontface = "bold"
+          max.overlaps = 50,
+          fontface = "bold",
+          inherit.aes = TRUE,
+          show.legend = FALSE
         )
       }
       
@@ -18168,7 +18430,7 @@ get_legend_grid_layout <- function(n_items) {
           p <- p + ggrepel::geom_label_repel(
             data = label_data,
             aes(x = PC1, y = PC2, label = Sample),
-            size = 3.5,
+            size = input$pca_sample_label_size %||% 3.5,
             fontface = "bold",
             color = "black",
             fill = "white",
@@ -18621,7 +18883,7 @@ get_legend_grid_layout <- function(n_items) {
                 if(input$showPCALabels) {
                   single_plot <- single_plot + ggrepel::geom_text_repel(
                     aes(label = SampleLabels),
-                    size = 3.5,
+                    size = input$pca_sample_label_size %||% 3.5,
                     box.padding = 0.5,
                     point.padding = 0.3,
                     segment.color = "grey50",
@@ -19244,7 +19506,7 @@ get_legend_grid_layout <- function(n_items) {
       # Add cleaned sample names as labels with repulsion to avoid overlap
       p <- p + ggrepel::geom_text_repel(
         aes(label = Sample),
-        size = 3.5,
+        size = input$pca_sample_label_size %||% 3.5,
         box.padding = 0.5,
         point.padding = 0.3,
         segment.color = "grey50",
@@ -23839,13 +24101,41 @@ get_legend_grid_layout <- function(n_items) {
           if (input$sig_method == "rots") {
             # Add a metadata sheet with ROTS parameters
             addWorksheet(wb, "ROTS Parameters")
+            rots_mode <- input$rots_mode %||% "standard"
+
+            if (rots_mode == "lmrots") {
+              method_label <- "Linear Model-based ROTS (lmROTS)"
+              export_B <- ifelse(!is.null(input$lmrots_B) && !is.na(input$lmrots_B), input$lmrots_B, 100)
+              export_K <- ifelse(!is.null(input$lmrots_K) && !is.na(input$lmrots_K), input$lmrots_K, "Auto")
+              export_seed <- ifelse(!is.null(input$lmrots_seed) && !is.na(input$lmrots_seed), input$lmrots_seed, "Auto")
+              export_ref_var <- ifelse(!is.null(input$lmrots_reference_var) && nzchar(input$lmrots_reference_var),
+                                       input$lmrots_reference_var, "Auto")
+              export_ref_level <- ifelse(!is.null(input$lmrots_reference_level) && nzchar(input$lmrots_reference_level),
+                                         input$lmrots_reference_level, "Auto")
+            } else if (rots_mode == "lmerots") {
+              method_label <- "Linear Mixed-Effects ROTS (lmeROTS)"
+              export_B <- ifelse(!is.null(input$lmerots_B) && !is.na(input$lmerots_B), input$lmerots_B, 100)
+              export_K <- ifelse(!is.null(input$lmerots_K) && !is.na(input$lmerots_K), input$lmerots_K, "Auto")
+              export_seed <- ifelse(!is.null(input$lmerots_seed) && !is.na(input$lmerots_seed), input$lmerots_seed, "Auto")
+              export_ref_var <- ifelse(!is.null(input$lmerots_reference_var) && nzchar(input$lmerots_reference_var),
+                                       input$lmerots_reference_var, "Auto")
+              export_ref_level <- ifelse(!is.null(input$lmerots_reference_level) && nzchar(input$lmerots_reference_level),
+                                         input$lmerots_reference_level, "Auto")
+            } else {
+              method_label <- "Reproducibility-Optimized Test Statistic (ROTS)"
+              export_B <- ifelse(!is.null(input$rots_B), input$rots_B, 1000)
+              export_K <- ifelse(!is.null(input$rots_K) && !is.na(input$rots_K), input$rots_K, "Auto")
+              export_seed <- ifelse(!is.null(input$rots_seed) && !is.na(input$rots_seed), input$rots_seed, 123)
+              export_ref_var <- "N/A"
+              export_ref_level <- "N/A"
+            }
+
             rots_params <- data.frame(
               Parameter = c("Method", "Number of Permutations (B)",
-                            "Top Features (K)", "Random Seed"),
-              Value = c("Reproducibility-Optimized Test Statistic (ROTS)",
-                        ifelse(!is.null(input$rots_B), input$rots_B, 1000),
-                        ifelse(!is.null(input$rots_K) && !is.na(input$rots_K), input$rots_K, "Auto"),
-                        ifelse(!is.null(input$rots_seed) && !is.na(input$rots_seed), input$rots_seed, 123))
+                            "Top Features (K)", "Random Seed",
+                            "Reference Variable", "Reference Level"),
+              Value = c(method_label, export_B, export_K, export_seed,
+                        export_ref_var, export_ref_level)
             )
             writeData(wb, "ROTS Parameters", rots_params)
           }
@@ -25538,7 +25828,7 @@ get_legend_grid_layout <- function(n_items) {
           
           # Validate metadata if covariates are requested
           if (use_covariates && (is.null(covariates) || length(covariates) == 0)) {
-            showNotification("Please select at least one continuous covariate for ANCOVA.", type = "error")
+            showNotification("Please select at least one adjustment variable for ANCOVA.", type = "error")
             return(NULL)
           }
           
@@ -25608,10 +25898,25 @@ get_legend_grid_layout <- function(n_items) {
                 group_labels <- group_labels[valid_sample_mask]
               }
               
-              # Extract covariates and convert to numeric
+              # Extract selected adjustment variables and infer variable types
               covariate_data <- metadata_ordered[, covariates, drop = FALSE]
+              covariate_types <- setNames(rep("categorical", length(covariates)), covariates)
+
               for (col in colnames(covariate_data)) {
-                covariate_data[[col]] <- as.numeric(covariate_data[[col]])
+                raw_vals <- covariate_data[[col]]
+                raw_chr <- trimws(as.character(raw_vals))
+                raw_non_empty <- raw_chr[!is.na(raw_chr) & nzchar(raw_chr)]
+                is_numeric_like <- is.numeric(raw_vals) ||
+                  (length(raw_non_empty) > 0 && all(!is.na(suppressWarnings(as.numeric(raw_non_empty)))))
+
+                if (is_numeric_like) {
+                  covariate_data[[col]] <- suppressWarnings(as.numeric(raw_chr))
+                  covariate_types[[col]] <- "numeric"
+                } else {
+                  raw_chr[raw_chr == ""] <- NA_character_
+                  covariate_data[[col]] <- as.factor(raw_chr)
+                  covariate_types[[col]] <- "categorical"
+                }
               }
               
               # Check for missing values in covariates
@@ -25625,8 +25930,8 @@ get_legend_grid_layout <- function(n_items) {
                 covariate_data <- covariate_data[covariate_complete, , drop = FALSE]
               }
               
-              # Build formula string for ANCOVA
-              formula_str <- paste0("feature_value ~ Group + ", paste(covariates, collapse = " + "))
+              # Track selected adjustment variable types for output metadata
+              covariate_method_terms <- paste0(covariates, " [", unname(covariate_types[covariates]), "]")
               
               # For Type III SS, load car package
               if (use_type3) {
@@ -25648,7 +25953,7 @@ get_legend_grid_layout <- function(n_items) {
               stat_results$ANCOVA_PValue <- NA
               stat_results$ANCOVA_AdjustedPValue <- NA
               stat_results$ANCOVA_FStatistic <- NA
-              stat_results$ANCOVA_Method <- paste0("ANCOVA with covariates: ", paste(covariates, collapse = ", "))
+              stat_results$ANCOVA_Method <- paste0("ANCOVA with adjustment variables: ", paste(covariate_method_terms, collapse = ", "))
             } else {
               stat_results$ANOVA_PValue <- NA
               stat_results$ANOVA_AdjustedPValue <- NA
@@ -25656,6 +25961,22 @@ get_legend_grid_layout <- function(n_items) {
             
             # Create a column to store post-hoc method used
             stat_results$PostHoc_Method <- ifelse(input$posthoc_method == "none", "N/A", input$posthoc_method)
+
+            # Pre-create post-hoc columns for ANCOVA so downstream tabs/export always see expected fields.
+            # Feature-level post-hoc assignment will fill these with p-values where available.
+            if (use_covariates && input$posthoc_method != "none" && length(unique(group_labels)) > 1) {
+              ancova_groups <- levels(as.factor(group_labels))
+              if (length(ancova_groups) > 1) {
+                ancova_pairs <- combn(ancova_groups, 2, simplify = FALSE)
+                for (pair in ancova_pairs) {
+                  pair_name <- paste0(pair[1], "_vs_", pair[2])
+                  col_name <- paste0("PostHoc_", pair_name, "_AdjPValue")
+                  if (!(col_name %in% colnames(stat_results))) {
+                    stat_results[[col_name]] <- NA_real_
+                  }
+                }
+              }
+            }
             
             # Loop through each feature
             n_features <- if (use_covariates) nrow(data_matrix) else length(values$cleaned_molecules)
@@ -25686,8 +26007,32 @@ get_legend_grid_layout <- function(n_items) {
                   
                   if (nrow(ancova_df) < 3) next
                   
-                  # Fit ANCOVA model
-                  ancova_formula <- as.formula(formula_str)
+                  ancova_df$Group <- droplevels(as.factor(ancova_df$Group))
+                  if (nlevels(ancova_df$Group) < 2) next
+
+                  # Keep only informative covariates after NA filtering
+                  valid_covariates <- c()
+                  for (cov in covariates) {
+                    if (!(cov %in% colnames(ancova_df))) next
+                    cov_vals <- ancova_df[[cov]]
+
+                    if (is.factor(cov_vals)) {
+                      ancova_df[[cov]] <- droplevels(cov_vals)
+                      if (nlevels(ancova_df[[cov]]) >= 2) {
+                        valid_covariates <- c(valid_covariates, cov)
+                      }
+                    } else {
+                      if (length(unique(cov_vals[!is.na(cov_vals)])) >= 2) {
+                        valid_covariates <- c(valid_covariates, cov)
+                      }
+                    }
+                  }
+
+                  # Fit ANCOVA model using robust term construction (handles spaces/special chars)
+                  ancova_formula <- stats::reformulate(
+                    termlabels = c("Group", valid_covariates),
+                    response = "feature_value"
+                  )
                   ancova_model <- lm(ancova_formula, data = ancova_df)
                   
                   # Extract p-value for Group effect
@@ -27685,6 +28030,34 @@ get_legend_grid_layout <- function(n_items) {
               
               # Prepare data matrix (genes as rows, samples as columns)
               data_matrix <- as.matrix(values$normalized_data)
+              n_features <- nrow(data_matrix)
+              min_valid_k <- 6L
+              
+              # ROTS optimizeModel uses k.test values >= 5 and filters with k < K.
+              # If K <= 5 (or default floor(n/4) is too small), internal optimization can fail.
+              if (n_features < min_valid_k) {
+                showNotification(
+                  paste0("lmROTS requires at least ", min_valid_k,
+                         " features after filtering. Current feature count: ", n_features,
+                         ". Increase retained features or choose another method."),
+                  type = "error",
+                  duration = 10
+                )
+                return(NULL)
+              }
+              
+              if (is.null(K_val) || is.na(K_val)) {
+                K_val <- max(floor(n_features / 4), min_valid_k)
+              }
+              K_val <- as.integer(round(K_val))
+              if (K_val < min_valid_k) {
+                message("lmROTS: K value ", K_val, " is too small; adjusting to ", min_valid_k)
+                K_val <- min_valid_k
+              }
+              if (K_val > n_features) {
+                message("lmROTS: K value ", K_val, " exceeds feature count; adjusting to ", n_features)
+                K_val <- n_features
+              }
               
               # Prepare metadata (ensure samples match columns of data)
               # Need to match sample order between data columns and metadata rows
@@ -27739,7 +28112,27 @@ get_legend_grid_layout <- function(n_items) {
               # Convert factor columns properly
               for (col in colnames(metadata_for_lmrots)) {
                 if (is.character(metadata_for_lmrots[[col]])) {
-                  metadata_for_lmrots[[col]] <- as.factor(metadata_for_lmrots[[col]])
+                  col_vals <- trimws(as.character(metadata_for_lmrots[[col]]))
+                  col_vals[col_vals == ""] <- NA_character_
+                  metadata_for_lmrots[[col]] <- as.factor(col_vals)
+                }
+              }
+
+              # Apply explicit reference level for selected categorical variable, when provided
+              selected_ref_var <- input$lmrots_reference_var
+              selected_ref_level <- input$lmrots_reference_level
+              if (!is.null(selected_ref_var) && nzchar(selected_ref_var) &&
+                  selected_ref_var %in% colnames(metadata_for_lmrots)) {
+                ref_vals <- trimws(as.character(metadata_for_lmrots[[selected_ref_var]]))
+                ref_vals[ref_vals == ""] <- NA_character_
+                metadata_for_lmrots[[selected_ref_var]] <- as.factor(ref_vals)
+
+                ref_levels <- levels(metadata_for_lmrots[[selected_ref_var]])
+                if (!is.null(selected_ref_level) && nzchar(selected_ref_level) &&
+                    selected_ref_level %in% ref_levels) {
+                  metadata_for_lmrots[[selected_ref_var]] <-
+                    stats::relevel(metadata_for_lmrots[[selected_ref_var]], ref = selected_ref_level)
+                  message("lmROTS reference set: ", selected_ref_var, " = ", selected_ref_level)
                 }
               }
               
@@ -27895,6 +28288,33 @@ get_legend_grid_layout <- function(n_items) {
               
               # Prepare data matrix (genes as rows, samples as columns)
               data_matrix <- as.matrix(values$normalized_data)
+              n_features <- nrow(data_matrix)
+              min_valid_k <- 6L
+              
+              # lmeROTS shares the same optimizeModel constraints as lmROTS.
+              if (n_features < min_valid_k) {
+                showNotification(
+                  paste0("lmeROTS requires at least ", min_valid_k,
+                         " features after filtering. Current feature count: ", n_features,
+                         ". Increase retained features or choose another method."),
+                  type = "error",
+                  duration = 10
+                )
+                return(NULL)
+              }
+              
+              if (is.null(K_val) || is.na(K_val)) {
+                K_val <- max(floor(n_features / 4), min_valid_k)
+              }
+              K_val <- as.integer(round(K_val))
+              if (K_val < min_valid_k) {
+                message("lmeROTS: K value ", K_val, " is too small; adjusting to ", min_valid_k)
+                K_val <- min_valid_k
+              }
+              if (K_val > n_features) {
+                message("lmeROTS: K value ", K_val, " exceeds feature count; adjusting to ", n_features)
+                K_val <- n_features
+              }
               
               # Prepare metadata (ensure samples match columns of data)
               # Need to match sample order between data columns and metadata rows
@@ -27958,7 +28378,27 @@ get_legend_grid_layout <- function(n_items) {
               # Convert character columns to factors
               for (col in colnames(metadata_for_lmerots)) {
                 if (is.character(metadata_for_lmerots[[col]])) {
-                  metadata_for_lmerots[[col]] <- as.factor(metadata_for_lmerots[[col]])
+                  col_vals <- trimws(as.character(metadata_for_lmerots[[col]]))
+                  col_vals[col_vals == ""] <- NA_character_
+                  metadata_for_lmerots[[col]] <- as.factor(col_vals)
+                }
+              }
+
+              # Apply explicit reference level for selected categorical fixed-effect variable, when provided
+              selected_ref_var <- input$lmerots_reference_var
+              selected_ref_level <- input$lmerots_reference_level
+              if (!is.null(selected_ref_var) && nzchar(selected_ref_var) &&
+                  selected_ref_var %in% colnames(metadata_for_lmerots)) {
+                ref_vals <- trimws(as.character(metadata_for_lmerots[[selected_ref_var]]))
+                ref_vals[ref_vals == ""] <- NA_character_
+                metadata_for_lmerots[[selected_ref_var]] <- as.factor(ref_vals)
+
+                ref_levels <- levels(metadata_for_lmerots[[selected_ref_var]])
+                if (!is.null(selected_ref_level) && nzchar(selected_ref_level) &&
+                    selected_ref_level %in% ref_levels) {
+                  metadata_for_lmerots[[selected_ref_var]] <-
+                    stats::relevel(metadata_for_lmerots[[selected_ref_var]], ref = selected_ref_level)
+                  message("lmeROTS reference set: ", selected_ref_var, " = ", selected_ref_level)
                 }
               }
               

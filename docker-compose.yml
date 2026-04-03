@@ -12,6 +12,9 @@ services:
       - R_PROFILE_USER=/etc/R/Rprofile.site
       - LC_ALL=en_US.UTF-8
       - LANG=en_US.UTF-8
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       # Mount data directory for persistent storage
       - ./data:/srv/shiny-server/omics/data

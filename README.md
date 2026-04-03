@@ -1,6 +1,7 @@
 # OmicsStack
 
-OmicsStack is an open-source **R Shiny** platform and **Dockerized** application for unified single- and multi-omics analysis. It combines preprocessing, statistics, machine learning, visualization, and biological interpretation in one interface, with dedicated modules for **glycomics**, **metabolomics**, and **multi-omics integration**.  
+OmicsStack is an open-source **R Shiny** platform and **Dockerized** application for unified single- and multi-omics analysis.  
+It combines preprocessing, statistics, machine learning, visualization, and biological interpretation in one interface, with dedicated modules for **glycomics**, **metabolomics**, and **multi-omics integration**.  
 An embedded context-aware AI assistant (**Jibosky**) provides real-time guidance for analysis decisions and interpretation.
 
 ---
@@ -116,7 +117,7 @@ Set one or more of the following before launch:
 - `GEMINI_API_KEY`
 - `ANTHROPIC_API_KEY`
 
-If no API key is set, the core analytics platform still works; only AI responses are unavailable.
+These are optional. If no API key is set, the core analytics platform still works; only Jibosky AI responses are unavailable.
 
 ---
 
@@ -130,7 +131,36 @@ If no API key is set, the core analytics platform still works; only AI responses
 docker compose up --build
 ```
 
-#### 2) Open in browser
+#### 2) (Optional) Enable Jibosky AI in Docker
+
+Add one or more API keys via environment variables before starting the container.
+
+Using `.env` (recommended):
+
+```bash
+cp AI_chatbot_keys.env.example .env
+```
+
+PowerShell:
+
+```powershell
+Copy-Item AI_chatbot_keys.env.example .env
+```
+
+Then edit `.env` and set any keys you want to enable.
+
+PowerShell:
+
+```powershell
+$env:ANTHROPIC_API_KEY="your_anthropic_key"
+$env:GEMINI_API_KEY="your_gemini_key"
+$env:OPENROUTER_API_KEY="your_openrouter_key"
+docker compose up -d --build
+```
+
+You can also place the keys in a local `.env` file (same folder as `docker-compose.yml`).
+
+#### 3) Open in browser
 
 ```text
 http://localhost:3838/OmicsStack/
@@ -145,7 +175,7 @@ This launches Shiny Server and serves OmicsStack on port `3838`.
 #### 1) Clone the repository
 
 ```bash
-git clone https://github.com/jibosky16/OmicsStack.git
+git clone https://github.com/<your-username>/OmicsStack.git
 cd OmicsStack
 ```
 
@@ -266,8 +296,13 @@ For substantial changes, open an issue first to discuss scope and design.
 
 If OmicsStack supports your research, please cite the repository and release version used in your analysis.
 
-**Official citation:**
+**Suggested format (update with your official citation):**
 
->Fowowe M, Daramola O, Oluokun A, Sandilya V, Onigbinde S & Mechref Y. *OmicsStack: An Open-Source Web Server and Docker Image Incorporating ML/AI for the Processing, Visualization and Integration of Single-Omics and Multi-Omics Datasets.*
+> Author(s). *OmicsStack: Integrated single- and multi-omics analysis platform*. GitHub repository. Year. URL.
 
 ---
+
+## License
+
+Add your preferred open-source license here (e.g., MIT, GPL-3.0, Apache-2.0).  
+If you have not selected one yet, add a license file before public release clarity/compliance.
