@@ -125,40 +125,33 @@ These are optional. If no API key is set, the core analytics platform still work
 
 ### Option A: Run with Docker (Recommended)
 
-#### 1) Build and start
+#### 1) (Optional) Enable Jibosky AI
+If you wish to use the built-in AI assistant, you need to provide API keys before building the container. The recommended way is using a `.env` file.
 
-```bash
-docker compose up --build
-```
-
-#### 2) (Optional) Enable Jibosky AI in Docker
-
-Add one or more API keys via environment variables before starting the container.
-
-Using `.env` (recommended):
-
+**Mac/Linux:**
 ```bash
 cp AI_chatbot_keys.env.example .env
 ```
 
-PowerShell:
-
+**Windows (PowerShell):**
 ```powershell
 Copy-Item AI_chatbot_keys.env.example .env
 ```
 
-Then edit `.env` and set any keys you want to enable.
+After copying, open the `.env` file in a text editor and add your keys (e.g., `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, etc.). Docker Compose will automatically read this file.
 
-PowerShell:
-
+*Alternative (Setting environment variables directly in PowerShell):*
 ```powershell
 $env:ANTHROPIC_API_KEY="your_anthropic_key"
 $env:GEMINI_API_KEY="your_gemini_key"
 $env:OPENROUTER_API_KEY="your_openrouter_key"
-docker compose up -d --build
 ```
 
-You can also place the keys in a local `.env` file (same folder as `docker-compose.yml`).
+#### 2) Build and start
+
+```bash
+docker compose up -d --build
+```
 
 #### 3) Open in browser
 
@@ -179,7 +172,22 @@ git clone https://github.com/<your-username>/OmicsStack.git
 cd OmicsStack
 ```
 
-#### 2) Launch app
+#### 2) (Optional) Enable Jibosky AI
+To provide API keys to a local R session, you can create an `.Renviron` file in the root of the project directory.
+
+**Mac/Linux:**
+```bash
+cp AI_chatbot_keys.env.example .Renviron
+```
+
+**Windows (PowerShell):**
+```powershell
+Copy-Item AI_chatbot_keys.env.example .Renviron
+```
+
+Open the `.Renviron` file in a text editor and add your keys. R will automatically load these variables when you start the app.
+
+#### 3) Launch app
 
 ```r
 source("app.R")
