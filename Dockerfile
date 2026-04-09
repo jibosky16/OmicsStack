@@ -28,6 +28,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev \
     libtiff5-dev \
     libjpeg-dev \
+    libbz2-dev \
+    liblzma-dev \
+    libglpk-dev \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    libxt-dev \
+    libhdf5-dev \
+    cmake \
     pandoc \
     pandoc-citeproc \
     git \
@@ -233,7 +241,7 @@ RUN mkdir -p /srv/shiny-server/omics
 COPY app.R /srv/shiny-server/omics/app.R
 COPY www/ /srv/shiny-server/omics/www/
 COPY omics-dashboard.css /srv/shiny-server/omics/omics-dashboard.css
-COPY seo_config.R /srv/shiny-server/omics/seo_config.R
+# COPY seo_config.R /srv/shiny-server/omics/seo_config.R
 COPY *.R /srv/shiny-server/omics/
 COPY sample_data/ /srv/shiny-server/omics/sample_data/
 
