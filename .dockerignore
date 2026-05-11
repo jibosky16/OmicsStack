@@ -57,9 +57,5 @@ logs/
 Thumbs.db
 .DS_Store
 
-# Data (exclude large databases)
+# Data
 data/
-*.db
-*.sqlite
-sample_data/**/*.db
-sample_data/**/*.sqlite
