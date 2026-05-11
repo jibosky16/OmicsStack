@@ -10,7 +10,8 @@ renv.lock
 *.db
 *.sqlite
 *.sqlite3
-metabolites.db
+# metabolites.db is tracked by Git LFS now
+!metabolites.db
 
 # RDS/RData files
 *.rds
