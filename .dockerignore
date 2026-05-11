@@ -1,0 +1,63 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# R
+.Rhistory
+.Rprofile
+.RData
+*.Rproj
+renv.lock
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+README.md
+LICENSE
+*.md
+docker_hub_overview.md
+
+# Node/npm (if applicable)
+node_modules
+package-lock.json
+yarn.lock
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.circleci
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose.dev.yml
+.dockerignore
+
+# Development/local files
+*.env.local
+.env.*.local
+.docker
+
+# Build artifacts
+rsconnect
+.Rbuildignore
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Data (keep sample_data, exclude large datasets)
+data/
+*.db
+*.sqlite

@@ -1,10 +1,9 @@
 # ============================================================================
 # Dockerfile for OmicsStack Shiny Application
 # ============================================================================
-# Multi-stage build to reduce final image size and improve deployment speed
-# Pre-installs all dependencies and annotation databases
+# Optimized for faster builds with consolidated RUN layers and cache mounts
 
-FROM rocker/shiny:4.4.0 as base
+FROM rocker/shiny:4.4.0 AS base
 
 # Set environment variables for production
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -31,10 +30,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libbz2-dev \
     liblzma-dev \
     libglpk-dev \
+    libgmp-dev \
+    libmpfr-dev \
     libgl1-mesa-dev \
     libglu1-mesa-dev \
     libxt-dev \
     libhdf5-dev \
+    libmagick++-dev \
     cmake \
     pandoc \
     pandoc-citeproc \
@@ -43,192 +45,45 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
-# Stage 2: Install R packages with proper dependency resolution
+# Stage 2: Install R packages with consolidated layers and BuildKit cache
 # ============================================================================
 
-# Install BiocManager first
-RUN R --vanilla -e "install.packages('BiocManager', repos='http://cran.r-project.org')"
+# Install BiocManager and all CRAN packages in single RUN layer
+# Using BuildKit cache mount to accelerate subsequent rebuilds
+RUN --mount=type=cache,target=/root/.cache/R \
+    R --vanilla -e "\
+    install.packages('BiocManager', repos='https://cloud.r-project.org'); \
+    cran_pkgs <- c( \
+      'shiny', 'shinydashboard', 'shinyjs', 'shinycssloaders', 'shinyWidgets', 'shinyBS', 'bslib', \
+      'dplyr', 'tidyr', 'stringr', 'readxl', 'openxlsx', 'writexl', 'DT', 'rhandsontable', 'digest', \
+      'ggplot2', 'plotly', 'ggprism', 'ggrepel', 'ggsignif', 'ggVennDiagram', 'ggupset', 'patchwork', 'reshape2', \
+      'gridExtra', 'grid', 'factoextra', 'RColorBrewer', 'viridis', 'scales', 'colourpicker', 'VennDiagram', \
+      'UpSetR', 'heatmaply', 'pheatmap', 'htmlwidgets', 'visNetwork', 'igraph', 'ggraph', \
+      'randomForest', 'randomForestExplainer', 'glmnet', 'missMDA', 'plyr', 'multcomp', 'agricolae', \
+      'PMCMRplus', 'caret', 'e1071', 'Boruta', 'ranger', 'gbm', 'xgboost', 'iml', 'MLmetrics', \
+      'rstatix', 'car', 'emmeans', 'dunn.test', 'mice', 'foreach', 'doParallel', \
+      'pROC', 'PRROC', 'data.table', 'httr', 'httr2', 'htmltools', 'jsonlite', 'later', 'markdown', \
+      'moments', 'png', 'future', 'future.apply', 'promises', 'pwrss', 'cli', 'rlang', 'xfun', \
+      'umap', 'Rtsne', 'svglite', 'Cairo', 'ggridges', 'ggbeeswarm', 'cowplot', 'fmsb', 'yulab.utils', \
+      'zip', 'PubChemR', 'webchem', 'DBI', 'RSQLite', 'RSpectra', 'WGCNA', 'corrplot', \
+      'dynamicTreeCut', 'flashClust', 'reticulate', 'viridisLite', 'gprofiler2', 'enrichR' \
+    ); \
+    install.packages(cran_pkgs, repos='https://cloud.r-project.org', dependencies=TRUE, Ncpus=4) \
+    "
 
-# Install core Shiny packages
-RUN R --vanilla -e "install.packages(c(\
-    'shiny', \
-    'shinydashboard', \
-    'shinyjs', \
-    'shinycssloaders', \
-    'shinyWidgets', \
-    'shinyBS', \
-    'bslib' \
-  ), repos='http://cran.r-project.org', dependencies=TRUE)"
-
-# Install data manipulation and I/O packages
-RUN R --vanilla -e "install.packages(c(\
-    'dplyr', \
-    'tidyr', \
-    'stringr', \
-    'readxl', \
-    'openxlsx', \
-    'writexl', \
-    'DT', \
-    'rhandsontable', \
-    'digest' \
-  ), repos='http://cran.r-project.org', dependencies=TRUE)"
-
-# Install visualization packages
-RUN R --vanilla -e "install.packages(c(\
-    'ggplot2', \
-    'plotly', \
-    'ggprism', \
-    'ggrepel', \
-    'ggsignif', \
-    'ggVennDiagram', \
-    'ggupset', \
-    'patchwork', \
-    'reshape2', \
-    'gridExtra', \
-    'grid', \
-    'factoextra', \
-    'RColorBrewer', \
-    'viridis', \
-    'scales', \
-    'colourpicker', \
-    'VennDiagram', \
-    'UpSetR', \
-    'heatmaply', \
-    'pheatmap', \
-    'htmlwidgets', \
-    'visNetwork', \
-    'igraph', \
-    'ggraph' \
-  ), repos='http://cran.r-project.org', dependencies=TRUE)"
-
-# Install Bioconductor packages for annotation and analysis
-RUN R --vanilla -e "BiocManager::install(c(\
-    'ComplexHeatmap', \
-    'circlize', \
-    'DESeq2', \
-    'edgeR', \
-    'limma', \
-    'sva', \
-    'preprocessCore', \
-    'vsn', \
-    'ROTS', \
-    'AnnotationDbi', \
-    'GO.db', \
-    'GOSemSim', \
-    'topGO' \
-  ), update=FALSE, ask=FALSE)"
-
-# Install enrichment analysis packages
-RUN R --vanilla -e "BiocManager::install(c(\
-    'clusterProfiler', \
-    'enrichplot', \
-    'DOSE', \
-    'ReactomePA', \
-    'msigdbr', \
-    'pathview' \
-  ), update=FALSE, ask=FALSE)"
-
-# Install annotation databases for all supported organisms
-# Human, Mouse, Rat, Zebrafish, Arabidopsis, Fruit Fly, C. elegans, Yeast, E. coli
-RUN R --vanilla -e "BiocManager::install(c(\
-    'org.Hs.eg.db', \
-    'org.Mm.eg.db', \
-    'org.Rn.eg.db', \
-    'org.Dr.eg.db', \
-    'org.At.tair.db', \
-    'org.Dm.eg.db', \
-    'org.Ce.eg.db', \
-    'org.Sc.sgd.db', \
-    'org.EcK12.eg.db' \
-  ), update=FALSE, ask=FALSE)"
-
-# Install machine learning packages
-RUN R --vanilla -e "install.packages(c(\
-    'randomForest', \
-    'randomForestExplainer', \
-    'glmnet', \
-    'missMDA', \
-    'plyr', \
-    'multcomp', \
-    'agricolae', \
-    'PMCMRplus', \
-    'caret', \
-    'e1071', \
-    'Boruta', \
-    'ranger', \
-    'gbm', \
-    'xgboost', \
-    'iml', \
-    'MLmetrics', \
-    'rstatix', \
-    'userfriendlyscience', \
-    'car', \
-    'emmeans', \
-    'dunn.test', \
-    'mice', \
-    'foreach', \
-    'doParallel' \
-  ), repos='http://cran.r-project.org', dependencies=TRUE)"
-
-# Install machine learning packages from Bioconductor
-RUN R --vanilla -e "BiocManager::install(c(\
-    'mixOmics', \
-    'MOFA2', \
-    'MOFAdata', \
-    'impute', \
-    'Rgraphviz', \
-    'KEGGgraph', \
-    'KEGGREST', \
-    'hmdbQuery', \
-    'rhdf5', \
-    'biodb', \
-    'biodbChebi' \
-  ), update=FALSE, ask=FALSE)"
-
-# Install statistical and utility packages
-RUN R --vanilla -e "install.packages(c(\
-    'pROC', \
-    'PRROC', \
-    'httr', \
-    'httr2', \
-    'jsonlite', \
-    'markdown', \
-    'png', \
-    'future', \
-    'promises', \
-    'pwrss', \
-    'userfriendlyscience', \
-    'cli', \
-    'rlang', \
-    'xfun', \
-    'umap', \
-    'Rtsne', \
-    'svglite', \
-    'Cairo', \
-    'ggridges', \
-    'ggbeeswarm', \
-    'cowplot', \
-    'fmsb', \
-    'yulab.utils', \
-    'zip', \
-    'PubChemR', \
-    'webchem', \
-    'DBI', \
-    'RSQLite', \
-    'RSpectra', \
-    'WGCNA', \
-    'corrplot', \
-    'dynamicTreeCut', \
-    'flashClust', \
-    'reticulate', \
-    'viridisLite' \
-  ), repos='http://cran.r-project.org', dependencies=TRUE)"
-
-# Install gprofiler2 and enrichR
-RUN R --vanilla -e "install.packages(c('gprofiler2', 'enrichR'), repos='http://cran.r-project.org', dependencies=TRUE)"
-
-# Install BiocParallel for parallel processing
-RUN R --vanilla -e "BiocManager::install('BiocParallel', update=FALSE, ask=FALSE)"
+# Install Bioconductor packages in single layer
+RUN --mount=type=cache,target=/root/.cache/R \
+    R --vanilla -e "\
+    BiocManager::install(c( \
+      'ComplexHeatmap', 'circlize', 'DESeq2', 'edgeR', 'limma', 'sva', 'preprocessCore', \
+      'SummarizedExperiment', 'vsn', 'ROTS', 'AnnotationDbi', 'GO.db', 'GOSemSim', 'topGO', \
+      'clusterProfiler', 'enrichplot', 'DOSE', 'ReactomePA', 'msigdbr', 'pathview', \
+      'org.Hs.eg.db', 'org.Mm.eg.db', 'org.Rn.eg.db', 'org.Dr.eg.db', 'org.At.tair.db', \
+      'org.Dm.eg.db', 'org.Ce.eg.db', 'org.Sc.sgd.db', 'org.EcK12.eg.db', \
+      'mixOmics', 'MOFA2', 'MOFAdata', 'impute', 'Rgraphviz', 'KEGGgraph', 'KEGGREST', \
+      'hmdbQuery', 'rhdf5', 'biodb', 'biodbChebi', 'BiocParallel' \
+    ), update=FALSE, ask=FALSE, INSTALL_opts=c('--no-test-load', '--no-docs')) \
+    "
 
 # ============================================================================
 # Stage 3: Copy application files and set up directories
@@ -241,9 +96,14 @@ RUN mkdir -p /srv/shiny-server/omics
 COPY app.R /srv/shiny-server/omics/app.R
 COPY www/ /srv/shiny-server/omics/www/
 COPY omics-dashboard.css /srv/shiny-server/omics/omics-dashboard.css
-# COPY seo_config.R /srv/shiny-server/omics/seo_config.R
+COPY scripts/ /srv/shiny-server/omics/scripts/
 COPY *.R /srv/shiny-server/omics/
 COPY sample_data/ /srv/shiny-server/omics/sample_data/
+
+# Build-time package audit (creates file if missing)
+RUN if [ -f /srv/shiny-server/omics/scripts/packages.R ]; then \
+      Rscript /srv/shiny-server/omics/scripts/packages.R --code-dir=/srv/shiny-server/omics; \
+    fi
 
 # Create symlink for Shiny Server default location
 RUN ln -s /srv/shiny-server/omics /srv/shiny-server/OmicsStack

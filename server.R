@@ -6110,6 +6110,10 @@ server <- function(input, output, session) {
     dist_group_order_base_groups = NULL,    # Store groups available when order was last set
     dist_stat_comparisons_custom = NULL,    # Store user's selected comparisons for stat bars
     dist_plot_is_grid = FALSE,               # TRUE when showing multi-feature grid
+      # PCA Analysis group selection
+      pca_group_order_custom = NULL,          # Store user's selected groups for all groups PCA
+      pca_group_order_base_groups = NULL,     # Store groups available when selection was last set
+    
     
     # ==================== QC-BASED SIGNAL DRIFT CORRECTION ====================
     # QC sample identification
@@ -6330,6 +6334,8 @@ server <- function(input, output, session) {
     values$dist_group_order_custom <- NULL
     values$dist_group_order_base_groups <- NULL
     values$dist_stat_comparisons_custom <- NULL
+      values$pca_group_order_custom <- NULL
+      values$pca_group_order_base_groups <- NULL
     
     # Clear mapping state (but not seen_datasets to preserve user history)
     values$mapping_df <- NULL
@@ -9669,24 +9675,6 @@ server <- function(input, output, session) {
         if (!is.null(gh_result) && nrow(gh_result) > 0) {
           comparison_names <- paste0(gh_result$group1, "_vs_", gh_result$group2)
           p_values <- gh_result$p.adj
-          
-          return(list(
-            p_values = p_values,
-            comparison_names = comparison_names
-          ))
-        }
-      }
-      
-      # Fallback to userfriendlyscience if available
-      if (requireNamespace("userfriendlyscience", quietly = TRUE)) {
-        df <- data.frame(value = values, group = factor(groups))
-        gh_result <- userfriendlyscience::posthocTGH(df$value, df$group)
-        
-        if (!is.null(gh_result$output) && nrow(gh_result$output) > 0) {
-          # Extract pairwise comparisons
-          output_df <- gh_result$output
-          comparison_names <- paste0(output_df[, 1], "_vs_", output_df[, 2])
-          p_values <- output_df$p
           
           return(list(
             p_values = p_values,
@@ -15670,7 +15658,7 @@ server <- function(input, output, session) {
     # Determine which feature should be selected
     # If there's a currently selected feature, try to keep it
     selected_feature <- NULL
-    if (!is.null(input$featureSelect) && input$featureSelect != "") {
+    if (!is.null(input$featureSelect) && any(input$featureSelect != "")) {
       current_selection <- input$featureSelect
       
       # Try to find the currently selected feature in the new choices
@@ -17867,7 +17855,7 @@ get_legend_grid_layout <- function(n_items) {
   })
   
   # Auto-refresh PCA when new normalized data is loaded
-  observeEvent(values$normalized_data, {
+  observeEvent(list(values$normalized_data, input$pca_group_order, input$pcaType, values$active_grouping_level), {
     req(values$normalized_data)
     # Clear existing PCA cache and result
     values$pca_cache <- list()
@@ -17878,35 +17866,69 @@ get_legend_grid_layout <- function(n_items) {
     
     # Automatically recompute All Groups PCA (pairwise is computed on-the-fly in the plot code)
     if (!is.null(input$pcaType) && identical(input$pcaType, "all")) {
-      pca_input <- tryCatch(t(values$normalized_data), error = function(e) NULL)
-      if (!is.null(pca_input) && nrow(pca_input) >= 2 && ncol(pca_input) >= 2) {
-        # Use active grouping level if dual grouping is enabled
-        if (isTRUE(values$has_dual_grouping) && !is.null(values$active_grouping_level)) {
-          if (values$active_grouping_level == "biological") {
-            all_group_labels <- tryCatch(create_proper_group_labels(values$biological_unique_groups, values$biological_group_column_indices), error = function(e) NULL)
-          } else {
-            all_group_labels <- tryCatch(create_proper_group_labels(values$experimental_unique_groups, values$experimental_group_column_indices), error = function(e) NULL)
+      # Resolve active grouping structures
+      if (isTRUE(values$has_dual_grouping) && !is.null(values$active_grouping_level)) {
+        if (values$active_grouping_level == "biological") {
+          active_groups <- values$biological_unique_groups
+          active_indices <- values$biological_group_column_indices
+        } else {
+          active_groups <- values$experimental_unique_groups
+          active_indices <- values$experimental_group_column_indices
+        }
+      } else {
+        active_groups <- values$unique_groups
+        active_indices <- values$group_column_indices
+      }
+
+      active_groups <- preserve_group_names(active_groups %||% character())
+      selected_groups <- input$pca_group_order
+      if (is.null(selected_groups) || length(selected_groups) == 0) {
+        active_pairwise <- get_active_pairwise_combinations()
+        if (!is.null(active_pairwise) && nrow(active_pairwise) > 0) {
+          pairwise_groups <- unique(c(as.character(active_pairwise$Group_1), as.character(active_pairwise$Group_2)))
+          pairwise_groups <- preserve_group_names(pairwise_groups)
+          selected_groups <- pairwise_groups[pairwise_groups %in% active_groups]
+          if (length(selected_groups) < 2) {
+            selected_groups <- active_groups
           }
         } else {
-          all_group_labels <- tryCatch(create_proper_group_labels(values$unique_groups, values$group_column_indices), error = function(e) NULL)
+          selected_groups <- active_groups
         }
-        if (!is.null(all_group_labels)) {
-          tryCatch({
-            pca_res <- prcomp(pca_input, scale. = input$pcaScale %||% TRUE, na.action = na.omit)
-            values$pca_result <- pca_res
-            values$pca_data <- pca_input
-            values$pca_labels <- all_group_labels
-            values$comparison_name <- "All Groups"
-            # Store in cache under a simple auto key so downstream components remain compatible
-            auto_key <- paste0("auto_all_", nrow(pca_input), "x", ncol(pca_input), "_scale_", as.character(input$pcaScale %||% TRUE), "_grouping_", values$active_grouping_level %||% "single")
-            values$pca_cache[[auto_key]] <- list(
-              pca_result = values$pca_result,
-              pca_data = values$pca_data,
-              pca_labels = values$pca_labels,
-              comparison_name = values$comparison_name
-            )
-          }, error = function(e) {
-          })
+      } else {
+        selected_groups <- preserve_group_names(selected_groups)
+      }
+      selected_groups <- selected_groups[selected_groups %in% active_groups]
+
+      if (length(selected_groups) >= 2 && !is.null(active_indices)) {
+        selected_col_indices <- unlist(active_indices[active_groups %in% selected_groups], use.names = FALSE)
+        selected_col_indices <- sort(unique(as.integer(selected_col_indices)))
+        selected_col_indices <- selected_col_indices[selected_col_indices >= 1 & selected_col_indices <= ncol(values$normalized_data)]
+
+        if (length(selected_col_indices) >= 2) {
+          pca_input <- tryCatch(t(values$normalized_data[, selected_col_indices, drop = FALSE]), error = function(e) NULL)
+          all_group_labels <- tryCatch(create_proper_group_labels(active_groups, active_indices), error = function(e) NULL)
+          if (!is.null(all_group_labels)) {
+            all_group_labels <- preserve_group_names(all_group_labels)
+            all_group_labels <- all_group_labels[selected_col_indices]
+            if (!is.null(pca_input) && nrow(pca_input) >= 2 && ncol(pca_input) >= 2 && length(all_group_labels) == nrow(pca_input)) {
+              tryCatch({
+                pca_res <- prcomp(pca_input, scale. = input$pcaScale %||% TRUE, na.action = na.omit)
+                values$pca_result <- pca_res
+                values$pca_data <- pca_input
+                values$pca_labels <- all_group_labels
+                values$comparison_name <- "All Groups"
+                # Store in cache under a simple auto key so downstream components remain compatible
+                auto_key <- paste0("auto_all_", nrow(pca_input), "x", ncol(pca_input), "_scale_", as.character(input$pcaScale %||% TRUE), "_grouping_", values$active_grouping_level %||% "single", "_selected_", paste(selected_groups, collapse = "|"))
+                values$pca_cache[[auto_key]] <- list(
+                  pca_result = values$pca_result,
+                  pca_data = values$pca_data,
+                  pca_labels = values$pca_labels,
+                  comparison_name = values$comparison_name
+                )
+              }, error = function(e) {
+              })
+            }
+          }
         }
       }
     }
@@ -17928,6 +17950,25 @@ get_legend_grid_layout <- function(n_items) {
                theme_void())
     }
     
+    available_groups <- preserve_group_names(get_active_unique_groups() %||% values$unique_groups)
+    selected_pca_groups <- input$pca_group_order
+    if (is.null(selected_pca_groups) || length(selected_pca_groups) == 0) {
+      active_pairwise <- get_active_pairwise_combinations()
+      if (!is.null(active_pairwise) && nrow(active_pairwise) > 0) {
+        pairwise_groups <- unique(c(as.character(active_pairwise$Group_1), as.character(active_pairwise$Group_2)))
+        pairwise_groups <- preserve_group_names(pairwise_groups)
+        selected_pca_groups <- pairwise_groups[pairwise_groups %in% available_groups]
+        if (length(selected_pca_groups) < 2) {
+          selected_pca_groups <- available_groups
+        }
+      } else {
+        selected_pca_groups <- available_groups
+      }
+    } else {
+      selected_pca_groups <- preserve_group_names(selected_pca_groups)
+    }
+    selected_pca_groups <- selected_pca_groups[selected_pca_groups %in% available_groups]
+    
     # Get font sizes from inputs or use defaults (ensure numeric)
     title_size <- as.numeric(if(!is.null(input$pca_title_size) && is.numeric(input$pca_title_size)) input$pca_title_size else 14)
     axis_title_size <- as.numeric(if(!is.null(input$pca_axis_title_size) && is.numeric(input$pca_axis_title_size)) input$pca_axis_title_size else 12)
@@ -17945,6 +17986,21 @@ get_legend_grid_layout <- function(n_items) {
         return(ggplot() +
                  annotate("text", x = 0.5, y = 0.5,
                           label = "No pairwise comparisons available for PCA. Please configure comparisons in the Statistical Analysis tab.",
+                          size = 5) +
+                 theme_void())
+      }
+
+      if (length(selected_pca_groups) >= 2) {
+        active_pairwise <- active_pairwise[
+          active_pairwise$Group_1 %in% selected_pca_groups & active_pairwise$Group_2 %in% selected_pca_groups,
+          , drop = FALSE
+        ]
+      }
+
+      if (is.null(active_pairwise) || nrow(active_pairwise) == 0) {
+        return(ggplot() +
+                 annotate("text", x = 0.5, y = 0.5,
+                          label = "No pairwise PCA plots for currently selected groups.",
                           size = 5) +
                  theme_void())
       }
@@ -18215,6 +18271,14 @@ get_legend_grid_layout <- function(n_items) {
       
     } else {
       # Single PCA plot for all groups
+      if (length(selected_pca_groups) < 2) {
+        return(ggplot() +
+                 annotate("text", x = 0.5, y = 0.5,
+                          label = "Select at least 2 groups to run All Groups PCA.",
+                          size = 6) +
+                 theme_void())
+      }
+
       if (is.null(values$pca_result)) {
         return(ggplot() +
                  annotate("text", x = 0.5, y = 0.5,
@@ -26077,7 +26141,7 @@ get_legend_grid_layout <- function(n_items) {
                                                 "BH" = "BH",
                                                 "scheffe" = "scheffe",
                                                 "tukey")
-                        pairs_result <- emmeans::pairs(emm, adjust = adjust_method)
+                        pairs_result <- pairs(emm, adjust = adjust_method)
                         pairs_summary <- summary(pairs_result)
                       }
                       
@@ -50149,6 +50213,9 @@ get_legend_grid_layout <- function(n_items) {
   
   # Missing value imputation function
   perform_imputation <- function(data, method = "knn", params = list(), by_group = FALSE, group_info = NULL) {
+    # Set seed prior to imputation for consistent result generation across multiple runs/filters
+    set.seed(12345)
+    
     # Create a copy of the data to modify
     imputed_data <- as.matrix(data)
     
@@ -59741,11 +59808,60 @@ get_legend_grid_layout <- function(n_items) {
     )
   })
   
+  output$pca_group_order_ui <- renderUI({
+    groups <- preserve_group_names(get_active_unique_groups() %||% values$unique_groups)
+    if (length(groups) == 0) {
+      return(NULL)
+    }
+
+    stored_order <- isolate(values$pca_group_order_custom)
+    stored_base_groups <- isolate(values$pca_group_order_base_groups)
+    if (!is.null(stored_order) && length(stored_order) > 0) {
+      selected <- stored_order[stored_order %in% groups]
+      new_groups <- setdiff(groups, stored_base_groups %||% character())
+      new_groups <- new_groups[new_groups %in% groups & !(new_groups %in% selected)]
+      selected <- c(selected, new_groups)
+    } else {
+      active_pairwise <- get_active_pairwise_combinations()
+      if (!is.null(active_pairwise) && nrow(active_pairwise) > 0) {
+        pairwise_groups <- unique(c(as.character(active_pairwise$Group_1), as.character(active_pairwise$Group_2)))
+        pairwise_groups <- preserve_group_names(pairwise_groups)
+        selected <- pairwise_groups[pairwise_groups %in% groups]
+        if (length(selected) < 2) {
+          selected <- groups
+        }
+      } else {
+        selected <- groups
+      }
+    }
+
+    selectizeInput(
+      "pca_group_order",
+      "Groups to Include (drag to reorder)",
+      choices = groups,
+      selected = selected,
+      multiple = TRUE,
+      width = "100%",
+      options = list(
+        plugins = list("drag_drop"),
+        placeholder = "Drag groups to reorder or deselect"
+      )
+    )
+  })
+  
   # Observer to store user's custom group order when they reorder
   observeEvent(input$dist_group_order, {
     if (!is.null(input$dist_group_order) && length(input$dist_group_order) > 0) {
       values$dist_group_order_custom <- input$dist_group_order
       values$dist_group_order_base_groups <- preserve_group_names(get_active_unique_groups() %||% values$unique_groups)
+    }
+  }, ignoreNULL = FALSE, ignoreInit = TRUE)
+  
+  observeEvent(input$pca_group_order, {
+    if (!is.null(input$pca_group_order) && length(input$pca_group_order) > 0) {
+      values$pca_group_order_custom <- input$pca_group_order
+      values$pca_group_order_base_groups <- preserve_group_names(get_active_unique_groups() %||% values$unique_groups)
+      values$pca_result <- NULL
     }
   }, ignoreNULL = FALSE, ignoreInit = TRUE)
 

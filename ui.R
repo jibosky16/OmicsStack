@@ -5827,11 +5827,24 @@ ui <- tagList(
                                       fluidRow(
                                         column(6, selectizeInput("pcaGroup1", "Group 1", choices = NULL)),
                                         column(6, selectizeInput("pcaGroup2", "Group 2", choices = NULL))
+                                
                                       )
                                   )
                                 ),
                                 
-                                # PCA Options
+                                # Group selection for all groups PCA (conditionally shown)
+                                conditionalPanel(
+                                  condition = "input.pcaType == 'all'",
+                                  div(class = "dimred-card",
+                                      div(class = "dimred-card-header",
+                                          h4(icon("filter", class = "dimred-feature-icon"), "Group Selection"),
+                                          shinyBS::tipify(icon("question-circle", class = "dimred-tooltip"),
+                                                          "Select which groups to include in the PCA analysis")
+                                      ),
+                                      uiOutput("pca_group_order_ui")
+                                  )
+                                ),
+                                
                                 checkboxInput("pcaScale", "Scale Data", value = TRUE),
                                 checkboxInput("addEllipses", "Add Confidence Ellipses", value = TRUE),
                                 numericInput("ellipseLevel", "Ellipse Confidence Level",
@@ -6050,7 +6063,6 @@ ui <- tagList(
                                                         "Pairwise Comparison" = "pairwise"),
                                             selected = "all", width = "100%"),
                                 
-                                # Pairwise options (conditionally shown)
                                 conditionalPanel(
                                   condition = "input.spcaType == 'pairwise'",
                                   div(id = "spcaPairwiseOptions",

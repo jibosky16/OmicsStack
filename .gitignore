@@ -1,0 +1,52 @@
+# R
+.Rhistory
+.Rprofile
+.RData
+*.Rproj
+renv.lock
+.Rbuildignore
+
+# Database files (large files should not be in git)
+*.db
+*.sqlite
+*.sqlite3
+metabolites.db
+
+# RDS/RData files
+*.rds
+*.RData
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# rsconnect (deployment artifacts)
+rsconnect/
+
+# Node/npm
+node_modules
+package-lock.json
+yarn.lock
+
+# Environment variables (local only)
+.env
+.env.local
+.env.*.local
+
+# Docker
+.docker
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Generated files
+*.cache

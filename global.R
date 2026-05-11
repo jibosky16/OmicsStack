@@ -443,6 +443,7 @@ is_valid_id <- function(x) {
     x <- as.character(x)
     if (x == "") return(FALSE)
     if (toupper(trimws(x)) == "NA") return(FALSE)
+    if (toupper(trimws(x)) == "NOT_FOUND") return(FALSE)
     return(TRUE)
   }, error = function(e) FALSE)
 }
@@ -1010,29 +1011,40 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
     normalized_hyphen_escaped <- paste0("'", gsub("'", "''", normalized_names_hyphen), "'", collapse = ",")
     original_escaped <- paste0("'", gsub("'", "''", metabolite_names), "'", collapse = ",")
     
-    # Search cache using all name variants (original, cleaned, normalized w/o hyphens, normalized w/ hyphens)
-    cache_query <- sprintf("
-      SELECT clean_name, normalized_name, original_name, kegg_id, kegg_status, pubchem_cid, pubchem_status, 
-             hmdb_id, chebi_id, chebi_status, lipidmaps_id, lipidmaps_status
-      FROM cached_mappings 
-      WHERE clean_name IN (%s) OR normalized_name IN (%s) OR normalized_name IN (%s) OR original_name IN (%s)
-    ", cleaned_escaped, normalized_escaped, normalized_hyphen_escaped, original_escaped)
+        # Search cache using all name variants (original, cleaned, normalized w/o hyphens, normalized w/ hyphens)
+        cache_query <- sprintf("
+          SELECT clean_name, normalized_name, original_name, kegg_id, kegg_status, pubchem_cid, pubchem_status,
+            hmdb_id, chebi_id, chebi_status, lipidmaps_id, lipidmaps_status, databases_searched
+          FROM cached_mappings
+          WHERE original_name IN (%s)
+        OR clean_name IN (%s)
+        OR normalized_name IN (%s)
+        OR normalized_name IN (%s)
+        ", original_escaped, cleaned_escaped, normalized_escaped, normalized_hyphen_escaped)
     
     cached_results <- tryCatch(DBI::dbGetQuery(con, cache_query), error = function(e) NULL)
     
     if (!is.null(cached_results) && nrow(cached_results) > 0) {
-      # Match cached results back to original metabolites using all name variants
+          # Match cached results back to original metabolites using all name variants
       for (i in seq_along(metabolite_names)) {
+        # Fix exact NA subsets that break rows when name is NA or missing by using %in%
         cached_row <- cached_results[
-          (cached_results$original_name == metabolite_names[i]) |
-          (cached_results$clean_name == cleaned_names[i]) | 
-          (cached_results$normalized_name == normalized_names[i]) |
-          (cached_results$normalized_name == normalized_names_hyphen[i]), 
+          (!is.na(cached_results$original_name) & cached_results$original_name == metabolite_names[i]) |
+          (!is.na(cached_results$clean_name) & cached_results$clean_name == cleaned_names[i]) | 
+          (!is.na(cached_results$normalized_name) & cached_results$normalized_name == normalized_names[i]) |
+          (!is.na(cached_results$normalized_name) & cached_results$normalized_name == normalized_names_hyphen[i]), 
         ]
         
         if (nrow(cached_row) > 0) {
           cached_row <- cached_row[1, ]  # Take first match
           cache_retry_needed[[i]] <- character(0)
+          
+          was_searched <- !is.null(cached_row$databases_searched) && is.character(cached_row$databases_searched)
+          kegg_searched      <- was_searched && grepl("kegg", cached_row$databases_searched)
+          pubchem_searched   <- was_searched && grepl("pubchem", cached_row$databases_searched)
+          hmdb_searched      <- was_searched && grepl("hmdb", cached_row$databases_searched)
+          chebi_searched     <- was_searched && grepl("chebi", cached_row$databases_searched)
+          lipidmaps_searched <- was_searched && grepl("lipidmaps", cached_row$databases_searched)
           
           # For each database, check status and decide whether to use cached value or retry
           # kegg
@@ -1041,6 +1053,9 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
               cache_retry_needed[[i]] <- c(cache_retry_needed[[i]], "kegg")
             } else if (is_valid_id(cached_row$kegg_id)) {
               results_df$kegg_id[i] <- as.character(cached_row$kegg_id)
+            } else if (kegg_searched) {
+              # Marked as searched but not found: prevent reappearing in API retry
+              results_df$kegg_id[i] <- "NOT_FOUND"
             }
           }
           
@@ -1050,12 +1065,18 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
               cache_retry_needed[[i]] <- c(cache_retry_needed[[i]], "pubchem")
             } else if (is_valid_id(cached_row$pubchem_cid)) {
               results_df$pubchem_cid[i] <- as.character(cached_row$pubchem_cid)
+            } else if (pubchem_searched) {
+              results_df$pubchem_cid[i] <- "NOT_FOUND" 
             }
           }
           
           # hmdb (no status check, always use if valid)
-          if ("hmdb" %in% databases && is_valid_id(cached_row$hmdb_id)) {
-            results_df$hmdb_id[i] <- as.character(cached_row$hmdb_id)
+          if ("hmdb" %in% databases) {
+             if (is_valid_id(cached_row$hmdb_id)) {
+               results_df$hmdb_id[i] <- as.character(cached_row$hmdb_id)
+             } else if (hmdb_searched) {
+               results_df$hmdb_id[i] <- "NOT_FOUND" 
+             }
           }
           
           # chebi
@@ -1064,6 +1085,8 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
               cache_retry_needed[[i]] <- c(cache_retry_needed[[i]], "chebi")
             } else if (is_valid_id(cached_row$chebi_id)) {
               results_df$chebi_id[i] <- as.character(cached_row$chebi_id)
+            } else if (chebi_searched) {
+              results_df$chebi_id[i] <- "NOT_FOUND" 
             }
           }
           
@@ -1073,6 +1096,8 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
               cache_retry_needed[[i]] <- c(cache_retry_needed[[i]], "lipidmaps")
             } else if (is_valid_id(cached_row$lipidmaps_id)) {
               results_df$lipidmaps_id[i] <- as.character(cached_row$lipidmaps_id)
+            } else if (lipidmaps_searched) {
+              results_df$lipidmaps_id[i] <- "NOT_FOUND" 
             }
           }
         }
@@ -1084,16 +1109,24 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
   
   # STEP 2: Find uncached metabolites that still need database search
   uncached_indices <- which(
-    is.na(results_df$kegg_id) & is.na(results_df$pubchem_cid) & 
-    is.na(results_df$hmdb_id) & is.na(results_df$chebi_id) & is.na(results_df$lipidmaps_id)
+    (is.na(results_df$kegg_id) | results_df$kegg_id == "NOT_FOUND") & 
+    (is.na(results_df$pubchem_cid) | results_df$pubchem_cid == "NOT_FOUND") &
+    (is.na(results_df$hmdb_id) | results_df$hmdb_id == "NOT_FOUND") & 
+    (is.na(results_df$chebi_id) | results_df$chebi_id == "NOT_FOUND") & 
+    (is.na(results_df$lipidmaps_id) | results_df$lipidmaps_id == "NOT_FOUND")
   )
-  
+
   # STEP 2b: Find metabolites with partial cache (have some IDs but missing HMDB)
   # HMDB is ONLY in the main metabolites table, not from API, so we need to query for it separately
   hmdb_missing_indices <- which(
-    "hmdb" %in% databases & 
-    is.na(results_df$hmdb_id) &
-    !(1:length(metabolite_names) %in% uncached_indices)  # Exclude fully uncached (will be searched anyway)
+    "hmdb" %in% databases &
+    (is.na(results_df$hmdb_id) | results_df$hmdb_id == "NOT_FOUND") &
+    (
+      (!is.na(results_df$kegg_id) & results_df$kegg_id != "NOT_FOUND") |
+      (!is.na(results_df$pubchem_cid) & results_df$pubchem_cid != "NOT_FOUND") |
+      (!is.na(results_df$chebi_id) & results_df$chebi_id != "NOT_FOUND") |
+      (!is.na(results_df$lipidmaps_id) & results_df$lipidmaps_id != "NOT_FOUND")
+    )
   )
   
   if (length(hmdb_missing_indices) > 0 && is_omics_verbose()) {
@@ -1206,11 +1239,11 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
           # For HMDB-missing cases, only update HMDB (other IDs already from cache)
           if (length(match_idx) > 0) {
             row <- db_results_all[match_idx[1], ]
-            # Only update if current result is NA (don't overwrite cached values)
-            if (is.na(results_df$kegg_id[orig_idx]) && is_valid_id(row$kegg_id)) results_df$kegg_id[orig_idx] <- as.character(row$kegg_id)
-            if (is.na(results_df$pubchem_cid[orig_idx]) && is_valid_id(row$pubchem_id)) results_df$pubchem_cid[orig_idx] <- as.character(row$pubchem_id)
-            if (is.na(results_df$hmdb_id[orig_idx]) && is_valid_id(row$hmdb_id)) results_df$hmdb_id[orig_idx] <- as.character(row$hmdb_id)
-            if (is.na(results_df$chebi_id[orig_idx]) && is_valid_id(row$chebi_id)) results_df$chebi_id[orig_idx] <- as.character(row$chebi_id)
+            # Only update if current result is NA or NOT_FOUND
+            if ((is.na(results_df$kegg_id[orig_idx]) || results_df$kegg_id[orig_idx] == "NOT_FOUND") && is_valid_id(row$kegg_id)) results_df$kegg_id[orig_idx] <- as.character(row$kegg_id)
+            if ((is.na(results_df$pubchem_cid[orig_idx]) || results_df$pubchem_cid[orig_idx] == "NOT_FOUND") && is_valid_id(row$pubchem_id)) results_df$pubchem_cid[orig_idx] <- as.character(row$pubchem_id)
+            if ((is.na(results_df$hmdb_id[orig_idx]) || results_df$hmdb_id[orig_idx] == "NOT_FOUND") && is_valid_id(row$hmdb_id)) results_df$hmdb_id[orig_idx] <- as.character(row$hmdb_id)
+            if ((is.na(results_df$chebi_id[orig_idx]) || results_df$chebi_id[orig_idx] == "NOT_FOUND") && is_valid_id(row$chebi_id)) results_df$chebi_id[orig_idx] <- as.character(row$chebi_id)
           }
         }
       }
@@ -1229,14 +1262,14 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
       
       # Check which requested databases are still missing IDs
       # Use is_valid_id() to properly detect NA, "NA", empty strings, etc.
-      if ("kegg" %in% databases && !is_valid_id(results_df$kegg_id[idx])) missing_dbs <- c(missing_dbs, "kegg")
-      if ("pubchem" %in% databases && !is_valid_id(results_df$pubchem_cid[idx])) missing_dbs <- c(missing_dbs, "pubchem")
-      if ("chebi" %in% databases && !is_valid_id(results_df$chebi_id[idx])) missing_dbs <- c(missing_dbs, "chebi")
-      
+      # Also ensure we don't recall APIs for items explicitly marked "NOT_FOUND" by cache
+      if ("kegg" %in% databases && !is_valid_id(results_df$kegg_id[idx]) && (is.na(results_df$kegg_id[idx]) || results_df$kegg_id[idx] != "NOT_FOUND")) missing_dbs <- c(missing_dbs, "kegg")
+      if ("pubchem" %in% databases && !is_valid_id(results_df$pubchem_cid[idx]) && (is.na(results_df$pubchem_cid[idx]) || results_df$pubchem_cid[idx] != "NOT_FOUND")) missing_dbs <- c(missing_dbs, "pubchem")
+      if ("chebi" %in% databases && !is_valid_id(results_df$chebi_id[idx]) && (is.na(results_df$chebi_id[idx]) || results_df$chebi_id[idx] != "NOT_FOUND")) missing_dbs <- c(missing_dbs, "chebi")
+
       # LipidMaps is ALWAYS missing from main DB (no column in metabolites table)
       # So always call API if requested
-      if ("lipidmaps" %in% databases) missing_dbs <- c(missing_dbs, "lipidmaps")
-      
+      if ("lipidmaps" %in% databases && !is_valid_id(results_df$lipidmaps_id[idx]) && (is.na(results_df$lipidmaps_id[idx]) || results_df$lipidmaps_id[idx] != "NOT_FOUND")) missing_dbs <- c(missing_dbs, "lipidmaps")
       if (length(missing_dbs) > 0) {
         api_calls_needed[[as.character(idx)]] <- list(databases = missing_dbs, statuses = list())
       }
@@ -1356,8 +1389,71 @@ batch_search_metabolites <- function(metabolite_names, databases = c("kegg", "pu
       }
       
       local_get_lipidmaps_id_api_batch <- function(compound_name) {
-        # LipidMaps API not implemented - return NOT_FOUND
-        return("NOT_FOUND")
+        tryCatch({
+          # Need to ensure proper URL encoding
+          encoded_name <- URLencode(compound_name, reserved = TRUE)
+          
+          # Try searching by abbrev first
+          url <- paste0("https://www.lipidmaps.org/rest/compound/abbrev/", encoded_name, "/all")
+          resp <- httr::GET(url, httr::timeout(10))
+          
+          if (httr::status_code(resp) == 200) {
+            content_str <- httr::content(resp, "text", encoding = "UTF-8")
+            # The API returns an HTML error string if not found, like "This input item does not exist"
+            if (!grepl("does not exist", content_str, ignore.case = TRUE) && nchar(trimws(content_str)) > 0) {
+              data <- tryCatch(jsonlite::fromJSON(content_str), error = function(e) NULL)
+              if (!is.null(data) && is.list(data) && length(data) > 0) {
+                first_match <- data[[1]]
+                if (!is.null(first_match$lm_id)) {
+                  return(first_match$lm_id)
+                }
+              }
+            }
+          }
+          
+          # Try searching by abbrev_chains if abbrev fails
+          url2 <- paste0("https://www.lipidmaps.org/rest/compound/abbrev_chains/", encoded_name, "/all")
+          resp2 <- httr::GET(url2, httr::timeout(10))
+          
+          if (httr::status_code(resp2) == 200) {
+            content_str2 <- httr::content(resp2, "text", encoding = "UTF-8")
+            if (!grepl("does not exist", content_str2, ignore.case = TRUE) && nchar(trimws(content_str2)) > 0) {
+              data2 <- tryCatch(jsonlite::fromJSON(content_str2), error = function(e) NULL)
+              if (!is.null(data2) && is.list(data2) && length(data2) > 0) {
+                first_match <- data2[[1]]
+                if (!is.null(first_match$lm_id)) {
+                  return(first_match$lm_id)
+                }
+              }
+            }
+          }
+          
+          # Try searching by replacing underscores/parentheses and prepending specific classes if "Sum Composition" format was submitted
+          # For example, if compound_name looks like "FA(28:8)" or "FA 28:8" we can ensure we search "FA 28:8"
+          clean_comp_name <- gsub("[()]", " ", compound_name)
+          clean_comp_name <- trimws(gsub("\\s+", " ", clean_comp_name))
+          encoded_clean <- URLencode(clean_comp_name, reserved = TRUE)
+          
+          url3 <- paste0("https://www.lipidmaps.org/rest/compound/abbrev/", encoded_clean, "/all")
+          resp3 <- httr::GET(url3, httr::timeout(10))
+          
+          if (httr::status_code(resp3) == 200) {
+            content_str3 <- httr::content(resp3, "text", encoding = "UTF-8")
+            if (!grepl("does not exist", content_str3, ignore.case = TRUE) && nchar(trimws(content_str3)) > 0) {
+              data3 <- tryCatch(jsonlite::fromJSON(content_str3), error = function(e) NULL)
+              if (!is.null(data3) && is.list(data3) && length(data3) > 0) {
+                first_match <- data3[[1]]
+                if (!is.null(first_match$lm_id)) {
+                  return(first_match$lm_id)
+                }
+              }
+            }
+          }
+          
+          return("NOT_FOUND")
+        }, error = function(e) {
+          return("TEMP_ERROR")
+        })
       }
       
       # Call APIs for each metabolite
