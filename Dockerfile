@@ -70,6 +70,7 @@ RUN --mount=type=cache,target=/root/.cache/R \
     ); \
     # Use both Bioconductor and the latest CRAN to ensure up-to-date dependencies and cross-repo resolution
     repos <- BiocManager::repositories(); \
+    repos <- repos[names(repos) != 'CRAN']; \
     repos['CRAN'] <- 'https://cloud.r-project.org'; \
     options(repos = repos); \
     install.packages(cran_pkgs, Ncpus=4); \
@@ -79,7 +80,8 @@ RUN --mount=type=cache,target=/root/.cache/R \
 RUN --mount=type=cache,target=/root/.cache/R \
     R --vanilla -e "\
     repos <- BiocManager::repositories(); \
-    repos['CRAN'] <- 'https://cloud.r-project.org'; \
+  repos <- repos[names(repos) != 'CRAN']; \
+  repos['CRAN'] <- 'https://cloud.r-project.org'; \
     options(repos = repos); \
     BiocManager::install(c( \
       'ComplexHeatmap', 'circlize', 'DESeq2', 'edgeR', 'limma', 'sva', 'preprocessCore', \
