@@ -68,7 +68,8 @@ RUN --mount=type=cache,target=/root/.cache/R \
       'zip', 'PubChemR', 'webchem', 'DBI', 'RSQLite', 'RSpectra', 'WGCNA', 'corrplot', \
       'dynamicTreeCut', 'flashClust', 'reticulate', 'viridisLite', 'gprofiler2', 'enrichR' \
     ); \
-    install.packages(cran_pkgs, repos='https://cloud.r-project.org', dependencies=TRUE, Ncpus=4) \
+    # Set repos to BiocManager::repositories() so CRAN packages with Bioc dependencies (like WGCNA) can install successfully
+    install.packages(cran_pkgs, repos=BiocManager::repositories(), Ncpus=4) \
     "
 
 # Install Bioconductor packages in single layer
