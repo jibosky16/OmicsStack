@@ -1,4 +1,64 @@
 /* General Layout */
+.main-tab-sidebar,
+.tab-pane.active > .container-fluid > .row > .col-sm-3:first-child,
+.tab-pane.active > .container-fluid > .row > .col-sm-4:first-child,
+.tab-pane.active > .row > .col-sm-3:first-child,
+.tab-pane.active > .row > .col-sm-4:first-child {
+  position: sticky !important;
+  top: 72px !important;
+  height: calc(100vh - 92px);
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: none !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.main-tab-sidebar::-webkit-scrollbar,
+.tab-pane.active > .container-fluid > .row > .col-sm-3:first-child::-webkit-scrollbar,
+.tab-pane.active > .container-fluid > .row > .col-sm-4:first-child::-webkit-scrollbar,
+.tab-pane.active > .row > .col-sm-3:first-child::-webkit-scrollbar,
+.tab-pane.active > .row > .col-sm-4:first-child::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.dimred-compact-controls {
+  margin-bottom: 12px;
+}
+
+.dimred-compact-controls .form-group,
+.dimred-compact-controls .checkbox {
+  margin-bottom: 8px;
+}
+
+.dimred-compact-controls details {
+  margin-top: 6px;
+}
+
+.dimred-compact-controls summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.dimred-loadings-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 10px;
+  flex-wrap: nowrap;
+}
+
+.dimred-loadings-toolbar .checkbox {
+  margin: 0;
+}
+
+.dimred-loadings-toolbar .checkbox label {
+  white-space: nowrap;
+}
+
 .distribution-viz-container {
   display: grid;
   grid-template-columns: 350px 1fr;

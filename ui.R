@@ -1993,14 +1993,13 @@ ui <- tagList(
       }
 
       /* Dark mode adjustments for form groups */
-      [data-theme='dark'] #pca_color_controls .form-group,
-      [data-theme='dark'] #spca_color_controls .form-group {
+      [data-theme='dark'] [id$='_color_controls'] .form-group {
         background-color: rgba(255, 255, 255, 0.02) !important;
       }
 
       /* Fix z-index for color picker popups - highest priority */
-      #pca_color_controls .colourpicker-palette, #spca_color_controls .colourpicker-palette,
-      #pca_color_controls .colourpicker-popup, #spca_color_controls .colourpicker-popup,
+      [id$='_color_controls'] .colourpicker-palette,
+      [id$='_color_controls'] .colourpicker-popup,
       .colourpicker-palette, .colourpicker-popup {
         z-index: 99999 !important;
         position: fixed !important;  /* Use fixed positioning to ensure it's on top */
@@ -2023,8 +2022,8 @@ ui <- tagList(
       }
 
       /* Enhanced color picker button styling - full width with proper constraints */
-      #pca_color_controls .colourpicker-input, #spca_color_controls .colourpicker-input,
-      #pca_color_controls .colourpicker-button, #spca_color_controls .colourpicker-button {
+      [id$='_color_controls'] .colourpicker-input,
+      [id$='_color_controls'] .colourpicker-button {
         border-radius: 8px !important;
         border: 2px solid var(--border-color) !important;
         width: 100% !important;  /* Full width within container */
@@ -2038,15 +2037,15 @@ ui <- tagList(
         font-weight: 500;
       }
 
-      #pca_color_controls .colourpicker-button:hover, #spca_color_controls .colourpicker-button:hover,
-      #pca_color_controls .colourpicker-input:hover, #spca_color_controls .colourpicker-input:hover {
+      [id$='_color_controls'] .colourpicker-button:hover,
+      [id$='_color_controls'] .colourpicker-input:hover {
         transform: scale(1.02);
         border-color: var(--button-primary) !important;
         box-shadow: 0 3px 12px rgba(52, 152, 219, 0.4) !important;
       }
 
       /* Fix group name labels - prevent text cutoff and ensure full visibility */
-      #pca_color_controls label, #spca_color_controls label {
+      [id$='_color_controls'] label {
         font-size: 0.9rem !important;
         font-weight: 600 !important;
         margin-bottom: 4px !important;
@@ -2064,13 +2063,13 @@ ui <- tagList(
 
       /* Responsive adjustments for smaller screens */
       @media (max-width: 768px) {
-        #pca_color_controls .form-group, #spca_color_controls .form-group {
+        [id$='_color_controls'] .form-group {
           margin-bottom: 6px !important;
           padding: 3px !important;
         }
 
-        #pca_color_controls .colourpicker-input, #spca_color_controls .colourpicker-input,
-        #pca_color_controls .colourpicker-button, #spca_color_controls .colourpicker-button {
+        [id$='_color_controls'] .colourpicker-input,
+        [id$='_color_controls'] .colourpicker-button {
           min-width: 120px !important;
           max-width: 100% !important;
         }
@@ -3449,30 +3448,87 @@ ui <- tagList(
       // Function to update binary group selection based on problem type
       function updateBinaryGroupSelectionUI() {
         var family = $('#glmnet_family').val();
-        if (family === 'binomial') {
-          $('#binary_group_selection').show().slideDown(200);
+        var method = $('#feature_selection_method').val();
+        if (method === 'lasso' && family === 'binomial') {
+          $('#binary_group_selection').stop(true, true).slideDown(200);
         } else {
-          $('#binary_group_selection').slideUp(200);
+          $('#binary_group_selection').stop(true, true).slideUp(200);
         }
       }
 
       // Function to update RF binary group selection based on problem type
       function updateRFBinaryGroupSelectionUI() {
         var family = $('#rf_family').val();
-        if (family === 'binary') {
-          $('#rf_binary_group_selection').show().slideDown(200);
+        var method = $('#feature_selection_method').val();
+        if (method === 'rf' && family === 'binary') {
+          $('#rf_binary_group_selection').stop(true, true).slideDown(200);
         } else {
-          $('#rf_binary_group_selection').slideUp(200);
+          $('#rf_binary_group_selection').stop(true, true).slideUp(200);
         }
       }
 
       // Function to update Permutation binary group selection based on problem type
       function updatePermBinaryGroupSelectionUI() {
         var family = $('#perm_family').val();
-        if (family === 'binary') {
-          $('#perm_binary_group_selection').show().slideDown(200);
+        var method = $('#feature_selection_method').val();
+        if (method === 'permutation' && family === 'binary') {
+          $('#perm_binary_group_selection').stop(true, true).slideDown(200);
         } else {
-          $('#perm_binary_group_selection').slideUp(200);
+          $('#perm_binary_group_selection').stop(true, true).slideUp(200);
+        }
+      }
+
+      // Function to update Boruta binary group selection based on problem type
+      function updateBorutaBinaryGroupSelectionUI() {
+        var family = $('#boruta_problem_type').val();
+        var method = $('#feature_selection_method').val();
+        if (method === 'boruta' && family === 'binary') {
+          $('#boruta_binary_group_selection').stop(true, true).slideDown(200);
+        } else {
+          $('#boruta_binary_group_selection').stop(true, true).slideUp(200);
+        }
+      }
+
+      // Function to update RFE binary group selection based on problem type
+      function updateRFEBinaryGroupSelectionUI() {
+        var family = $('#rfe_problem_type').val();
+        var method = $('#feature_selection_method').val();
+        if (method === 'rfe' && family === 'binary') {
+          $('#rfe_binary_group_selection').stop(true, true).slideDown(200);
+        } else {
+          $('#rfe_binary_group_selection').stop(true, true).slideUp(200);
+        }
+      }
+
+      function updateFeatureSelectionTargetLockUI() {
+        var method = $('#feature_selection_method').val();
+        var lockTarget = false;
+        if (method === 'lasso') {
+          var glmnetFamily = $('#glmnet_family').val();
+          lockTarget = glmnetFamily === 'multinomial' || glmnetFamily === 'grouped_multinomial';
+        } else if (method === 'rf') {
+          lockTarget = $('#rf_family').val() === 'multiclass';
+        } else if (method === 'permutation') {
+          lockTarget = $('#perm_family').val() === 'multiclass';
+        } else if (method === 'rfe') {
+          lockTarget = $('#rfe_problem_type').val() === 'multiclass';
+        } else if (method === 'boruta') {
+          lockTarget = $('#boruta_problem_type').val() === 'multiclass';
+        }
+
+        var $target = $('#feature_selection_target');
+        if (lockTarget) {
+          $target.val('ALL_GROUPS').trigger('change.selectize').trigger('change');
+          if ($target[0] && $target[0].selectize) {
+            $target[0].selectize.setValue('ALL_GROUPS', true);
+            $target[0].selectize.disable();
+          } else {
+            $target.prop('disabled', true);
+          }
+        } else if ($target[0] && $target[0].selectize) {
+          $target[0].selectize.enable();
+        } else {
+          $target.prop('disabled', false);
         }
       }
 
@@ -3532,6 +3588,10 @@ ui <- tagList(
         updateAdvancedRFUI();
         updateBinaryGroupSelectionUI();
         updateRFBinaryGroupSelectionUI();
+        updatePermBinaryGroupSelectionUI();
+        updateBorutaBinaryGroupSelectionUI();
+        updateRFEBinaryGroupSelectionUI();
+        updateFeatureSelectionTargetLockUI();
         updateAlphaAutotuneUI();
         updateGlmnetWeightsUI();
         updateRFWeightsUI();
@@ -3542,14 +3602,22 @@ ui <- tagList(
       $(document)
         .on('change', '#feature_filtering_method', updateFeatureFilteringUI)
         .on('change', '#feature_selection_method', updateMLFeatureSelectionUI)
+        .on('change', '#feature_selection_method', updateFeatureSelectionTargetLockUI)
         .on('change', 'input[name=\"lambda_selection\"]', updateLambdaSelectionUI)
         .on('change', '#lambda_selection', updateLambdaSelectionUI)
         .on('change', '#show_advanced_glmnet', updateAdvancedGlmnetUI)
         .on('change', '#show_advanced_rf', updateAdvancedRFUI)
         .on('change', '#show_advanced_perm', updateAdvancedPermUI)
         .on('change', '#glmnet_family', updateBinaryGroupSelectionUI)
+        .on('change', '#glmnet_family', updateFeatureSelectionTargetLockUI)
         .on('change', '#rf_family', updateRFBinaryGroupSelectionUI)
+        .on('change', '#rf_family', updateFeatureSelectionTargetLockUI)
         .on('change', '#perm_family', updatePermBinaryGroupSelectionUI)
+        .on('change', '#perm_family', updateFeatureSelectionTargetLockUI)
+        .on('change', '#rfe_problem_type', updateFeatureSelectionTargetLockUI)
+        .on('change', '#rfe_problem_type', updateRFEBinaryGroupSelectionUI)
+        .on('change', '#boruta_problem_type', updateFeatureSelectionTargetLockUI)
+        .on('change', '#boruta_problem_type', updateBorutaBinaryGroupSelectionUI)
         .on('change', '#autotune_alpha', updateAlphaAutotuneUI)
         .on('change', '#glmnet_use_weights', updateGlmnetWeightsUI)
         .on('change', '#rf_use_class_weights', updateRFWeightsUI)
@@ -3567,6 +3635,7 @@ ui <- tagList(
         updateBinaryGroupSelectionUI();
         updateRFBinaryGroupSelectionUI();
         updatePermBinaryGroupSelectionUI();
+        updateFeatureSelectionTargetLockUI();
         updateAlphaAutotuneUI();
         updateGlmnetWeightsUI();
         updateRFWeightsUI();
@@ -3582,6 +3651,9 @@ ui <- tagList(
       $(document).on('shown.bs.tab', function() {
         setTimeout(function() {
           updateBinaryGroupSelectionUI();
+          updateRFBinaryGroupSelectionUI();
+          updatePermBinaryGroupSelectionUI();
+          updateFeatureSelectionTargetLockUI();
           updateLambdaSelectionUI(); // Also update lambda selection
         }, 100);
       });
@@ -3590,6 +3662,9 @@ ui <- tagList(
       $(document).on('shown.bs.tab', 'a[href*=\"ML\"]', function() {
         setTimeout(function() {
           updateBinaryGroupSelectionUI();
+          updateRFBinaryGroupSelectionUI();
+          updatePermBinaryGroupSelectionUI();
+          updateFeatureSelectionTargetLockUI();
           updateLambdaSelectionUI(); // Also update lambda selection
         }, 100);
       });
@@ -4030,14 +4105,7 @@ ui <- tagList(
         }
 
         // Initialize color pickers as hidden
-        $('#pca_color_controls').addClass('hidden').css({
-          'opacity': '0',
-          'max-height': '0',
-          'padding': '0',
-          'margin': '0'
-        });
-
-        $('#spca_color_controls').addClass('hidden').css({
+        $('#pca_color_controls, #spca_color_controls, #umap_color_controls, #tsne_color_controls').addClass('hidden').css({
           'opacity': '0',
           'max-height': '0',
           'padding': '0',
@@ -4054,6 +4122,16 @@ ui <- tagList(
           toggleColorPickers('spca_custom_colors', 'spca_color_controls');
         });
 
+        // Handle UMAP custom colors checkbox
+        $(document).on('change', '#umap_custom_colors', function() {
+          toggleColorPickers('umap_custom_colors', 'umap_color_controls');
+        });
+
+        // Handle t-SNE custom colors checkbox
+        $(document).on('change', '#tsne_custom_colors', function() {
+          toggleColorPickers('tsne_custom_colors', 'tsne_color_controls');
+        });
+
         // Handle initial state based on checkbox values
         setTimeout(function() {
           if ($('#pca_custom_colors').is(':checked')) {
@@ -4061,6 +4139,12 @@ ui <- tagList(
           }
           if ($('#spca_custom_colors').is(':checked')) {
             toggleColorPickers('spca_custom_colors', 'spca_color_controls');
+          }
+          if ($('#umap_custom_colors').is(':checked')) {
+            toggleColorPickers('umap_custom_colors', 'umap_color_controls');
+          }
+          if ($('#tsne_custom_colors').is(':checked')) {
+            toggleColorPickers('tsne_custom_colors', 'tsne_color_controls');
           }
         }, 500);
       });
@@ -5110,11 +5194,18 @@ ui <- tagList(
                                 )
                        ),
                        
-                       tabPanel("Normalized Data",
-                                div(class = "mlfs-card",
-                                    shinycssloaders::withSpinner(
-                                      DT::dataTableOutput("normalizedDataTable"),
-                                      type = 4
+                        tabPanel("Normalized Data",
+                                 div(class = "mlfs-card",
+                                     div(style = "display: flex; justify-content: flex-end; align-items: center; padding: 10px 15px; border-bottom: 1px solid #e9ecef;",
+                                         downloadButton("downloadNormalizedDataBtn", NULL,
+                                                        icon = icon("download"),
+                                                        class = "btn-outline-primary btn-sm",
+                                                        title = "Download Normalized Data",
+                                                        style = "border-radius: 6px; padding: 5px 10px;")
+                                     ),
+                                     shinycssloaders::withSpinner(
+                                       DT::dataTableOutput("normalizedDataTable"),
+                                       type = 4
                                     ),
                                     div(id = "batch_correction_info", style = "display: none;",
                                         tags$div(class = "mt-3"),
@@ -5835,12 +5926,7 @@ ui <- tagList(
                                 # Group selection for all groups PCA (conditionally shown)
                                 conditionalPanel(
                                   condition = "input.pcaType == 'all'",
-                                  div(class = "dimred-card",
-                                      div(class = "dimred-card-header",
-                                          h4(icon("filter", class = "dimred-feature-icon"), "Group Selection"),
-                                          shinyBS::tipify(icon("question-circle", class = "dimred-tooltip"),
-                                                          "Select which groups to include in the PCA analysis")
-                                      ),
+                                  div(style = "margin-bottom: 12px;",
                                       uiOutput("pca_group_order_ui")
                                   )
                                 ),
@@ -5863,37 +5949,7 @@ ui <- tagList(
                                              ),
                                              selected = "overall", width = "100%"),
                                 checkboxInput("use_pca_features", "Use PCA Top N features for downstream analysis", value = FALSE),
-                                checkboxInput("pcaGridLegend", "Show Legend", value = TRUE),
-                                
-                                # Color customization section
-                                hr(),
-                                h5(icon("palette"), "Color Customization"),
-                                checkboxInput("pca_custom_colors", "Use Custom Colors", value = FALSE),
-                                conditionalPanel(
-                                  condition = "input.pca_custom_colors",
-                                  div(id = "pca_color_controls",
-                                      uiOutput("pca_color_picker_ui")
-                                  )
-                                ),
-                                
-                                # Font size controls
-                                hr(),
-                                tags$h5(icon("font", style = "color: #0073e6;"), "Font Sizes", style = "margin-top: 10px; margin-bottom: 10px;"),
-                                fluidRow(
-                                  column(6, numericInput("pca_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
-                                  column(6, numericInput("pca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%"))
-                                ),
-                                fluidRow(
-                                  column(6, numericInput("pca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
-                                  column(6, numericInput("pca_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%"))
-                                ),
-                                fluidRow(
-                                  column(6, numericInput("pca_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5, width = "100%")),
-                                  column(6, numericInput("pca_pairwise_label_size", "Pairwise Label Size", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%"))
-                                ),
-                                fluidRow(
-                                  column(6, numericInput("pca_sample_label_size", "Sample Label Size", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%"))
-                                ),
+                                checkboxInput("pcaGridLegend", "Show Legend", value = TRUE)
                             )
                      ),
                      
@@ -5905,49 +5961,62 @@ ui <- tagList(
                               id = "pcaTabset",
                               tabPanel("PCA Plot",
                                        value = "pcaPlotTab",
-                                       # Grid control panel - conditionally shown for pairwise and all groups (but different fields)
-                                       conditionalPanel(
-                                         condition = "input.pcaType == 'pairwise'",
-                                         div(class = "dimred-card",
-                                             div(class = "dimred-card-header",
-                                                 h4(icon("th", class = "dimred-feature-icon"), "PCA Plot Grid Controls"),
-                                                 shinyBS::tipify(icon("question-circle", class = "dimred-tooltip"),
-                                                                 "Adjust grid layout and appearance for pairwise PCA plots")
-                                             ),
-                                             fluidRow(
-                                               column(4,
-                                                      numericInput("pcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")
-                                               ),
-                                               column(4,
-                                                      numericInput("pcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")
-                                               ),
-                                               column(4,
-                                                      numericInput("pcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px")
-                                               )
-                                             )
-                                         )
-                                       ),
-                                       conditionalPanel(
-                                         condition = "input.pcaType == 'all'",
-                                         div(class = "dimred-card",
-                                             div(class = "dimred-card-header",
-                                                 h4(icon("th", class = "dimred-feature-icon"), "PCA Plot Controls"),
-                                                 shinyBS::tipify(icon("question-circle", class = "dimred-tooltip"),
-                                                                 "Adjust plot appearance for all groups PCA plot")
-                                             ),
-                                             fluidRow(
-                                               column(6,
-                                                      numericInput("pcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")
-                                               ),
-                                               column(6,
-                                                      numericInput("pcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px")
-                                               )
-                                             )
-                                         )
-                                       ),
                                        div(class = "dimred-card",
                                            div(class = "dimred-card-header",
                                                h4(icon("chart-area", class = "dimred-feature-icon"), "PCA Plot"),
+                                               div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
+                                                   shinyWidgets::dropdownButton(
+                                                     circle = FALSE,
+                                                     status = "default",
+                                                     size = "sm",
+                                                     icon = icon("cogs"),
+                                                     tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
+                                                     right = TRUE,
+                                                     inline = TRUE,
+                                                     width = "600px",
+                                                     # Pairwise grid controls
+                                                     conditionalPanel(
+                                                       condition = "input.pcaType == 'pairwise'",
+                                                       fluidRow(
+                                                         column(4, numericInput("pcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")),
+                                                         column(4, numericInput("pcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")),
+                                                         column(4, numericInput("pcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px"))
+                                                       )
+                                                     ),
+                                                     # All groups plot controls
+                                                     conditionalPanel(
+                                                       condition = "input.pcaType == 'all'",
+                                                       fluidRow(
+                                                         column(6, numericInput("pcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")),
+                                                         column(6, numericInput("pcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px"))
+                                                       )
+                                                     ),
+                                                     # Shared appearance controls
+                                                     hr(style = "margin: 12px 0;"),
+                                                     fluidRow(
+                                                       column(3, numericInput("pca_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
+                                                       column(3, numericInput("pca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")),
+                                                       column(3, numericInput("pca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
+                                                       column(3, numericInput("pca_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%"))
+                                                     ),
+                                                     fluidRow(
+                                                       column(3, numericInput("pca_pairwise_label_size", "Pairwise Labels", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                       column(3, numericInput("pca_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                       column(3, numericInput("pca_border_size", "Border Thickness", value = 1, min = 0, max = 5, step = 0.1, width = "100%")),
+                                                       column(3, numericInput("pca_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5, width = "100%"))
+                                                     ),
+                                                     tags$details(
+                                                       tags$summary(icon("palette"), " Color Customization"),
+                                                       checkboxInput("pca_custom_colors", "Use Custom Colors", value = FALSE),
+                                                       conditionalPanel(
+                                                         condition = "input.pca_custom_colors",
+                                                         div(id = "pca_color_controls",
+                                                             uiOutput("pca_color_picker_ui")
+                                                         )
+                                                       )
+                                                     )
+                                                   )
+                                               ),
                                                div(style = "display: inline-block; margin-left: 10px;",
                                                    downloadButton("downloadPCABtn", label = NULL,
                                                                   class = "btn btn-sm btn-primary power-download-icon",
@@ -6072,6 +6141,12 @@ ui <- tagList(
                                       )
                                   )
                                 ),
+                                conditionalPanel(
+                                  condition = "input.spcaType == 'all'",
+                                  div(style = "margin-bottom: 12px;",
+                                      uiOutput("spca_group_order_ui")
+                                  )
+                                ),
                                 
                                 # sPCA-specific parameters
                                 numericInput("spca_ncomp", "Number of Components",
@@ -6088,30 +6163,8 @@ ui <- tagList(
                                 numericInput("spca_ellipse_level", "Ellipse Confidence Level",
                                              min = 0.9, max = 0.99, value = 0.95, step = 0.05, width = "100%"),
                                 checkboxInput("spca_show_labels", "Show Sample Labels", value = FALSE),
-                                checkboxInput("spca_show_counts", "Show Sample Counts in Legend", value = TRUE),
-                                
-                                # Color customization section
-                                hr(),
-                                h5(icon("palette"), "Color Customization"),
-                                checkboxInput("spca_custom_colors", "Use Custom Colors", value = FALSE),
-                                conditionalPanel(
-                                  condition = "input.spca_custom_colors",
-                                  div(id = "spca_color_controls",
-                                      uiOutput("spca_color_picker_ui")
-                                  )
-                                ),
-                                
-                                # Font size controls
-                                hr(),
-                                tags$h5(icon("font", style = "color: #0073e6;"), "Font Sizes", style = "margin-top: 10px; margin-bottom: 10px;"),
-                                fluidRow(
-                                  column(6, numericInput("spca_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
-                                  column(6, numericInput("spca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%"))
-                                ),
-                                fluidRow(
-                                  column(6, numericInput("spca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
-                                  column(6, numericInput("spca_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%"))
-                                ),
+                                checkboxInput("spca_show_outlier_labels", "Show Outlier Sample Labels", value = FALSE),
+                                checkboxInput("spca_show_counts", "Show Sample Counts in Legend", value = TRUE)
                             )
                      ),
                      
@@ -6123,53 +6176,64 @@ ui <- tagList(
                               id = "spcaTabset",
                               tabPanel("sPCA Plot",
                                                                        value = "spcaPlotTab",
-                                                                       # Grid control panel - conditionally shown for pairwise
-                                                                       conditionalPanel(
-                                                                         condition = "input.spcaType == 'pairwise'",
-                                                                         div(class = "dimred-card",
-                                                                             div(class = "dimred-card-header",
-                                                                                 h4(icon("th", class = "dimred-feature-icon"), "sPCA Plot Grid Controls"),
-                                                                                 shinyBS::tipify(icon("question-circle", class = "dimred-tooltip"),
-                                                                                                 "Adjust grid layout and appearance for pairwise sPCA plots")
-                                                                             ),
-                                                                             fluidRow(
-                                                                               column(3,
-                                                                                      numericInput("spcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")
-                                                                               ),
-                                                                               column(3,
-                                                                                      numericInput("spcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")
-                                                                               ),
-                                                                               column(3,
-                                                                                      numericInput("spcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px")
-                                                                               ),
-                                                                               column(3,
-                                                                                      checkboxInput("spcaGridLegend", "Show Legend", value = TRUE, width = "120px")
-                                                                               )
-                                                                             )
-                                                                         )
-                                                                       ),
-                                                                       # Plot controls for "All Groups" analysis type
-                                                                       conditionalPanel(
-                                                                         condition = "input.spcaType == 'all'",
-                                                                         div(class = "dimred-card",
-                                                                             div(class = "dimred-card-header",
-                                                                                 h4(icon("th", class = "dimred-feature-icon"), "sPCA Plot Controls"),
-                                                                                 shinyBS::tipify(icon("question-circle", class = "dimred-tooltip"),
-                                                                                                 "Adjust plot appearance for all groups sPCA plot")
-                                                                             ),
-                                                                             fluidRow(
-                                                                               column(6,
-                                                                                      numericInput("spcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")
-                                                                               ),
-                                                                               column(6,
-                                                                                      numericInput("spcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px")
-                                                                               )
-                                                                             )
-                                                                         )
-                                                                       ),
+
+
                                                                        div(class = "dimred-card",
                                                                            div(class = "dimred-card-header",
                                                                                h4(icon("chart-area", class = "dimred-feature-icon"), "sPCA Plot"),
+                                                                               div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
+                                                                                   shinyWidgets::dropdownButton(
+                                                                                     circle = FALSE,
+                                                                                     status = "default",
+                                                                                     size = "sm",
+                                                                                     icon = icon("cogs"),
+                                                                                     tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
+                                                                                     right = TRUE,
+                                                                                     inline = TRUE,
+                                                                                     width = "600px",
+                                                                                     # Pairwise grid controls
+                                                                                     conditionalPanel(
+                                                                                       condition = "input.spcaType == 'pairwise'",
+                                                                                       fluidRow(
+                                                                                         column(4, numericInput("spcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")),
+                                                                                         column(4, numericInput("spcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")),
+                                                                                         column(4, numericInput("spcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px"))
+                                                                                       )
+                                                                                     ),
+                                                                                     # All groups plot controls
+                                                                                     conditionalPanel(
+                                                                                       condition = "input.spcaType == 'all'",
+                                                                                       fluidRow(
+                                                                                         column(6, numericInput("spcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")),
+                                                                                         column(6, numericInput("spcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px"))
+                                                                                       )
+                                                                                     ),
+                                                                                     # Shared appearance controls
+                                                                                     hr(style = "margin: 12px 0;"),
+                                                                                     fluidRow(
+                                                                                       column(3, numericInput("spca_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
+                                                                                       column(3, numericInput("spca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")),
+                                                                                       column(3, numericInput("spca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
+                                                                                       column(3, numericInput("spca_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%"))
+                                                                                     ),
+                                                                                     fluidRow(
+                                                                                       column(3, numericInput("spca_pairwise_label_size", "Pairwise Labels", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                                                       column(3, numericInput("spca_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                                                       column(3, numericInput("spca_border_size", "Border Thickness", value = 1, min = 0, max = 5, step = 0.1, width = "100%")),
+                                                                                       column(3, checkboxInput("spcaGridLegend", "Show Legend", value = TRUE))
+                                                                                     ),
+                                                                                     tags$details(
+                                                                                       tags$summary(icon("palette"), " Color Customization"),
+                                                                                       checkboxInput("spca_custom_colors", "Use Custom Colors", value = FALSE),
+                                                                                       conditionalPanel(
+                                                                                         condition = "input.spca_custom_colors",
+                                                                                         div(id = "spca_color_controls",
+                                                                                             uiOutput("spca_color_picker_ui")
+                                                                                         )
+                                                                                       )
+                                                                                     )
+                                                                                   )
+                                                                               ),
                                                                                div(style = "display: inline-block; margin-left: 10px;",
                                                                                    downloadButton("downloadSPCABtn", label = NULL,
                                                                                                   class = "btn btn-sm btn-primary power-download-icon",
@@ -6225,14 +6289,12 @@ ui <- tagList(
                                        div(class = "dimred-card",
                                            div(class = "dimred-card-header",
                                                h4(icon("bar-chart", class = "dimred-feature-icon"), "sPCA Loadings"),
-                                               div(style = "display: inline-block; margin-left: 10px;",
+                                               div(class = "dimred-loadings-toolbar",
+                                                   checkboxInput("spca_use_feature_names", "Show Feature Names", value = TRUE, width = "auto"),
                                                    downloadButton("downloadSPCALoadingsPlotBtn", label = NULL,
                                                                   class = "btn btn-sm btn-primary power-download-icon",
                                                                   icon = icon("download"),
-                                                                  title = "Download Loadings Plot"),
-                                                   span(style = "margin-left: 15px;",
-                                                        checkboxInput("spca_use_feature_names", "Show Feature Names", value = TRUE, width = "150px")
-                                                   )
+                                                                  title = "Download Loadings Plot")
                                                )
                                            ),
                                            shinycssloaders::withSpinner(
@@ -6291,41 +6353,56 @@ ui <- tagList(
                                 numericInput("umap_spread", "Spread",
                                              value = 1.0, min = 0.1, max = 5.0, step = 0.1, width = "100%"),
                                 
-                                # Display options
-                                checkboxInput("umap_scale", "Scale Data", value = TRUE),
-                                checkboxInput("umap_add_ellipses", "Add Confidence Ellipses", value = TRUE),
-                                checkboxInput("umap_show_labels", "Show Sample Labels", value = FALSE),
-                                numericInput("umap_width", "Plot Width (px)", value = 800, min = 400, max = 2000, width = "100%"),
-                                numericInput("umap_height", "Plot Height (px)", value = 600, min = 400, max = 1600, width = "100%"),
-                                
-                                # Font size controls
-                                tags$h5(icon("font", style = "color: #0073e6;"), "Font Sizes", style = "margin-top: 10px; margin-bottom: 10px;"),
-                                fluidRow(
-                                  column(6,
-                                         numericInput("umap_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")
-                                  ),
-                                  column(6,
-                                         numericInput("umap_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")
-                                  )
-                                ),
-                                fluidRow(
-                                  column(6,
-                                         numericInput("umap_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")
-                                  ),
-                                  column(6,
-                                         numericInput("umap_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%")
-                                  )
-                                )
-                            )
+                                 # Display options
+                                 checkboxInput("umap_scale", "Scale Data", value = TRUE),
+                                 checkboxInput("umap_add_ellipses", "Add Confidence Ellipses", value = TRUE),
+                                 checkboxInput("umap_show_labels", "Show Sample Labels", value = FALSE),
+                                 uiOutput("umap_group_order_ui")
+                             )
                      ),
                      
-                     column(9,
-                            div(style = "margin-bottom: 15px;",
-                                uiOutput("umap_grouping_toggle_ui")
-                            ),
-                            div(class = "dimred-card",
-                                div(class = "dimred-card-header",
-                                    h4(icon("project-diagram", class = "dimred-feature-icon"), "UMAP Plot"),
+                      column(9,
+                             div(style = "margin-bottom: 15px;",
+                                 uiOutput("umap_grouping_toggle_ui")
+                             ),
+
+                             div(class = "dimred-card",
+                                 div(class = "dimred-card-header",
+                                     h4(icon("project-diagram", class = "dimred-feature-icon"), "UMAP Plot"),
+                                     div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
+                                         shinyWidgets::dropdownButton(
+                                           circle = FALSE,
+                                           status = "default",
+                                           size = "sm",
+                                           icon = icon("cogs"),
+                                           tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
+                                           right = TRUE,
+                                           inline = TRUE,
+                                           width = "600px",
+                                           fluidRow(
+                                             column(3, numericInput("umap_width", "Width (px)", value = 800, min = 400, max = 2000, width = "100%")),
+                                             column(3, numericInput("umap_height", "Height (px)", value = 600, min = 400, max = 1600, width = "100%")),
+                                             column(3, numericInput("umap_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
+                                             column(3, numericInput("umap_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%"))
+                                           ),
+                                           fluidRow(
+                                             column(3, numericInput("umap_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
+                                             column(3, numericInput("umap_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%")),
+                                             column(3, numericInput("umap_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                             column(3, numericInput("umap_border_size", "Border Thickness", value = 0.4, min = 0, max = 5, step = 0.1, width = "100%"))
+                                           ),
+                                           tags$details(
+                                             tags$summary(icon("palette"), " Color Customization"),
+                                             checkboxInput("umap_custom_colors", "Use Custom Colors", value = FALSE),
+                                             conditionalPanel(
+                                               condition = "input.umap_custom_colors",
+                                               div(id = "umap_color_controls",
+                                                   uiOutput("umap_color_picker_ui")
+                                               )
+                                             )
+                                           )
+                                         )
+                                     ),
                                     div(style = "display: inline-block; margin-left: 10px;",
                                         downloadButton("downloadUMAPBtn", label = NULL,
                                                        class = "btn btn-sm btn-primary power-download-icon",
@@ -6362,41 +6439,56 @@ ui <- tagList(
                                 numericInput("tsne_seed", "Random Seed",
                                              value = 42, min = 1, step = 1, width = "100%"),
                                 
-                                # Display options
-                                checkboxInput("tsne_scale", "Scale Data", value = TRUE),
-                                checkboxInput("tsne_add_ellipses", "Add Confidence Ellipses", value = TRUE),
-                                checkboxInput("tsne_show_labels", "Show Sample Labels", value = FALSE),
-                                numericInput("tsne_width", "Plot Width (px)", value = 800, min = 400, max = 2000, width = "100%"),
-                                numericInput("tsne_height", "Plot Height (px)", value = 600, min = 400, max = 1600, width = "100%"),
-                                
-                                # Font size controls
-                                tags$h5(icon("font", style = "color: #0073e6;"), "Font Sizes", style = "margin-top: 10px; margin-bottom: 10px;"),
-                                fluidRow(
-                                  column(6,
-                                         numericInput("tsne_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")
-                                  ),
-                                  column(6,
-                                         numericInput("tsne_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")
-                                  )
-                                ),
-                                fluidRow(
-                                  column(6,
-                                         numericInput("tsne_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")
-                                  ),
-                                  column(6,
-                                         numericInput("tsne_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%")
-                                  )
-                                )
-                            )
+                                 # Display options
+                                 checkboxInput("tsne_scale", "Scale Data", value = TRUE),
+                                 checkboxInput("tsne_add_ellipses", "Add Confidence Ellipses", value = TRUE),
+                                 checkboxInput("tsne_show_labels", "Show Sample Labels", value = FALSE),
+                                 uiOutput("tsne_group_order_ui")
+                             )
                      ),
                      
-                     column(9,
-                            div(style = "margin-bottom: 15px;",
-                                uiOutput("tsne_grouping_toggle_ui")
-                            ),
-                            div(class = "dimred-card",
-                                div(class = "dimred-card-header",
-                                    h4(icon("project-diagram", class = "dimred-feature-icon"), "t-SNE Plot"),
+                      column(9,
+                             div(style = "margin-bottom: 15px;",
+                                 uiOutput("tsne_grouping_toggle_ui")
+                             ),
+
+                             div(class = "dimred-card",
+                                 div(class = "dimred-card-header",
+                                     h4(icon("project-diagram", class = "dimred-feature-icon"), "t-SNE Plot"),
+                                     div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
+                                         shinyWidgets::dropdownButton(
+                                           circle = FALSE,
+                                           status = "default",
+                                           size = "sm",
+                                           icon = icon("cogs"),
+                                           tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
+                                           right = TRUE,
+                                           inline = TRUE,
+                                           width = "600px",
+                                           fluidRow(
+                                             column(3, numericInput("tsne_width", "Width (px)", value = 800, min = 400, max = 2000, width = "100%")),
+                                             column(3, numericInput("tsne_height", "Height (px)", value = 600, min = 400, max = 1600, width = "100%")),
+                                             column(3, numericInput("tsne_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
+                                             column(3, numericInput("tsne_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%"))
+                                           ),
+                                           fluidRow(
+                                             column(3, numericInput("tsne_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
+                                             column(3, numericInput("tsne_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%")),
+                                             column(3, numericInput("tsne_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                             column(3, numericInput("tsne_border_size", "Border Thickness", value = 1, min = 0, max = 5, step = 0.1, width = "100%"))
+                                           ),
+                                           tags$details(
+                                             tags$summary(icon("palette"), " Color Customization"),
+                                             checkboxInput("tsne_custom_colors", "Use Custom Colors", value = FALSE),
+                                             conditionalPanel(
+                                               condition = "input.tsne_custom_colors",
+                                               div(id = "tsne_color_controls",
+                                                   uiOutput("tsne_color_picker_ui")
+                                               )
+                                             )
+                                           )
+                                         )
+                                     ),
                                     div(style = "display: inline-block; margin-left: 10px;",
                                         downloadButton("downloadTSNEBtn", label = NULL,
                                                        class = "btn btn-sm btn-primary power-download-icon",
@@ -6511,13 +6603,16 @@ ui <- tagList(
                       
                       # Binary Classification group selection (replaces pairwise checkbox)
                       div(id = "binary_group_selection",
-                          div(class = "binary-group-card", style = "margin: 10px 0; padding: 10px; border-radius: 5px;",
-                              h6("Group Selection for Binary Classification", style = "margin-bottom: 10px; font-weight: 600;"),
-                              fluidRow(
-                                column(6, selectizeInput("mlfsGroup1", "Group 1:", choices = NULL, width = "100%")),
-                                column(6, selectizeInput("mlfsGroup2", "Group 2:", choices = NULL, width = "100%"))
-                              ),
-                              helpText("Select two groups for binary classification comparison.")
+                          conditionalPanel(
+                            condition = "input.glmnet_family == 'binomial'",
+                            div(class = "binary-group-card", style = "margin: 10px 0; padding: 10px; border-radius: 5px;",
+                                h6("Group Selection for Binary Classification", style = "margin-bottom: 10px; font-weight: 600;"),
+                                fluidRow(
+                                  column(6, selectizeInput("mlfsGroup1", "Group 1:", choices = NULL, width = "100%")),
+                                  column(6, selectizeInput("mlfsGroup2", "Group 2:", choices = NULL, width = "100%"))
+                                ),
+                                helpText("Select two groups for binary classification comparison.")
+                            )
                           )
                       ),
                       
@@ -6750,13 +6845,16 @@ ui <- tagList(
                           
                           # Binary Classification group selection (replaces pairwise checkbox)
                           div(id = "rf_binary_group_selection",
-                              div(class = "binary-group-card", style = "margin: 10px 0; padding: 10px; border-radius: 5px;",
-                                  h6("Group Selection for Binary Classification", style = "margin-bottom: 10px; font-weight: 600;"),
-                                  fluidRow(
-                                    column(6, selectizeInput("rfGroup1", "Group 1:", choices = NULL, width = "100%")),
-                                    column(6, selectizeInput("rfGroup2", "Group 2:", choices = NULL, width = "100%"))
-                                  ),
-                                  helpText("Select two groups for binary classification comparison.")
+                              conditionalPanel(
+                                condition = "input.rf_family == 'binary'",
+                                div(class = "binary-group-card", style = "margin: 10px 0; padding: 10px; border-radius: 5px;",
+                                    h6("Group Selection for Binary Classification", style = "margin-bottom: 10px; font-weight: 600;"),
+                                    fluidRow(
+                                      column(6, selectizeInput("rfGroup1", "Group 1:", choices = NULL, width = "100%")),
+                                      column(6, selectizeInput("rfGroup2", "Group 2:", choices = NULL, width = "100%"))
+                                    ),
+                                    helpText("Select two groups for binary classification comparison.")
+                                )
                               )
                           ),
                           
@@ -7264,13 +7362,16 @@ ui <- tagList(
                           
                           # Binary Classification group selection
                           div(id = "perm_binary_group_selection",
-                              div(style = "margin: 10px 0; padding: 10px; background-color: #e8f4fd; border-radius: 5px;",
-                                  h6("Group Selection for Binary Classification", style = "margin-bottom: 10px; font-weight: 600;"),
-                                  fluidRow(
-                                    column(6, selectizeInput("permGroup1", "Group 1:", choices = NULL, width = "100%")),
-                                    column(6, selectizeInput("permGroup2", "Group 2:", choices = NULL, width = "100%"))
-                                  ),
-                                  helpText("Select two groups for binary classification comparison.")
+                              conditionalPanel(
+                                condition = "input.perm_family == 'binary'",
+                                div(class = "binary-group-card", style = "margin: 10px 0; padding: 10px; border-radius: 5px;",
+                                    h6("Group Selection for Binary Classification", style = "margin-bottom: 10px; font-weight: 600;"),
+                                    fluidRow(
+                                      column(6, selectizeInput("permGroup1", "Group 1:", choices = NULL, width = "100%")),
+                                      column(6, selectizeInput("permGroup2", "Group 2:", choices = NULL, width = "100%"))
+                                    ),
+                                    helpText("Select two groups for binary classification comparison.")
+                                )
                               )
                           ),
                           

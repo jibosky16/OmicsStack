@@ -11375,7 +11375,7 @@ server <- function(input, output, session) {
       }
       
       DT::datatable(normalizedDataReactive(),
-                    options = list(pageLength = 10, scrollX = TRUE, dom = 'tip'),
+                    options = list(pageLength = 10, scrollX = TRUE, dom = 'Bfrtip'),
                     rownames = FALSE)
     })
     
@@ -17469,7 +17469,7 @@ server <- function(input, output, session) {
       default_color <- default_colors[((i - 1) %% length(default_colors)) + 1]
       
       div(class = "form-group",
-          style = "margin-bottom: 8px;",
+          style = "margin-bottom: 0px;",
           tags$label(
             `for` = paste0("pca_color_", i),
             group_name,
@@ -17482,14 +17482,15 @@ server <- function(input, output, session) {
             showColour = "background",
             palette = "limited",
             allowedCols = NULL,
-            returnName = FALSE
+            returnName = FALSE,
+            width = "100%"
           )
       )
     })
     
     # Create a single column layout with minimal container
     div(
-      style = "width: 100%; overflow: visible;",
+      style = "display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; width: 100%; overflow: visible;",
       do.call(tagList, color_pickers)
     )
   })
@@ -17506,7 +17507,7 @@ server <- function(input, output, session) {
       default_color <- default_colors[((i - 1) %% length(default_colors)) + 1]
       
       div(class = "form-group",
-          style = "margin-bottom: 8px;",
+          style = "margin-bottom: 0px;",
           tags$label(
             `for` = paste0("spca_color_", i),
             group_name,
@@ -17519,16 +17520,60 @@ server <- function(input, output, session) {
             showColour = "background",
             palette = "limited",
             allowedCols = NULL,
-            returnName = FALSE
+            returnName = FALSE,
+            width = "100%"
           )
       )
     })
     
     # Create a single column layout with minimal container
     div(
-      style = "width: 100%; overflow: visible;",
+      style = "display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; width: 100%; overflow: visible;",
       do.call(tagList, color_pickers)
     )
+  })
+
+  render_dimred_color_picker_ui <- function(prefix) {
+    req(values$unique_groups)
+
+    default_colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                        "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+    color_pickers <- lapply(seq_along(values$unique_groups), function(i) {
+      group_name <- values$unique_groups[i]
+      default_color <- default_colors[((i - 1) %% length(default_colors)) + 1]
+
+      div(class = "form-group",
+          style = "margin-bottom: 0px;",
+          tags$label(
+            `for` = paste0(prefix, "_color_", i),
+            group_name,
+            style = "display: block; margin-bottom: 4px; font-weight: 600; word-wrap: break-word; overflow: visible;"
+          ),
+          colourpicker::colourInput(
+            inputId = paste0(prefix, "_color_", i),
+            label = NULL,
+            value = default_color,
+            showColour = "background",
+            palette = "limited",
+            allowedCols = NULL,
+            returnName = FALSE,
+            width = "100%"
+          )
+      )
+    })
+
+    div(
+      style = "display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; width: 100%; overflow: visible;",
+      do.call(tagList, color_pickers)
+    )
+  }
+
+  output$umap_color_picker_ui <- renderUI({
+    render_dimred_color_picker_ui("umap")
+  })
+
+  output$tsne_color_picker_ui <- renderUI({
+    render_dimred_color_picker_ui("tsne")
   })
   
   # Helper function to get custom colors for PCA
@@ -17615,6 +17660,39 @@ get_legend_grid_layout <- function(n_items) {
     
     names(colors) <- values$unique_groups
     return(colors)
+  }
+
+  get_dimred_colors <- function(prefix, enabled_input) {
+    if (is.null(values$unique_groups)) {
+      return(NULL)
+    }
+
+    default_colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+                        "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+    if (isTRUE(enabled_input)) {
+      colors <- sapply(seq_along(values$unique_groups), function(i) {
+        color_input <- input[[paste0(prefix, "_color_", i)]]
+        if (is.null(color_input)) {
+          return(default_colors[((i - 1) %% length(default_colors)) + 1])
+        }
+        color_input
+      })
+    } else {
+      colors <- sapply(seq_along(values$unique_groups), function(i) {
+        default_colors[((i - 1) %% length(default_colors)) + 1]
+      })
+    }
+
+    names(colors) <- values$unique_groups
+    colors
+  }
+
+  get_umap_colors <- function() {
+    get_dimred_colors("umap", input$umap_custom_colors)
+  }
+
+  get_tsne_colors <- function() {
+    get_dimred_colors("tsne", input$tsne_custom_colors)
   }
   
   # Generate PCA with Data tab priority
@@ -20074,6 +20152,8 @@ get_legend_grid_layout <- function(n_items) {
     axis_title_size <- if(!is.null(input$umap_axis_title_size)) input$umap_axis_title_size else 12
     axis_text_size <- if(!is.null(input$umap_axis_text_size)) input$umap_axis_text_size else 10
     legend_text_size <- if(!is.null(input$umap_legend_text_size)) input$umap_legend_text_size else 12
+    sample_label_size <- if(!is.null(input$umap_sample_label_size)) input$umap_sample_label_size else 3.5
+    border_size <- if(!is.null(input$umap_border_size)) input$umap_border_size else 0.4
     
     # Get user-specified parameters
     n_neighbors <- input$umap_n_neighbors
@@ -20092,6 +20172,33 @@ get_legend_grid_layout <- function(n_items) {
         }
       } else {
         group_labels <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
+      }
+
+      group_labels <- preserve_group_names(group_labels)
+      selected_groups <- input$umap_group_order
+      all_groups <- preserve_group_names(unique(group_labels))
+      if (is.null(selected_groups) || length(selected_groups) == 0) {
+        selected_groups <- all_groups
+      } else {
+        selected_groups <- preserve_group_names(selected_groups)
+      }
+      selected_groups <- selected_groups[selected_groups %in% all_groups]
+      if (length(selected_groups) < 2) {
+        return(ggplot() +
+                 annotate("text", x = 0.5, y = 0.5,
+                          label = "Select at least 2 groups to run UMAP.",
+                          size = 6) +
+                 theme_void())
+      }
+      keep_samples <- group_labels %in% selected_groups
+      data_mat <- data_mat[keep_samples, , drop = FALSE]
+      group_labels <- group_labels[keep_samples]
+      if (nrow(data_mat) < 2) {
+        return(ggplot() +
+                 annotate("text", x = 0.5, y = 0.5,
+                          label = "Not enough samples for UMAP after group filtering.",
+                          size = 6) +
+                 theme_void())
       }
       
       # Clean data - handle NAs and infinite values
@@ -20115,7 +20222,7 @@ get_legend_grid_layout <- function(n_items) {
         # Create data frame for plotting
         df <- data.frame(UMAP1 = umap_res$layout[,1],
              UMAP2 = umap_res$layout[,2],
-             Group = preserve_group_names(group_labels),
+             Group = group_labels,
              Sample = cleaned_sample_names)
         group_levels <- get_group_order_for_plot(unique(group_labels))
         df$Group <- factor(df$Group, levels = group_levels)
@@ -20136,8 +20243,21 @@ get_legend_grid_layout <- function(n_items) {
             legend.position = "bottom",
             legend.text = element_text(size = legend_text_size, face = "bold"),
             axis.text = element_text(face = "bold", size = axis_text_size),
-            axis.title = element_text(face = "bold", size = axis_title_size)
+            axis.title = element_text(face = "bold", size = axis_title_size),
+            axis.line = element_line(color = "black", size = 0.3),
+            axis.ticks = element_line(color = "black", size = 0.25),
+            axis.ticks.length = grid::unit(2, "pt"),
+            panel.border = element_rect(color = "black", fill = NA, size = border_size)
           )
+
+        custom_colors <- get_umap_colors()
+        ordered_levels <- levels(df$Group)
+        if (!is.null(custom_colors)) {
+          plot_colors <- custom_colors[ordered_levels]
+          p <- p +
+            scale_color_manual(name = NULL, values = plot_colors, breaks = ordered_levels, limits = ordered_levels) +
+            scale_fill_manual(name = NULL, values = plot_colors, breaks = ordered_levels, limits = ordered_levels)
+        }
         
         # Apply grid layout to legend if 4+ groups
         if (length(unique(df$Group)) >= 4) {
@@ -20166,7 +20286,7 @@ get_legend_grid_layout <- function(n_items) {
         if (input$umap_show_labels) {
           p <- p + ggrepel::geom_text_repel(
             aes(label = Sample),
-            size = 3.5,
+            size = sample_label_size,
             box.padding = 0.5,
             point.padding = 0.3,
             segment.color = "grey50",
@@ -20204,6 +20324,8 @@ get_legend_grid_layout <- function(n_items) {
     axis_title_size <- if(!is.null(input$tsne_axis_title_size)) input$tsne_axis_title_size else 12
     axis_text_size <- if(!is.null(input$tsne_axis_text_size)) input$tsne_axis_text_size else 10
     legend_text_size <- if(!is.null(input$tsne_legend_text_size)) input$tsne_legend_text_size else 12
+    sample_label_size <- if(!is.null(input$tsne_sample_label_size)) input$tsne_sample_label_size else 3.5
+    border_size <- if(!is.null(input$tsne_border_size)) input$tsne_border_size else 1
     
     # Get user-specified parameters
     perplexity <- min(input$tsne_perplexity, nrow(t(values$normalized_data)) - 1)
@@ -20225,6 +20347,34 @@ get_legend_grid_layout <- function(n_items) {
       } else {
         group_labels <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
       }
+
+      group_labels <- preserve_group_names(group_labels)
+      selected_groups <- input$tsne_group_order
+      all_groups <- preserve_group_names(unique(group_labels))
+      if (is.null(selected_groups) || length(selected_groups) == 0) {
+        selected_groups <- all_groups
+      } else {
+        selected_groups <- preserve_group_names(selected_groups)
+      }
+      selected_groups <- selected_groups[selected_groups %in% all_groups]
+      if (length(selected_groups) < 2) {
+        return(ggplot() +
+                 annotate("text", x = 0.5, y = 0.5,
+                          label = "Select at least 2 groups to run t-SNE.",
+                          size = 6) +
+                 theme_void())
+      }
+      keep_samples <- group_labels %in% selected_groups
+      data_mat <- data_mat[keep_samples, , drop = FALSE]
+      group_labels <- group_labels[keep_samples]
+      if (nrow(data_mat) < 4) {
+        return(ggplot() +
+                 annotate("text", x = 0.5, y = 0.5,
+                          label = "Not enough samples for t-SNE after group filtering.",
+                          size = 6) +
+                 theme_void())
+      }
+      perplexity <- min(input$tsne_perplexity, max(1, floor((nrow(data_mat) - 1) / 3)))
       
       # Clean data - handle NAs and infinite values
       data_mat[is.na(data_mat)] <- 0
@@ -20250,7 +20400,7 @@ get_legend_grid_layout <- function(n_items) {
         # Create data frame for plotting
         df <- data.frame(tSNE1 = tsne_res$Y[,1],
              tSNE2 = tsne_res$Y[,2],
-             Group = preserve_group_names(group_labels),
+             Group = group_labels,
              Sample = cleaned_sample_names)
         group_levels <- get_group_order_for_plot(unique(group_labels))
         df$Group <- factor(df$Group, levels = group_levels)
@@ -20271,8 +20421,18 @@ get_legend_grid_layout <- function(n_items) {
             legend.position = "bottom",
             legend.text = element_text(size = legend_text_size, face = "bold"),
             axis.text = element_text(face = "bold", size = axis_text_size),
-            axis.title = element_text(face = "bold", size = axis_title_size)
+            axis.title = element_text(face = "bold", size = axis_title_size),
+            panel.border = element_rect(color = "black", fill = NA, size = border_size)
           )
+
+        custom_colors <- get_tsne_colors()
+        ordered_levels <- levels(df$Group)
+        if (!is.null(custom_colors)) {
+          plot_colors <- custom_colors[ordered_levels]
+          p <- p +
+            scale_color_manual(name = NULL, values = plot_colors, breaks = ordered_levels, limits = ordered_levels) +
+            scale_fill_manual(name = NULL, values = plot_colors, breaks = ordered_levels, limits = ordered_levels)
+        }
         
         # Apply grid layout to legend if 4+ groups
         if (length(unique(df$Group)) >= 4) {
@@ -20301,7 +20461,7 @@ get_legend_grid_layout <- function(n_items) {
         if (input$tsne_show_labels) {
           p <- p + ggrepel::geom_text_repel(
             aes(label = Sample),
-            size = 3.5,
+            size = sample_label_size,
             box.padding = 0.5,
             point.padding = 0.3,
             segment.color = "grey50",
@@ -24112,8 +24272,8 @@ get_legend_grid_layout <- function(n_items) {
     }
   )
   
-  # Download Results Button - downloadNormalizedBtn handler
-  output$downloadNormalizedBtn <- downloadHandler(
+  # Download Results Button - shared by normalized data and statistics subtabs
+  normalized_download_handler <- function() downloadHandler(
     filename = function() {
       paste0("Normalized_Data_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".xlsx")
     },
@@ -24257,6 +24417,8 @@ get_legend_grid_layout <- function(n_items) {
       saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
+  output$downloadNormalizedBtn <- normalized_download_handler()
+  output$downloadNormalizedDataBtn <- normalized_download_handler()
   # Update ROC group selections when data is processed
   observe({
     req(values$unique_groups)
@@ -59848,6 +60010,49 @@ get_legend_grid_layout <- function(n_items) {
       )
     )
   })
+
+  render_dimred_group_order_ui <- function(input_id, label = "Groups to Include") {
+    groups <- preserve_group_names(get_active_unique_groups() %||% values$unique_groups)
+    if (length(groups) == 0) {
+      return(NULL)
+    }
+
+    current <- input[[input_id]]
+    selected <- if (!is.null(current) && length(current) > 0) {
+      preserve_group_names(current)
+    } else {
+      groups
+    }
+    selected <- selected[selected %in% groups]
+    if (length(selected) == 0) {
+      selected <- groups
+    }
+
+    selectizeInput(
+      input_id,
+      label,
+      choices = groups,
+      selected = selected,
+      multiple = TRUE,
+      width = "100%",
+      options = list(
+        plugins = list("drag_drop"),
+        placeholder = "Drag groups to reorder or deselect"
+      )
+    )
+  }
+
+  output$spca_group_order_ui <- renderUI({
+    render_dimred_group_order_ui("spca_group_order", "Groups to Include")
+  })
+
+  output$umap_group_order_ui <- renderUI({
+    render_dimred_group_order_ui("umap_group_order", "Groups to Include")
+  })
+
+  output$tsne_group_order_ui <- renderUI({
+    render_dimred_group_order_ui("tsne_group_order", "Groups to Include")
+  })
   
   # Observer to store user's custom group order when they reorder
   observeEvent(input$dist_group_order, {
@@ -60191,6 +60396,7 @@ get_legend_grid_layout <- function(n_items) {
       input$spcaType %||% "all",
       input$spcaGroup1 %||% "all",
       input$spcaGroup2 %||% "all",
+      paste(input$spca_group_order %||% "all", collapse = "|"),
       input$spca_ncomp %||% 2,
       input$spca_keepX_pc1 %||% 50,
       input$spca_keepX_pc2 %||% 50,
@@ -61640,6 +61846,7 @@ get_legend_grid_layout <- function(n_items) {
       input$spcaType %||% "all",
       input$spcaGroup1 %||% "all",
       input$spcaGroup2 %||% "all",
+      paste(input$spca_group_order %||% "all", collapse = "|"),
       input$spca_ncomp %||% 2,
       input$spca_keepX_pc1 %||% 50,
       input$spca_keepX_pc2 %||% 50,
@@ -62138,6 +62345,22 @@ get_legend_grid_layout <- function(n_items) {
         active_groups <- values$unique_groups
         active_indices <- values$group_column_indices
       }
+
+      active_groups <- preserve_group_names(active_groups %||% character())
+      selected_groups <- input$spca_group_order
+      if (is.null(selected_groups) || length(selected_groups) == 0) {
+        selected_groups <- active_groups
+      } else {
+        selected_groups <- preserve_group_names(selected_groups)
+      }
+      selected_groups <- selected_groups[selected_groups %in% active_groups]
+      if (length(selected_groups) < 2) {
+        return(NULL)
+      }
+
+      keep_groups <- active_groups %in% selected_groups
+      active_groups <- active_groups[keep_groups]
+      active_indices <- active_indices[keep_groups]
       
       all_columns <- unlist(active_indices)
       
@@ -62295,6 +62518,7 @@ get_legend_grid_layout <- function(n_items) {
       input$spcaType %||% "all",
       input$spcaGroup1 %||% "all",
       input$spcaGroup2 %||% "all",
+      paste(input$spca_group_order %||% "all", collapse = "|"),
       input$spca_ncomp %||% 2,
       input$spca_keepX_pc1 %||% 50,
       input$spca_keepX_pc2 %||% 50,
