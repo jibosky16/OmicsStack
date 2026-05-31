@@ -1138,7 +1138,7 @@ server <- function(input, output, session) {
   
   # Load network packages when accessing Network Analysis (WGCNA) tab
   observeEvent(input$navbar, {
-    if (input$navbar == "Network Analysis") {
+    if (identical(input$navbar, "Network Analysis")) {
       load_package_group("network")
       load_package_group("visualization")
     }
@@ -2281,12 +2281,12 @@ server <- function(input, output, session) {
     class_metrics <- c("Accuracy" = "Accuracy", "Kappa" = "Kappa", "ROC AUC" = "ROC", "Sensitivity" = "Sens", "Specificity" = "Spec", "Precision" = "Precision", "Recall" = "Recall", "F1 Score" = "F")
     regression_metrics <- c("RMSE" = "RMSE", "MAE" = "MAE", "Rsquared" = "Rsquared")
     # Decide set
-    if (input$rfe_problem_type == "regression") {
+    if (identical(input$rfe_problem_type, "regression")) {
       updateSelectInput(session, "rfe_metric", choices = regression_metrics, selected = if (input$rfe_metric %in% names(regression_metrics)) input$rfe_metric else "RMSE")
     } else {
       # Classification: filter out ROC/Sens/Spec if multiclass (no one-vs-rest expansion implemented)
       metrics <- class_metrics
-      if (input$rfe_problem_type == "multiclass") {
+      if (identical(input$rfe_problem_type, "multiclass")) {
         metrics <- metrics[!names(metrics) %in% c("ROC AUC", "Sensitivity", "Specificity")]
         if (input$rfe_metric %in% c("ROC", "Sens", "Spec")) {
           updateSelectInput(session, "rfe_metric", selected = "Accuracy")
@@ -4678,7 +4678,7 @@ server <- function(input, output, session) {
   # Dynamic text for PCA download button
   output$pcaDownloadButtonText <- renderText({
     if (!is.null(input$pcaType)) {
-      if (input$pcaType == "pairwise") {
+      if (identical(input$pcaType, "pairwise")) {
         return("Download PCA Grid")
       } else {
         return("Download Plot")
@@ -5222,12 +5222,12 @@ server <- function(input, output, session) {
   }
   
   observe({
-    if (input$heatmapType == "pairwise") {
+    if (identical(input$heatmapType, "pairwise")) {
       shinyjs::show("heatmapPairwiseOptions")
     } else {
       shinyjs::hide("heatmapPairwiseOptions")
     }
-    if (input$pcaType == "pairwise") {
+    if (identical(input$pcaType, "pairwise")) {
       shinyjs::show("pcaPairwiseOptions")
     } else {    shinyjs::hide("pcaPairwiseOptions")
     }
@@ -5236,14 +5236,14 @@ server <- function(input, output, session) {
     } else {
       shinyjs::hide("spcaPairwiseOptions")
     }
-    if (input$intersection_source == "manual") {
+    if (identical(input$intersection_source, "manual")) {
       shinyjs::show("manualSection")
       shinyjs::hide("pairwiseSection")
       shinyjs::hide("intersection_pairwise_feature")
     } else {
       shinyjs::hide("manualSection")
       shinyjs::show("pairwiseSection")
-      if (input$intersection_source == "pairwise") {
+      if (identical(input$intersection_source, "pairwise")) {
         shinyjs::show("intersection_pairwise_feature")
       } else {
         shinyjs::hide("intersection_pairwise_feature")
@@ -5305,11 +5305,11 @@ server <- function(input, output, session) {
   # Show/hide plot type sections
   observe({
     req(input$glyco_analysis_type)
-    if (input$glyco_analysis_type == "group_comparison") {
+    if (identical(input$glyco_analysis_type, "group_comparison")) {
       shinyjs::hide("glycoPlotTypeStandard")
       shinyjs::show("glycoPlotTypeGroupComparison")
       shinyjs::hide("glycoPlotTypeGlycanComparison")
-    } else if (input$glyco_analysis_type == "glycan_comparison") {
+    } else if (identical(input$glyco_analysis_type, "glycan_comparison")) {
       shinyjs::hide("glycoPlotTypeStandard")
       shinyjs::hide("glycoPlotTypeGroupComparison")
       shinyjs::show("glycoPlotTypeGlycanComparison")
@@ -5444,21 +5444,21 @@ server <- function(input, output, session) {
     shinyjs::hide("custom_pos5_div")
     shinyjs::hide("delimiterDiv")
     
-    if (input$glyco_notation_system == "five_num") {
+    if (identical(input$glyco_notation_system, "five_num")) {
       shinyjs::show("fiveNumOrderDiv")
       shinyjs::show("delimiterDiv")
-      if (input$five_num_order == "custom") {
+      if (identical(input$five_num_order, "custom")) {
         shinyjs::show("customOrderDiv")
         shinyjs::show("custom_pos5_div")
       }
-    } else if (input$glyco_notation_system == "four_num") {
+    } else if (identical(input$glyco_notation_system, "four_num")) {
       shinyjs::show("fourNumOrderDiv")
       shinyjs::show("delimiterDiv")
-      if (input$four_num_order == "custom") {
+      if (identical(input$four_num_order, "custom")) {
         shinyjs::show("customOrderDiv")
         shinyjs::hide("custom_pos5_div")
       }
-    } else if (input$glyco_notation_system == "custom") {    shinyjs::show("customOrderDiv")
+    } else if (identical(input$glyco_notation_system, "custom")) {    shinyjs::show("customOrderDiv")
       shinyjs::show("custom_pos5_div")
       shinyjs::show("delimiterDiv")
     }
@@ -5479,17 +5479,17 @@ server <- function(input, output, session) {
   # Update batch correction method choices based on test method
   observe({
     if (!is.null(input$sig_method)) {
-      if (input$sig_method == "deseq2") {
+      if (identical(input$sig_method, "deseq2")) {
         # For DESeq2, only show DESeq2 batch correction option
         updateSelectInput(session, "batch_correction_method",
                           choices = c("DESeq2 (internal)" = "deseq2"),
                           selected = "deseq2")
-      } else if (input$sig_method == "edger") {
+      } else if (identical(input$sig_method, "edger")) {
         # For edgeR, prefer internal adjustment via design (~ batch + group)
         updateSelectInput(session, "batch_correction_method",
                           choices = c("edgeR (internal)" = "edger"),
                           selected = "edger")
-      } else if (input$sig_method == "limma_voom") {
+      } else if (identical(input$sig_method, "limma_voom")) {
         # For limma-voom, prefer internal adjustment via design (~ batch + group)
         updateSelectInput(session, "batch_correction_method",
                           choices = c("limma-voom (internal)" = "limma_voom"),
@@ -5537,10 +5537,10 @@ server <- function(input, output, session) {
     shinyjs::hide("proteomics_manual_file_block")
     shinyjs::hide("proteomics_manual_paste_block")
     
-    if (input$proteomics_source == "manual") {
-      if (input$proteomics_manual_input_type == "file") {
+    if (identical(input$proteomics_source, "manual")) {
+      if (identical(input$proteomics_manual_input_type, "file")) {
         shinyjs::show("proteomics_manual_file_block")
-      } else if (input$proteomics_manual_input_type == "paste") {
+      } else if (identical(input$proteomics_manual_input_type, "paste")) {
         shinyjs::show("proteomics_manual_paste_block")
       }
     }
@@ -5549,7 +5549,7 @@ server <- function(input, output, session) {
   # Show/hide column selection based on file type
   observe({
     if (input$proteomics_source == "manual" && input$proteomics_manual_input_type == "file") {
-      if (input$proteomics_manual_filetype == "single") {
+      if (identical(input$proteomics_manual_filetype, "single")) {
         shinyjs::hide("proteomics_manual_column_block")
       } else {
         shinyjs::show("proteomics_manual_column_block")
@@ -5888,13 +5888,13 @@ server <- function(input, output, session) {
       
       # Return the mapped adjustment method or default to "none" if not found
       return(posthoc_to_adjust[[input$posthoc_method]] %||% "none")
-    } else if(input$sig_method == "limma") {
+    } else if (identical(input$sig_method, "limma")) {
       # Limma handles its own p-value adjustment with topTable
       return("BH")  # Limma uses BH correction by default
-    } else if(input$sig_method == "deseq2") {
+    } else if (identical(input$sig_method, "deseq2")) {
       # DESeq2 handles its own p-value adjustment
       return("BH")  # DESeq2 uses BH correction by default
-    } else if(input$sig_method == "edger") {
+    } else if (identical(input$sig_method, "edger")) {
       # edgeR: default to BH when computing adjusted p-values for display
       return("BH")
     } else {
@@ -6562,7 +6562,7 @@ server <- function(input, output, session) {
         has_na <- is.na(data_for_quantile)
         
         if(any(has_na)) {
-          if(input$missing_value_strategy != "impute") {
+          if (!identical(input$missing_value_strategy, "impute")) {
             if (!is.null(session)) showNotification(paste("Quantile normalization requires complete data.",
                                    "Please select 'Impute missing values' in preprocessing options or remove every row with missing values before proceeding."),
                              type = "error", duration = 10)
@@ -6654,7 +6654,7 @@ server <- function(input, output, session) {
         
         # Handle missing values - VSN often can't handle NAs well
         if(any(is.na(data_for_vsn))) {
-          if(input$missing_value_strategy != "impute") {
+          if (!identical(input$missing_value_strategy, "impute")) {
             if (!is.null(session)) showNotification(paste("VSN normalization requires complete data.",
                                    "Please select 'Impute missing values' in preprocessing options or remove every row with missing values before proceeding."),
                              type = "error", duration = 10)
@@ -6683,7 +6683,7 @@ server <- function(input, output, session) {
         
         # Handle missing values before normalization
         if(any(has_na)) {
-          if(input$missing_value_strategy != "impute") {
+          if (!identical(input$missing_value_strategy, "impute")) {
             if (!is.null(session)) showNotification(paste("Cyclic loess normalization requires complete data.",
                                    "Please select 'Impute missing values' in preprocessing options or remove every row with missing values before proceeding."),
                              type = "error", duration = 10)
@@ -6947,7 +6947,7 @@ server <- function(input, output, session) {
   # Server-side observer to handle LASSO/ElasticNet lambda selection UI
   observeEvent(input$lambda_selection, {
     if (!is.null(input$lambda_selection)) {
-      if (input$lambda_selection == "manual") {
+      if (identical(input$lambda_selection, "manual")) {
         # Show manual lambda input and hide CV options
         shinyjs::show("manual_lambda_options")
         shinyjs::hide("cv_lambda_options")
@@ -9275,7 +9275,7 @@ server <- function(input, output, session) {
     }
     
     # If bootstrap is enabled, prioritize bootstrap results
-    if (input$bootstrap_enabled == "yes") {
+    if (identical(input$bootstrap_enabled, "yes")) {
       bootstrap_col <- paste0(comparison_name, "_Bootstrap_AdjPValue")
       bootstrap_col_alt <- paste0(comparison_alt, "_Bootstrap_AdjPValue")
       
@@ -10440,7 +10440,7 @@ server <- function(input, output, session) {
     group_column_indices <- lapply(unique_groups, function(g) which(group_names_for_grouping == g))
     
     # Missing value handling logic
-    if (input$missing_value_strategy == "remove") {
+    if (identical(input$missing_value_strategy, "remove")) {
       # Current threshold-based removal
       threshold <- input$na_threshold / 100
       
@@ -10560,11 +10560,11 @@ server <- function(input, output, session) {
       
       # Create parameters for imputation
       imputation_params <- list()
-      if (input$imputation_method == "knn") {
+      if (identical(input$imputation_method, "knn")) {
         imputation_params$k <- input$knn_k
-      } else if (input$imputation_method == "min") {
+      } else if (identical(input$imputation_method, "min")) {
         imputation_params$fraction <- input$min_fraction
-      } else if (input$imputation_method == "minprob") {
+      } else if (identical(input$imputation_method, "minprob")) {
         imputation_params$shift <- input$minprob_shift
         imputation_params$scale <- input$minprob_scale
       }
@@ -10817,7 +10817,7 @@ server <- function(input, output, session) {
     normalized_data <- perform_cached_normalization(data_filtered, input$normalization, log2_before, log2_after, sum_as_percent)
     
     # Check if batch correction is enabled
-    if (input$batch_correction_enabled == "yes") {
+    if (identical(input$batch_correction_enabled, "yes")) {
       # Validate batch column is selected BEFORE attempting batch correction
       if (is.null(input$batch_column) || !nzchar(input$batch_column)) {
         showNotification("Error: Batch correction enabled but NO BATCH COLUMN SELECTED. Please select a batch column from the metadata sheet.",
@@ -11758,10 +11758,10 @@ server <- function(input, output, session) {
     # Clear caches when switching away from methods
     observeEvent(input$sig_method, {
       if (!is.null(input$sig_method)) {
-        if (input$sig_method != "edger") {
+        if (!identical(input$sig_method, "edger")) {
           values$edger_state <- list()
         }
-        if (input$sig_method != "limma_voom") {
+        if (!identical(input$sig_method, "limma_voom")) {
           values$limma_voom_state <- list()
         }
       }
@@ -11835,7 +11835,7 @@ server <- function(input, output, session) {
     showNotification("Data loaded successfully!", type = "message")
     
     # Perform bootstrapping if enabled
-    if (input$bootstrap_enabled == "yes") {
+    if (identical(input$bootstrap_enabled, "yes")) {
       
       # Exclude methods that are incompatible with bootstrap (these methods hide bootstrap settings in UI)
       incompatible_methods <- c("rots", "limma", "deseq2", "edger", "limma_voom")
@@ -11920,7 +11920,7 @@ server <- function(input, output, session) {
           return(NULL)
         }
         # Additional validation for limma
-        if (input$sig_method == "limma") {
+        if (identical(input$sig_method, "limma")) {
           if (!requireNamespace("limma", quietly = TRUE)) {
             showNotification("limma package is required for limma bootstrap analysis. Please install it from Bioconductor.",
                              type = "error", duration = 10)
@@ -11937,7 +11937,7 @@ server <- function(input, output, session) {
         }
         
         # Additional validation for DESeq2
-        if (input$sig_method == "deseq2") {
+        if (identical(input$sig_method, "deseq2")) {
           if (!requireNamespace("DESeq2", quietly = TRUE)) {
             showNotification("DESeq2 package is required for DESeq2 bootstrap analysis. Please install it from Bioconductor.",
                              type = "error", duration = 10)
@@ -11960,7 +11960,7 @@ server <- function(input, output, session) {
                              type = "warning", duration = 10)
           }
         }
-        if (input$sig_method == "anova") {
+        if (identical(input$sig_method, "anova")) {
           min_samples_per_group <- min(sapply(values$group_column_indices, length))
           total_samples <- sum(sapply(values$group_column_indices, length))
           if (min_samples_per_group < 2 || total_samples < 4) {
@@ -11971,7 +11971,7 @@ server <- function(input, output, session) {
         }
         
         # Additional validation for Kruskal-Wallis
-        if (input$sig_method == "kruskal") {
+        if (identical(input$sig_method, "kruskal")) {
           min_samples_per_group <- min(sapply(values$group_column_indices, length))
           total_samples <- sum(sapply(values$group_column_indices, length))
           if (min_samples_per_group < 2 || total_samples < 4) {
@@ -12059,7 +12059,7 @@ server <- function(input, output, session) {
                 valid_groups <- sapply(bootstrap_data, function(x) sum(!is.na(x)) >= 2)
                 
                 if (sum(valid_groups) >= 2) {              # Calculate p-value based on the selected statistical method
-                  if (input$sig_method == "wilcox") {
+                  if (identical(input$sig_method, "wilcox")) {
                     # Pairwise Wilcoxon test (use first 2 groups)
                     if (length(bootstrap_data) >= 2) {
                       tryCatch({
@@ -12072,7 +12072,7 @@ server <- function(input, output, session) {
                       })
                     }
                   }
-                  else if (input$sig_method == "t.test") {
+                  else if (identical(input$sig_method, "t.test")) {
                     # Pairwise t-test (use first 2 groups)
                     if (length(bootstrap_data) >= 2) {
                       tryCatch({
@@ -12084,7 +12084,7 @@ server <- function(input, output, session) {
                         # Silently continue on error for this feature
                       })
                     }
-                  }else if (input$sig_method == "anova") {
+                  }else if (identical(input$sig_method, "anova")) {
                     # ANOVA for multiple groups
                     if (length(bootstrap_data) >= 2) {
                       # Prepare data for ANOVA
@@ -12112,7 +12112,7 @@ server <- function(input, output, session) {
                         })
                       }
                     }
-                  }              else if (input$sig_method == "kruskal") {
+                  }              else if (identical(input$sig_method, "kruskal")) {
                     # Kruskal-Wallis for multiple groups (keep original requirements since it worked)
                     if (length(bootstrap_data) >= 2) {
                       # Prepare data for Kruskal-Wallis
@@ -12139,7 +12139,7 @@ server <- function(input, output, session) {
                         })
                       }
                     }
-                  }              else if (input$sig_method == "limma") {
+                  }              else if (identical(input$sig_method, "limma")) {
                     # Limma analysis (requires specific setup)
                     if (length(bootstrap_data) >= 2) {
                       # Prepare data for limma
@@ -12210,7 +12210,7 @@ server <- function(input, output, session) {
                         }
                       }
                     }
-                  } else if (input$sig_method == "deseq2") {
+                  } else if (identical(input$sig_method, "deseq2")) {
                     # DESeq2 analysis for count data
                     if (length(bootstrap_data) >= 2) {
                       # Prepare data for DESeq2
@@ -12485,13 +12485,13 @@ server <- function(input, output, session) {
         if (valid_pvals == 0) {
           error_msg <- paste0("Bootstrap analysis failed to calculate any p-values using ", input$sig_method, ". ")
           
-          if (input$sig_method == "anova") {
+          if (identical(input$sig_method, "anova")) {
             error_msg <- paste0(error_msg, "ANOVA requires at least 2 samples per group and 4 total samples. Consider using Wilcoxon or t-test for smaller datasets.")
-          } else if (input$sig_method == "limma") {
+          } else if (identical(input$sig_method, "limma")) {
             error_msg <- paste0(error_msg, "Limma requires at least 2 samples per group and 4 total samples. Consider using Wilcoxon or t-test for smaller datasets.")
-          } else if (input$sig_method == "deseq2") {
+          } else if (identical(input$sig_method, "deseq2")) {
             error_msg <- paste0(error_msg, "DESeq2 requires at least 2 samples per group and 4 total samples. Also ensure data contains count-like values (non-negative). Consider using limma or t-test for non-count data.")
-          } else if (input$sig_method == "kruskal") {
+          } else if (identical(input$sig_method, "kruskal")) {
             error_msg <- paste0(error_msg, "Kruskal-Wallis requires at least 2 samples per group and 4 total samples. Consider using Wilcoxon for pairwise comparisons.")
           } else if (input$sig_method %in% c("wilcox", "t.test")) {
             error_msg <- paste0(error_msg, "Pairwise tests require at least 2 groups with sufficient data. Check that your groups have adequate sample sizes.")
@@ -14645,13 +14645,13 @@ server <- function(input, output, session) {
     req(values$stat_results)
     
     # Only require group inputs for pairwise analysis
-    if (input$heatmapType == "pairwise") {
+    if (identical(input$heatmapType, "pairwise")) {
       req(input$group1)
       is_variable_comparison <- grepl("^(lmROTS|lmeROTS)_", input$group1 %||% "")
       if (!is_variable_comparison) req(input$group2)
     }
     # Skip pairwise-specific validation for "All Groups"
-    if (input$heatmapType == "pairwise") {
+    if (identical(input$heatmapType, "pairwise")) {
       is_variable_comparison <- grepl("^(lmROTS|lmeROTS)_", input$group1 %||% "")
       if (!is_variable_comparison) {
         if (length(values$unique_groups) < 2 || input$group1 == input$group2) {
@@ -14885,7 +14885,7 @@ server <- function(input, output, session) {
     # Add PCA results dependency
     values$pca_result
     
-    if (input$heatmapType == "pairwise") {
+    if (identical(input$heatmapType, "pairwise")) {
       is_variable_comp <- grepl("^(lmROTS|lmeROTS)_", input$group1 %||% "")
       if (is_variable_comp) {
         comparison_name <- input$group1
@@ -14978,7 +14978,7 @@ server <- function(input, output, session) {
           abs(log2_fc) >= input$fc_cutoff
         
         # If ROTS is selected and FDR column exists, apply additional FDR filter
-        if (input$sig_method == "rots") {
+        if (identical(input$sig_method, "rots")) {
           # Check both directions for FDR column
           fdr_column <- paste0(comparison_name, "_FDR")
           alt_comparison <- paste(input$group2, "vs", input$group1)
@@ -15266,7 +15266,7 @@ server <- function(input, output, session) {
     fixed_column_split <- factor(clean_splits, levels = split_levels)
     
     # Handle the Small size option with proper top annotations
-    if(input$heatmap_cell_size == "Small") {
+    if (identical(input$heatmap_cell_size, "Small")) {
       # Create the annotation first
       column_labels <- ComplexHeatmap::HeatmapAnnotation(
         Group = ComplexHeatmap::anno_block(
@@ -15540,7 +15540,7 @@ server <- function(input, output, session) {
   # Download Heatmap button handler
   output$downloadHeatmapBtn <- downloadHandler(
     filename = function() {
-      if (input$heatmapType == "pairwise") {
+      if (identical(input$heatmapType, "pairwise")) {
         paste0(input$group1, "_vs_", input$group2, "_Heatmap_",
                format(Sys.time(), "%Y%m%d_%H%M%S"), ".", get_safe_global_image_format())
       } else {
@@ -15854,9 +15854,9 @@ server <- function(input, output, session) {
     
     # Set color palette
     n_groups <- length(group_levels %||% values$unique_groups)
-    colors <- if (input$palette == "dimred_default") {
+    colors <- if (identical(input$palette, "dimred_default")) {
       get_color_palette("dimred_default", n_groups)
-    } else if (input$palette == "default") {
+    } else if (identical(input$palette, "default")) {
       get_color_palette("default", n_groups)
     } else if (input$palette %in% c("viridis", "plasma")) {
       viridis::viridis_pal(option = input$palette)(n_groups)
@@ -15977,9 +15977,9 @@ server <- function(input, output, session) {
     
     # ---- colour palette ----
     n_groups <- length(group_levels)
-    colors <- if (input$palette == "dimred_default") {
+    colors <- if (identical(input$palette, "dimred_default")) {
       get_color_palette("dimred_default", n_groups)
-    } else if (input$palette == "default") {
+    } else if (identical(input$palette, "default")) {
       get_color_palette("default", n_groups)
     } else if (input$palette %in% c("viridis", "plasma")) {
       viridis::viridis_pal(option = input$palette)(n_groups)
@@ -17718,7 +17718,7 @@ get_legend_grid_layout <- function(n_items) {
     # Create cache key based on critical parameters
     cache_key <- paste(
       input$pcaType,
-      if(input$pcaType == "pairwise") paste(input$pcaGroup1, input$pcaGroup2, sep="_") else "all_groups",
+      if (identical(input$pcaType, "pairwise")) paste(input$pcaGroup1, input$pcaGroup2, sep="_") else "all_groups",
       input$pcaScale,
       input$pca_feature_source,
       input$pca_top_features,
@@ -17773,7 +17773,7 @@ get_legend_grid_layout <- function(n_items) {
           feature_names <- values$cleaned_molecules
         }
         
-        if (input$pcaType == "pairwise") {
+        if (identical(input$pcaType, "pairwise")) {
           # Pairwise PCA
           req(input$pcaGroup1, input$pcaGroup2)
           
@@ -18054,7 +18054,7 @@ get_legend_grid_layout <- function(n_items) {
     legend_text_size <- as.numeric(if(!is.null(input$pca_legend_text_size) && is.numeric(input$pca_legend_text_size)) input$pca_legend_text_size else 12)
     jitter_size <- as.numeric(if(!is.null(input$pca_jitter_size) && is.numeric(input$pca_jitter_size)) input$pca_jitter_size else 2)
     
-    if (input$pcaType == "pairwise") {
+    if (identical(input$pcaType, "pairwise")) {
       # Generate grid of pairwise PCA plots - only for comparisons in current_pairwise_combinations
       req(values$unique_groups, length(values$unique_groups) >= 2)
 
@@ -18594,7 +18594,7 @@ get_legend_grid_layout <- function(n_items) {
     }
   },
   height = function() {
-    if (input$pcaType == "pairwise") {
+    if (identical(input$pcaType, "pairwise")) {
       # Calculate grid height
       n_groups <- length(values$unique_groups) %||% 0
       n_plots <- if (!is.null(values$pca_grid_count)) values$pca_grid_count else if (n_groups < 2) 0 else n_groups * (n_groups - 1) / 2
@@ -18607,7 +18607,7 @@ get_legend_grid_layout <- function(n_items) {
     }
   },
   width = function() {
-    if (input$pcaType == "pairwise") {
+    if (identical(input$pcaType, "pairwise")) {
       grid_cols <- input$pcaGridCols %||% 2
       grid_width <- input$pcaGridWidth %||% 400
       grid_cols * grid_width
@@ -18908,7 +18908,7 @@ get_legend_grid_layout <- function(n_items) {
       active_tab <- input$pcaTabset
       tryCatch({
         if (is.null(active_tab) || active_tab == "pcaPlotTab") {
-          if (input$pcaType == "pairwise") {
+          if (identical(input$pcaType, "pairwise")) {
             # Check if specific groups are selected for single plot download
             if (!is.null(input$pcaGroup1) && !is.null(input$pcaGroup2) &&
                 input$pcaGroup1 != input$pcaGroup2) {
@@ -19662,7 +19662,7 @@ get_legend_grid_layout <- function(n_items) {
   # Download PCA feature contributions
   output$downloadPCAFeaturesBtn <- downloadHandler(
     filename = function() {
-      if (input$pcaType == "pairwise") {
+      if (identical(input$pcaType, "pairwise")) {
         paste0(input$pcaGroup1, "_vs_", input$pcaGroup2, "_PCA_Top_Features_",
                format(Sys.time(), "%Y%m%d_%H%M%S"), ".xlsx")
       } else {
@@ -19700,7 +19700,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Add analysis parameters sheet
       addWorksheet(wb, "Analysis Parameters")
-      if (input$pcaType == "pairwise") {
+      if (identical(input$pcaType, "pairwise")) {
         param_df <- data.frame(
           Parameter = c("Analysis Type", "Group 1", "Group 2", "Top Features Selected",
                         "Add Confidence Ellipses", "Ellipse Confidence Level", "Scale Data"),
@@ -20043,7 +20043,7 @@ get_legend_grid_layout <- function(n_items) {
   # --- PCA context helpers to keep all PCA views in sync with Analysis type/group selection ---
   pca_current_context_key <- reactive({
     req(input$pcaType)
-    if (input$pcaType == "pairwise") {
+    if (identical(input$pcaType, "pairwise")) {
       req(input$pcaGroup1, input$pcaGroup2)
       if (identical(input$pcaGroup1, input$pcaGroup2)) return(NULL)
       paste(input$pcaGroup1, "vs", input$pcaGroup2)
@@ -20540,6 +20540,112 @@ get_legend_grid_layout <- function(n_items) {
     }
   )
   # Differential Analysis - Server Code - Optimized for tab-specific execution with Data tab priority
+
+  # Diff plot settings
+  diff_plot_setting_defaults <- list(
+    diff_upreg_color = "#FF4C4C",
+    diff_downreg_color = "#4C4CFF",
+    diff_nonsig_color = "#CCCCCC",
+    diff_sig_no_fc_color = "#FFFF00",
+    diff_fc_line_color = "#808080",
+    diff_pval_line_color = "#808080",
+    diff_label_type = "none",
+    diff_max_labels = 10,
+    diff_label_features = "significant",
+    diff_title_size = 14,
+    diff_axis_title_size = 12,
+    diff_axis_text_size = 10,
+    diff_legend_text_size = 12,
+    diff_count_label_size = 5,
+    diff_jitter_size = 2,
+    diff_width = 8,
+    diff_height = 6
+  )
+  values$diff_plot_settings <- diff_plot_setting_defaults
+  observe({
+    settings <- isolate(values$diff_plot_settings %||% diff_plot_setting_defaults)
+    changed <- FALSE
+    for (id in names(diff_plot_setting_defaults)) {
+      val_ma <- input[[paste0("ma_", id)]]
+      val_vol <- input[[paste0("volcano_", id)]]
+      if (!is.null(val_ma) && val_ma != "" && !identical(settings[[id]], val_ma)) {
+        settings[[id]] <- val_ma
+        changed <- TRUE
+      }
+      if (!is.null(val_vol) && val_vol != "" && !identical(settings[[id]], val_vol)) {
+        settings[[id]] <- val_vol
+        changed <- TRUE
+      }
+    }
+    if (changed) {
+      values$diff_plot_settings <- settings
+    }
+  })
+  diff_plot_setting <- function(id) {
+    isolate({
+      settings <- values$diff_plot_settings %||% list()
+      settings[[id]] %||% diff_plot_setting_defaults[[id]]
+    })
+  }
+
+  diff_plot_appearance_controls <- function(prefix = "") {
+    id_func <- function(name) paste0(prefix, name)
+    tagList(
+      h5("Color Scheme", class = "mlfs-section-title"),
+      fluidRow(
+        column(4, colourpicker::colourInput(id_func("diff_upreg_color"), "Upregulated", value = diff_plot_setting("diff_upreg_color"), showColour = "both")),
+        column(4, colourpicker::colourInput(id_func("diff_downreg_color"), "Downregulated", value = diff_plot_setting("diff_downreg_color"), showColour = "both")),
+        column(4, colourpicker::colourInput(id_func("diff_nonsig_color"), "Non-significant", value = diff_plot_setting("diff_nonsig_color"), showColour = "both"))
+      ),
+      fluidRow(
+        column(4, colourpicker::colourInput(id_func("diff_sig_no_fc_color"), "Sig. (No FC)", value = diff_plot_setting("diff_sig_no_fc_color"), showColour = "both")),
+        column(4, colourpicker::colourInput(id_func("diff_fc_line_color"), "FC Cutoff", value = diff_plot_setting("diff_fc_line_color"), showColour = "both")),
+        column(4, colourpicker::colourInput(id_func("diff_pval_line_color"), "P-val Cutoff", value = diff_plot_setting("diff_pval_line_color"), showColour = "both"))
+      ),
+      h5("Feature Labels", class = "mlfs-section-title"),
+      div(
+        class = "diff-label-options",
+        radioButtons(id_func("diff_label_type"), "Label Type:", choices = c("No Labels" = "none", "Feature Names" = "features", "IDs" = "ids"), selected = diff_plot_setting("diff_label_type"), inline = TRUE)
+      ),
+      conditionalPanel(
+        condition = paste0("input['", id_func("diff_label_type"), "'] != 'none'"),
+        fluidRow(
+          column(6, numericInput(id_func("diff_max_labels"), "Max Features", value = diff_plot_setting("diff_max_labels"), min = 1, max = 100, step = 1, width = "100%")),
+          column(6, selectInput(id_func("diff_label_features"), "Features to Label", choices = c("All Significant Only" = "significant", "Top N by Significance" = "top", "All Features" = "all"), selected = diff_plot_setting("diff_label_features"), width = "100%"))
+        )
+      ),
+      h5("Font Sizes", class = "mlfs-section-title"),
+      fluidRow(
+        column(4, numericInput(id_func("diff_title_size"), "Plot Title", value = diff_plot_setting("diff_title_size"), min = 8, max = 24, step = 1, width = "100%")),
+        column(4, numericInput(id_func("diff_axis_title_size"), "Axis Titles", value = diff_plot_setting("diff_axis_title_size"), min = 8, max = 20, step = 1, width = "100%")),
+        column(4, numericInput(id_func("diff_axis_text_size"), "Axis Text", value = diff_plot_setting("diff_axis_text_size"), min = 6, max = 18, step = 1, width = "100%"))
+      ),
+      fluidRow(
+        column(4, numericInput(id_func("diff_legend_text_size"), "Legend Text", value = diff_plot_setting("diff_legend_text_size"), min = 6, max = 18, step = 1, width = "100%")),
+        column(4, numericInput(id_func("diff_count_label_size"), "Count Label Size", value = diff_plot_setting("diff_count_label_size"), min = 3, max = 12, step = 0.5, width = "100%")),
+        column(4, numericInput(id_func("diff_jitter_size"), "Jitter Size", value = diff_plot_setting("diff_jitter_size"), min = 0.5, max = 10, step = 0.5, width = "100%"))
+      ),
+      h5("Plot Dimensions", class = "mlfs-section-title"),
+      fluidRow(
+        column(6, numericInput(id_func("diff_width"), "Width (inches)", value = diff_plot_setting("diff_width"), min = 4, max = 20, width = "100%")),
+        column(6, numericInput(id_func("diff_height"), "Height (inches)", value = diff_plot_setting("diff_height"), min = 4, max = 20, width = "100%"))
+      )
+    )
+  }
+
+  output$diff_ma_plot_appearance_controls_ui <- renderUI({
+    current_diff_tab <- input$diffAnalysisTabs %||% "MA Plot"
+    if (current_diff_tab != "MA Plot") return(NULL)
+    diff_plot_appearance_controls("ma_")
+  })
+  outputOptions(output, "diff_ma_plot_appearance_controls_ui", suspendWhenHidden = TRUE)
+
+  output$diff_volcano_plot_appearance_controls_ui <- renderUI({
+    current_diff_tab <- input$diffAnalysisTabs %||% "MA Plot"
+    if (current_diff_tab != "Volcano Plot") return(NULL)
+    diff_plot_appearance_controls("volcano_")
+  })
+  outputOptions(output, "diff_volcano_plot_appearance_controls_ui", suspendWhenHidden = TRUE)
   observeEvent({
     # Primary trigger: only when on Differential Analysis tab AND dependencies change
     list(
@@ -20568,7 +20674,7 @@ get_legend_grid_layout <- function(n_items) {
         input$diffGroup1, input$diffGroup2)
     
     # Check if both groups are the same
-    if (input$diffGroup1 == input$diffGroup2) {
+    if (identical(input$diffGroup1, input$diffGroup2)) {
       # Show notification when identical groups are selected
       showNotification("Pairwise comparison requires at least two distinct groups.
                      The current dataset contains only one group or identical groups were selected.",
@@ -20709,7 +20815,7 @@ get_legend_grid_layout <- function(n_items) {
     diff_data <- diff_data[!is.na(diff_data$Log2FC) & !is.na(diff_data$AdjustedPValue), ]
     # FDR handling for ROTS
     fdr_values <- NULL
-    if (input$sig_method == "rots") {
+    if (identical(input$sig_method, "rots")) {
       # Check both possible orders for comparison name
       comparison_name_alt <- paste(rev(unlist(strsplit(comparison_name, " vs "))), collapse = " vs ")
       fdr_direct_name <- paste0(comparison_name, "_FDR")
@@ -20900,7 +21006,7 @@ get_legend_grid_layout <- function(n_items) {
           'Significance',
           backgroundColor = DT::styleEqual(
             c("Upregulated", "Downregulated", "Not Significant"),
-            c(input$diff_upreg_color, input$diff_downreg_color, "#FFFFFF")
+            c(settings$diff_upreg_color, settings$diff_downreg_color, "#FFFFFF")
           ),
           fontWeight = DT::styleEqual(
             c("Upregulated", "Downregulated"),
@@ -20911,10 +21017,14 @@ get_legend_grid_layout <- function(n_items) {
     
     # Generate cached MA plots for grid (only when data changes)
     generate_ma_grid_plots <- reactive({
+      settings <- values$diff_plot_settings %||% diff_plot_setting_defaults
+
+      settings <- values$diff_plot_settings %||% diff_plot_setting_defaults
+
       # Add explicit reactive dependencies
-      input$diff_label_type
-      input$diff_label_features
-      input$diff_max_labels
+      settings$diff_label_type
+      settings$diff_label_features
+      settings$diff_max_labels
       input$diff_fc_cutoff
       input$diff_pval_cutoff
       input$diff_fdr_cutoff
@@ -21024,7 +21134,7 @@ get_legend_grid_layout <- function(n_items) {
         
         # Get FDR values if ROTS is selected and FDR column exists
         fdr_values <- NULL
-        if (input$sig_method == "rots") {
+        if (identical(input$sig_method, "rots")) {
           # Check both possible orders for comparison name
           comparison_name_alt <- paste(rev(unlist(strsplit(comparison_name, " vs "))), collapse = " vs ")
           fdr_direct_name <- paste0(comparison_name, "_FDR")
@@ -21107,33 +21217,33 @@ get_legend_grid_layout <- function(n_items) {
         
         # Create named vector for colors with dynamic label
         color_values <- c(
-          "Not Significant" = input$diff_nonsig_color,
-          "Upregulated" = input$diff_upreg_color,
-          "Downregulated" = input$diff_downreg_color
+          "Not Significant" = settings$diff_nonsig_color,
+          "Upregulated" = settings$diff_upreg_color,
+          "Downregulated" = settings$diff_downreg_color
         )
-        color_values[sig_no_fc_label] <- input$diff_sig_no_fc_color
+        color_values[sig_no_fc_label] <- settings$diff_sig_no_fc_color
         
         # Determine legend layout based on number of significance categories
         # When FC cutoff is 0, only 3 categories exist (Upregulated, Downregulated, Not Significant)
         # When FC cutoff > 0, 4 categories exist (including sig_no_fc_label)
-        legend_layout <- if (input$diff_fc_cutoff == 0) {
+        legend_layout <- if (!is.null(input$diff_fc_cutoff) && input$diff_fc_cutoff == 0) {
           guide_legend(nrow = 1)  # 1 row for 3 items
         } else {
           guide_legend(nrow = 2)  # 2 rows for 4 items
         }
         
         # Get font sizes from inputs or use defaults (coerced to numeric)
-        title_size <- suppressWarnings(as.numeric(input$diff_title_size))
+        title_size <- suppressWarnings(as.numeric(settings$diff_title_size))
         if (is.na(title_size)) title_size <- 14
-        axis_title_size <- suppressWarnings(as.numeric(input$diff_axis_title_size))
+        axis_title_size <- suppressWarnings(as.numeric(settings$diff_axis_title_size))
         if (is.na(axis_title_size)) axis_title_size <- 12
-        axis_text_size <- suppressWarnings(as.numeric(input$diff_axis_text_size))
+        axis_text_size <- suppressWarnings(as.numeric(settings$diff_axis_text_size))
         if (is.na(axis_text_size)) axis_text_size <- 10
-        legend_text_size <- suppressWarnings(as.numeric(input$diff_legend_text_size))
+        legend_text_size <- suppressWarnings(as.numeric(settings$diff_legend_text_size))
         if (is.na(legend_text_size)) legend_text_size <- 12
-        count_label_size <- suppressWarnings(as.numeric(input$diff_count_label_size))
+        count_label_size <- suppressWarnings(as.numeric(settings$diff_count_label_size))
         if (is.na(count_label_size)) count_label_size <- 5
-        jitter_size <- suppressWarnings(as.numeric(input$diff_jitter_size))
+        jitter_size <- suppressWarnings(as.numeric(settings$diff_jitter_size))
         if (is.na(jitter_size)) jitter_size <- 2
         
         # Create base MA plot (without legend settings - will be applied later)
@@ -21143,13 +21253,13 @@ get_legend_grid_layout <- function(n_items) {
           guides(color = legend_layout) +
           geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
           geom_hline(yintercept = c(input$diff_fc_cutoff, -input$diff_fc_cutoff),
-                     linetype = "dotted", color = input$diff_fc_line_color) +
+                     linetype = "dotted", color = settings$diff_fc_line_color) +
           # Add count labels
           annotate("label", x = min(plot_data$Mean) + (max(plot_data$Mean) - min(plot_data$Mean)) * 0.12,
                    y = max(plot_data$Log2FC) * 0.85,
                    label = paste(up_count),
                    hjust = 0.5,
-                   color = input$diff_upreg_color,
+                   color = settings$diff_upreg_color,
                    size = count_label_size,
                    fontface = "bold",
                    label.padding = unit(0.3, "lines")) +
@@ -21157,7 +21267,7 @@ get_legend_grid_layout <- function(n_items) {
                    y = min(plot_data$Log2FC) * 0.85,
                    label = paste(down_count),
                    hjust = 0.5,
-                   color = input$diff_downreg_color,
+                   color = settings$diff_downreg_color,
                    size = count_label_size,
                    fontface = "bold",
                    label.padding = unit(0.3, "lines"))
@@ -21169,7 +21279,7 @@ get_legend_grid_layout <- function(n_items) {
                      y = 0,
                      label = paste(sig_no_fc_count),
                      hjust = 0.5,
-                     color = input$diff_sig_no_fc_color,
+                     color = settings$diff_sig_no_fc_color,
                      size = count_label_size,
                      fontface = "bold",
                      label.padding = unit(0.3, "lines"))
@@ -21191,33 +21301,33 @@ get_legend_grid_layout <- function(n_items) {
             legend.text = element_text(size = legend_text_size)
           )
         # Add feature names if option is selected
-        if(!is.null(input$diff_label_type) && input$diff_label_type != "none") {
+        if(!is.null(settings$diff_label_type) && settings$diff_label_type != "none") {
           # Determine which features to label based on user selection
-          if(!is.null(input$diff_label_features) && input$diff_label_features == "significant") {
+          if(!is.null(settings$diff_label_features) && settings$diff_label_features == "significant") {
             # Only label significant features
             label_data <- plot_data[plot_data$Significance != "Not Significant", ]
-          } else if(!is.null(input$diff_label_features) && input$diff_label_features == "top") {
+          } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "top") {
             # Label top n features by significance, but only among significant features
             significant_data <- plot_data[plot_data$Significance != "Not Significant", ]
             if (nrow(significant_data) > 0) {
-              top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(significant_data)) else 10
+              top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(significant_data)) else 10
               label_data <- significant_data[order(significant_data$AdjustedPValue), ][1:min(top_n, nrow(significant_data)), ]
             } else {
               label_data <- data.frame()
             }
-          } else if(!is.null(input$diff_label_features) && input$diff_label_features == "all") {
+          } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "all") {
             # Label all features (no limit)
             label_data <- plot_data
           } else {
             # Default: Label top features (with limit)
-            top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(plot_data)) else 10
+            top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(plot_data)) else 10
             label_data <- plot_data[1:min(top_n, nrow(plot_data)), ]
           }
           
           # Add labels using ggrepel for better layout
           if(nrow(label_data) > 0) {
             # Determine which label to use based on radio button selection
-            use_ids <- input$diff_label_type == "ids" && "ID" %in% colnames(label_data)
+            use_ids <- settings$diff_label_type == "ids" && "ID" %in% colnames(label_data)
             label_column <- if(use_ids) "ID" else "Feature"
             
             ma_plot <- ma_plot +
@@ -21284,7 +21394,7 @@ get_legend_grid_layout <- function(n_items) {
                                                                                      "pca" = "PCA Selected",
                                                                                      "ml" = "ML Selected",
                                                                                      "All")) else "",
-                                                    if(input$bootstrap_enabled == "yes") " | Bootstrap Statistics" else ""),
+                                                    if (identical(input$bootstrap_enabled, "yes")) " | Bootstrap Statistics" else ""),
                                              gp = grid::gpar(fontsize = 14, fontface = "bold")
                                            ))
       values$diff_ma_grid_obj <- grid_plot
@@ -21304,10 +21414,14 @@ get_legend_grid_layout <- function(n_items) {
     
     # Generate cached volcano plots for grid (only when data changes)
     generate_volcano_grid_plots <- reactive({
+      settings <- values$diff_plot_settings %||% diff_plot_setting_defaults
+
+      settings <- values$diff_plot_settings %||% diff_plot_setting_defaults
+
       # Add explicit reactive dependencies
-      input$diff_label_type
-      input$diff_label_features
-      input$diff_max_labels
+      settings$diff_label_type
+      settings$diff_label_features
+      settings$diff_max_labels
       input$diff_fc_cutoff
       input$diff_pval_cutoff
       input$diff_fdr_cutoff
@@ -21399,7 +21513,7 @@ get_legend_grid_layout <- function(n_items) {
         
         # Get FDR values if ROTS is selected and FDR column exists
         fdr_values <- NULL
-        if (input$sig_method == "rots") {
+        if (identical(input$sig_method, "rots")) {
           # Check both possible orders for comparison name
           comparison_name_alt <- paste(rev(unlist(strsplit(comparison_name, " vs "))), collapse = " vs ")
           fdr_direct_name <- paste0(comparison_name, "_FDR")
@@ -21509,42 +21623,42 @@ get_legend_grid_layout <- function(n_items) {
         
         # Create named vector for colors with dynamic label
         color_values <- c(
-          "Not Significant" = input$diff_nonsig_color,
-          "Upregulated" = input$diff_upreg_color,
-          "Downregulated" = input$diff_downreg_color
+          "Not Significant" = settings$diff_nonsig_color,
+          "Upregulated" = settings$diff_upreg_color,
+          "Downregulated" = settings$diff_downreg_color
         )
-        color_values[sig_no_fc_label] <- input$diff_sig_no_fc_color
+        color_values[sig_no_fc_label] <- settings$diff_sig_no_fc_color
         
         # Determine legend layout based on number of significance categories
         # When FC cutoff is 0, only 3 categories exist (Upregulated, Downregulated, Not Significant)
         # When FC cutoff > 0, 4 categories exist (including sig_no_fc_label)
-        legend_layout <- if (input$diff_fc_cutoff == 0) {
+        legend_layout <- if (!is.null(input$diff_fc_cutoff) && input$diff_fc_cutoff == 0) {
           guide_legend(nrow = 1)  # 1 row for 3 items
         } else {
           guide_legend(nrow = 2)  # 2 rows for 4 items
         }
         
         # Determine y-axis label based on FDR correction method
-        y_axis_label <- if (input$sig_method == "rots") {
+        y_axis_label <- if (identical(input$sig_method, "rots")) {
           "-log10(Adjusted p-value)"  # ROTS always has built-in FDR
-        } else if (input$fdr_method == "none") {
+        } else if (identical(input$fdr_method, "none")) {
           "-log10(p-value)"  # No FDR correction applied
         } else {
           "-log10(Adjusted p-value)"  # FDR correction applied
         }
         
         # Get font sizes from inputs or use defaults (coerced to numeric)
-        title_size <- suppressWarnings(as.numeric(input$diff_title_size))
+        title_size <- suppressWarnings(as.numeric(settings$diff_title_size))
         if (is.na(title_size)) title_size <- 14
-        axis_title_size <- suppressWarnings(as.numeric(input$diff_axis_title_size))
+        axis_title_size <- suppressWarnings(as.numeric(settings$diff_axis_title_size))
         if (is.na(axis_title_size)) axis_title_size <- 12
-        axis_text_size <- suppressWarnings(as.numeric(input$diff_axis_text_size))
+        axis_text_size <- suppressWarnings(as.numeric(settings$diff_axis_text_size))
         if (is.na(axis_text_size)) axis_text_size <- 10
-        legend_text_size <- suppressWarnings(as.numeric(input$diff_legend_text_size))
+        legend_text_size <- suppressWarnings(as.numeric(settings$diff_legend_text_size))
         if (is.na(legend_text_size)) legend_text_size <- 12
-        count_label_size <- suppressWarnings(as.numeric(input$diff_count_label_size))
+        count_label_size <- suppressWarnings(as.numeric(settings$diff_count_label_size))
         if (is.na(count_label_size)) count_label_size <- 5
-        jitter_size <- suppressWarnings(as.numeric(input$diff_jitter_size))
+        jitter_size <- suppressWarnings(as.numeric(settings$diff_jitter_size))
         if (is.na(jitter_size)) jitter_size <- 2
         
         # Create base volcano plot (without legend settings - will be applied later)
@@ -21554,14 +21668,14 @@ get_legend_grid_layout <- function(n_items) {
           scale_color_manual(values = color_values) +
           guides(color = legend_layout) +
           geom_vline(xintercept = c(-input$diff_fc_cutoff, input$diff_fc_cutoff),
-                     linetype = "dotted", color = input$diff_fc_line_color) +
+                     linetype = "dotted", color = settings$diff_fc_line_color) +
           geom_hline(yintercept = -log10(input$diff_pval_cutoff),
-                     linetype = "dotted", color = input$diff_pval_line_color) +        # Add count labels like in single plots
+                     linetype = "dotted", color = settings$diff_pval_line_color) +        # Add count labels like in single plots
           annotate("label", x = -max(abs(plot_data$Log2FC)) * 0.6,
                    y = top_y * 0.9,
                    label = paste(down_count),
                    hjust = 0.5,
-                   color = input$diff_downreg_color,
+                   color = settings$diff_downreg_color,
                    size = count_label_size,
                    fontface = "bold",
                    label.padding = unit(0.3, "lines")) +
@@ -21569,7 +21683,7 @@ get_legend_grid_layout <- function(n_items) {
                    y = top_y * 0.9,
                    label = paste(up_count),
                    hjust = 0.5,
-                   color = input$diff_upreg_color,
+                   color = settings$diff_upreg_color,
                    size = count_label_size,
                    fontface = "bold",
                    label.padding = unit(0.3, "lines"))
@@ -21581,7 +21695,7 @@ get_legend_grid_layout <- function(n_items) {
                      y = top_y * 0.9,
                      label = paste(sig_no_fc_count),
                      hjust = 0.5,
-                     color = input$diff_sig_no_fc_color,
+                     color = settings$diff_sig_no_fc_color,
                      size = count_label_size,
                      fontface = "bold")
         }
@@ -21608,33 +21722,33 @@ get_legend_grid_layout <- function(n_items) {
           )
         
         # Add feature names if option is selected
-        if(!is.null(input$diff_label_type) && input$diff_label_type != "none") {
+        if(!is.null(settings$diff_label_type) && settings$diff_label_type != "none") {
           # Determine which features to label based on user selection
-          if(!is.null(input$diff_label_features) && input$diff_label_features == "significant") {
+          if(!is.null(settings$diff_label_features) && settings$diff_label_features == "significant") {
             # Only label significant features
             label_data <- plot_data[plot_data$Significance != "Not Significant", ]
-          } else if(!is.null(input$diff_label_features) && input$diff_label_features == "top") {
+          } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "top") {
             # Label top n features by significance, but only among significant features
             significant_data <- plot_data[plot_data$Significance != "Not Significant", ]
             if (nrow(significant_data) > 0) {
-              top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(significant_data)) else 10
+              top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(significant_data)) else 10
               label_data <- significant_data[order(significant_data$AdjustedPValue), ][1:min(top_n, nrow(significant_data)), ]
             } else {
               label_data <- data.frame()
             }
-          } else if(!is.null(input$diff_label_features) && input$diff_label_features == "all") {
+          } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "all") {
             # Label all features (no limit)
             label_data <- plot_data
           } else {
             # Default: Label top features (with limit)
-            top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(plot_data)) else 10
+            top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(plot_data)) else 10
             label_data <- plot_data[1:min(top_n, nrow(plot_data)), ]
           }
           
           # Add labels using ggrepel for better layout
           if(nrow(label_data) > 0) {
             # Determine which label to use based on radio button selection
-            use_ids <- input$diff_label_type == "ids" && "ID" %in% colnames(label_data)
+            use_ids <- settings$diff_label_type == "ids" && "ID" %in% colnames(label_data)
             label_column <- if(use_ids) "ID" else "Feature"
             
             volcano_plot <- volcano_plot +
@@ -21701,7 +21815,7 @@ get_legend_grid_layout <- function(n_items) {
                                                                                      "pca" = "PCA Selected",
                                                                                      "ml" = "ML Selected",
                                                                                      "All")) else "",
-                                                    if(input$bootstrap_enabled == "yes") " | Bootstrap Statistics" else ""),
+                                                    if (identical(input$bootstrap_enabled, "yes")) " | Bootstrap Statistics" else ""),
                                              gp = grid::gpar(fontsize = 14, fontface = "bold")
                                            ))
       values$diff_volcano_grid_obj <- grid_plot
@@ -21796,7 +21910,7 @@ get_legend_grid_layout <- function(n_items) {
     generate_single_ma_plot <- reactive({
       req(values$stat_results, input$diffGroup1, input$diffGroup2)
       
-      if (input$diffGroup1 == input$diffGroup2) {
+      if (identical(input$diffGroup1, input$diffGroup2)) {
         return(NULL)
       }
       
@@ -21853,7 +21967,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Get FDR values if ROTS is selected and FDR column exists
       fdr_values <- NULL
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         # Check both possible orders for comparison name
         comparison_name_alt <- paste(rev(unlist(strsplit(comparison_name, " vs "))), collapse = " vs ")
         fdr_direct_name <- paste0(comparison_name, "_FDR")
@@ -21932,33 +22046,33 @@ get_legend_grid_layout <- function(n_items) {
       
       # Create named vector for colors with dynamic label
       color_values <- c(
-        "Upregulated" = input$diff_upreg_color,
-        "Downregulated" = input$diff_downreg_color,
-        "Not Significant" = input$diff_nonsig_color
+        "Upregulated" = settings$diff_upreg_color,
+        "Downregulated" = settings$diff_downreg_color,
+        "Not Significant" = settings$diff_nonsig_color
       )
-      color_values[sig_no_fc_label] <- input$diff_sig_no_fc_color
+      color_values[sig_no_fc_label] <- settings$diff_sig_no_fc_color
       
       # Determine legend layout based on number of significance categories
       # When FC cutoff is 0, only 3 categories exist (Upregulated, Downregulated, Not Significant)
       # When FC cutoff > 0, 4 categories exist (including sig_no_fc_label)
-      legend_layout <- if (input$diff_fc_cutoff == 0) {
+      legend_layout <- if (!is.null(input$diff_fc_cutoff) && input$diff_fc_cutoff == 0) {
         guide_legend(nrow = 1)  # 1 row for 3 items
       } else {
         guide_legend(nrow = 2)  # 2 rows for 4 items
       }
       
       # Get font sizes from inputs or use defaults (coerced to numeric)
-      title_size <- suppressWarnings(as.numeric(input$diff_title_size))
+      title_size <- suppressWarnings(as.numeric(settings$diff_title_size))
       if (is.na(title_size)) title_size <- 14
-      axis_title_size <- suppressWarnings(as.numeric(input$diff_axis_title_size))
+      axis_title_size <- suppressWarnings(as.numeric(settings$diff_axis_title_size))
       if (is.na(axis_title_size)) axis_title_size <- 12
-      axis_text_size <- suppressWarnings(as.numeric(input$diff_axis_text_size))
+      axis_text_size <- suppressWarnings(as.numeric(settings$diff_axis_text_size))
       if (is.na(axis_text_size)) axis_text_size <- 10
-      legend_text_size <- suppressWarnings(as.numeric(input$diff_legend_text_size))
+      legend_text_size <- suppressWarnings(as.numeric(settings$diff_legend_text_size))
       if (is.na(legend_text_size)) legend_text_size <- 12
-      count_label_size <- suppressWarnings(as.numeric(input$diff_count_label_size))
+      count_label_size <- suppressWarnings(as.numeric(settings$diff_count_label_size))
       if (is.na(count_label_size)) count_label_size <- 5
-      jitter_size <- suppressWarnings(as.numeric(input$diff_jitter_size))
+      jitter_size <- suppressWarnings(as.numeric(settings$diff_jitter_size))
       if (is.na(jitter_size)) jitter_size <- 2
       
       # Create MA plot
@@ -21967,13 +22081,13 @@ get_legend_grid_layout <- function(n_items) {
         scale_color_manual(values = color_values) +
         guides(color = legend_layout) +
         geom_hline(yintercept = c(-input$diff_fc_cutoff, input$diff_fc_cutoff),
-                   linetype = "dashed", color = input$diff_fc_line_color) +
+                   linetype = "dashed", color = settings$diff_fc_line_color) +
         # Add count labels
         annotate("label", x = min(plot_data$Mean) + (max(plot_data$Mean) - min(plot_data$Mean)) * 0.12,
                  y = max(plot_data$Log2FC) * 0.85,
                  label = paste(up_count),
                  hjust = 0.5,
-                 color = input$diff_upreg_color,
+                 color = settings$diff_upreg_color,
                  size = count_label_size,
                  fontface = "bold",
                  label.padding = unit(0.3, "lines")) +
@@ -21981,7 +22095,7 @@ get_legend_grid_layout <- function(n_items) {
                  y = min(plot_data$Log2FC) * 0.85,
                  label = paste(down_count),
                  hjust = 0.5,
-                 color = input$diff_downreg_color,
+                 color = settings$diff_downreg_color,
                  size = count_label_size,
                  fontface = "bold",
                  label.padding = unit(0.3, "lines"))
@@ -21993,7 +22107,7 @@ get_legend_grid_layout <- function(n_items) {
                    y = 0,
                    label = paste(sig_no_fc_count),
                    hjust = 0.5,
-                   color = input$diff_sig_no_fc_color,
+                   color = settings$diff_sig_no_fc_color,
                    size = count_label_size,
                    fontface = "bold",
                    label.padding = unit(0.3, "lines"))
@@ -22015,31 +22129,31 @@ get_legend_grid_layout <- function(n_items) {
           legend.text = element_text(size = legend_text_size),
           legend.position = "bottom"
         )    # Add feature names if option is selected
-      if(!is.null(input$diff_label_type) && input$diff_label_type != "none") {
+      if(!is.null(settings$diff_label_type) && settings$diff_label_type != "none") {
         # Determine which features to label
-        if(!is.null(input$diff_label_features) && input$diff_label_features == "significant") {
+        if(!is.null(settings$diff_label_features) && settings$diff_label_features == "significant") {
           label_data <- plot_data[plot_data$Significance != "Not Significant", ]
-        } else if(!is.null(input$diff_label_features) && input$diff_label_features == "top") {
+        } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "top") {
           # Label top n features by significance, but only among significant features
           significant_data <- plot_data[plot_data$Significance != "Not Significant", ]
           if (nrow(significant_data) > 0) {
-            top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(significant_data)) else 10
+            top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(significant_data)) else 10
             label_data <- significant_data[order(significant_data$AdjustedPValue), ][1:min(top_n, nrow(significant_data)), ]
           } else {
             label_data <- data.frame()
           }
-        } else if(!is.null(input$diff_label_features) && input$diff_label_features == "all") {
+        } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "all") {
           # Label all features (no limit)
           label_data <- plot_data
         } else {
           # Default: Label top features (with limit)
-          top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(plot_data)) else 10
+          top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(plot_data)) else 10
           label_data <- plot_data[1:min(top_n, nrow(plot_data)), ]
         }
         
         if(nrow(label_data) > 0) {
           # Determine which label to use based on radio button selection
-          use_ids <- input$diff_label_type == "ids" && "ID" %in% colnames(label_data)
+          use_ids <- settings$diff_label_type == "ids" && "ID" %in% colnames(label_data)
           label_column <- if(use_ids) "ID" else "Feature"
           
           ma_plot <- ma_plot +
@@ -22062,7 +22176,7 @@ get_legend_grid_layout <- function(n_items) {
     generate_single_volcano_plot <- reactive({
       req(values$stat_results, input$diffGroup1, input$diffGroup2)
       
-      if (input$diffGroup1 == input$diffGroup2) {
+      if (identical(input$diffGroup1, input$diffGroup2)) {
         return(NULL)
       }
       
@@ -22107,7 +22221,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Get FDR values if ROTS is selected and FDR column exists
       fdr_values <- NULL
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         # Check both possible orders for comparison name
         comparison_name_alt <- paste(rev(unlist(strsplit(comparison_name, " vs "))), collapse = " vs ")
         fdr_direct_name <- paste0(comparison_name, "_FDR")
@@ -22209,42 +22323,42 @@ get_legend_grid_layout <- function(n_items) {
       
       # Create named vector for colors with dynamic label
       color_values <- c(
-        "Upregulated" = input$diff_upreg_color,
-        "Downregulated" = input$diff_downreg_color,
-        "Not Significant" = input$diff_nonsig_color
+        "Upregulated" = settings$diff_upreg_color,
+        "Downregulated" = settings$diff_downreg_color,
+        "Not Significant" = settings$diff_nonsig_color
       )
-      color_values[sig_no_fc_label] <- input$diff_sig_no_fc_color
+      color_values[sig_no_fc_label] <- settings$diff_sig_no_fc_color
       
       # Determine legend layout based on number of significance categories
       # When FC cutoff is 0, only 3 categories exist (Upregulated, Downregulated, Not Significant)
       # When FC cutoff > 0, 4 categories exist (including sig_no_fc_label)
-      legend_layout <- if (input$diff_fc_cutoff == 0) {
+      legend_layout <- if (!is.null(input$diff_fc_cutoff) && input$diff_fc_cutoff == 0) {
         guide_legend(nrow = 1)  # 1 row for 3 items
       } else {
         guide_legend(nrow = 2)  # 2 rows for 4 items
       }
       
       # Determine y-axis label based on FDR correction method
-      y_axis_label <- if (input$sig_method == "rots") {
+      y_axis_label <- if (identical(input$sig_method, "rots")) {
         "-log10(Adjusted p-value)"  # ROTS always has built-in FDR
-      } else if (input$fdr_method == "none") {
+      } else if (identical(input$fdr_method, "none")) {
         "-log10(p-value)"  # No FDR correction applied
       } else {
         "-log10(Adjusted p-value)"  # FDR correction applied
       }
       
       # Get font sizes from inputs or use defaults (coerced to numeric)
-      title_size <- suppressWarnings(as.numeric(input$diff_title_size))
+      title_size <- suppressWarnings(as.numeric(settings$diff_title_size))
       if (is.na(title_size)) title_size <- 14
-      axis_title_size <- suppressWarnings(as.numeric(input$diff_axis_title_size))
+      axis_title_size <- suppressWarnings(as.numeric(settings$diff_axis_title_size))
       if (is.na(axis_title_size)) axis_title_size <- 12
-      axis_text_size <- suppressWarnings(as.numeric(input$diff_axis_text_size))
+      axis_text_size <- suppressWarnings(as.numeric(settings$diff_axis_text_size))
       if (is.na(axis_text_size)) axis_text_size <- 10
-      legend_text_size <- suppressWarnings(as.numeric(input$diff_legend_text_size))
+      legend_text_size <- suppressWarnings(as.numeric(settings$diff_legend_text_size))
       if (is.na(legend_text_size)) legend_text_size <- 12
-      count_label_size <- suppressWarnings(as.numeric(input$diff_count_label_size))
+      count_label_size <- suppressWarnings(as.numeric(settings$diff_count_label_size))
       if (is.na(count_label_size)) count_label_size <- 5
-      jitter_size <- suppressWarnings(as.numeric(input$diff_jitter_size))
+      jitter_size <- suppressWarnings(as.numeric(settings$diff_jitter_size))
       if (is.na(jitter_size)) jitter_size <- 2
       
       # Create Volcano plot
@@ -22253,14 +22367,14 @@ get_legend_grid_layout <- function(n_items) {
         scale_color_manual(values = color_values) +
         guides(color = legend_layout) +
         geom_vline(xintercept = c(-input$diff_fc_cutoff, input$diff_fc_cutoff),
-                   linetype = "dashed", color = input$diff_fc_line_color) +
+                   linetype = "dashed", color = settings$diff_fc_line_color) +
         geom_hline(yintercept = -log10(input$diff_pval_cutoff),
-                   linetype = "dotted", color = input$diff_pval_line_color) +      # Add count labels
+                   linetype = "dotted", color = settings$diff_pval_line_color) +      # Add count labels
         annotate("label", x = -max(abs(plot_data$Log2FC)) * 0.6,
            y = top_y * 0.9,
                  label = paste(down_count),
                  hjust = 0.5,
-                 color = input$diff_downreg_color,
+                 color = settings$diff_downreg_color,
                  size = count_label_size,
                  fontface = "bold",
                  label.padding = unit(0.3, "lines")) +
@@ -22268,7 +22382,7 @@ get_legend_grid_layout <- function(n_items) {
            y = top_y * 0.9,
                  label = paste(up_count),
                  hjust = 0.5,
-                 color = input$diff_upreg_color,
+                 color = settings$diff_upreg_color,
                  size = count_label_size,
                  fontface = "bold",
                  label.padding = unit(0.3, "lines"))
@@ -22280,7 +22394,7 @@ get_legend_grid_layout <- function(n_items) {
                    y = top_y * 0.9,
                    label = paste(sig_no_fc_count),
                    hjust = 0.5,
-                   color = input$diff_sig_no_fc_color,
+                   color = settings$diff_sig_no_fc_color,
                    size = count_label_size,
                    fontface = "bold")
       }
@@ -22304,31 +22418,31 @@ get_legend_grid_layout <- function(n_items) {
           legend.position = "bottom"
         )
       # Add feature names if option is selected
-      if(!is.null(input$diff_label_type) && input$diff_label_type != "none") {
+      if(!is.null(settings$diff_label_type) && settings$diff_label_type != "none") {
         # Determine which features to label
-        if(!is.null(input$diff_label_features) && input$diff_label_features == "significant") {
+        if(!is.null(settings$diff_label_features) && settings$diff_label_features == "significant") {
           label_data <- plot_data[plot_data$Significance != "Not Significant", ]
-        } else if(!is.null(input$diff_label_features) && input$diff_label_features == "top") {
+        } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "top") {
           # Label top n features by significance, but only among significant features
           significant_data <- plot_data[plot_data$Significance != "Not Significant", ]
           if (nrow(significant_data) > 0) {
-            top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(significant_data)) else 10
+            top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(significant_data)) else 10
             label_data <- significant_data[order(significant_data$AdjustedPValue), ][1:min(top_n, nrow(significant_data)), ]
           } else {
             label_data <- data.frame()
           }
-        } else if(!is.null(input$diff_label_features) && input$diff_label_features == "all") {
+        } else if(!is.null(settings$diff_label_features) && settings$diff_label_features == "all") {
           # Label all features (no limit)
           label_data <- plot_data
         } else {
           # Default: Label top features (with limit)
-          top_n <- if(!is.null(input$diff_max_labels)) min(input$diff_max_labels, nrow(plot_data)) else 10
+          top_n <- if(!is.null(settings$diff_max_labels)) min(settings$diff_max_labels, nrow(plot_data)) else 10
           label_data <- plot_data[1:min(top_n, nrow(plot_data)), ]
         }
         
         if(nrow(label_data) > 0) {
           # Determine which label to use based on radio button selection
-          use_ids <- input$diff_label_type == "ids" && "ID" %in% colnames(label_data)
+          use_ids <- settings$diff_label_type == "ids" && "ID" %in% colnames(label_data)
           label_column <- if(use_ids) "ID" else "Feature"
           
           volcano_plot <- volcano_plot +
@@ -22398,8 +22512,8 @@ get_legend_grid_layout <- function(n_items) {
         # Save the plot
         ggsave(file,
                plot = ma_plot,
-               width = input$diff_width,
-               height = input$diff_height,
+               width = settings$diff_width,
+               height = settings$diff_height,
                dpi = dpi,
                device = resolve_ggsave_device(format))
         
@@ -22425,8 +22539,8 @@ get_legend_grid_layout <- function(n_items) {
         # Save the plot
         ggsave(file,
                plot = volcano_plot,
-               width = input$diff_width,
-               height = input$diff_height,
+               width = settings$diff_width,
+               height = settings$diff_height,
                dpi = dpi,
                device = resolve_ggsave_device(format))
         showNotification("Single Volcano plot downloaded successfully!", type = "message")
@@ -22504,7 +22618,7 @@ get_legend_grid_layout <- function(n_items) {
           input$intersection_include_up, input$intersection_include_down,
           input$intersection_pval_cutoff, input$intersection_fc_cutoff, input$intersection_fdr_cutoff,
           input$bootstrap_enabled,
-          if (input$intersection_source == "pairwise") {            list(input$intersection_feature_source,
+          if (identical(input$intersection_source, "pairwise")) {            list(input$intersection_feature_source,
                                                                          input$pca_top_features, input$pca_feature_ranking,
                                                                          values$stat_results)
           }
@@ -22612,7 +22726,7 @@ get_legend_grid_layout <- function(n_items) {
                                         # If only one direction selected, use directional filtering
                                         if (input$intersection_include_up && input$intersection_include_down) {
                                           # Use magnitude filtering (absolute value)
-                                          if (input$sig_method == "rots") {
+                                          if (identical(input$sig_method, "rots")) {
                                             fdr_col <- paste0(comparison_name, "_FDR")
                                             if (!is_variable_comparison && !is.null(group1) && !is.null(group2)) {
                                               alt_fdr_col <- paste0(group2, "_vs_", group1, "_FDR")
@@ -22654,7 +22768,7 @@ get_legend_grid_layout <- function(n_items) {
                                           }
                                         } else if (input$intersection_include_up) {
                                           # Directional filtering - up only
-                                          if (input$sig_method == "rots") {
+                                          if (identical(input$sig_method, "rots")) {
                                             fdr_col <- paste0(comparison_name, "_FDR")
                                             alt_fdr_col <- paste0(group2, "_vs_", group1, "_FDR")
                                             if (!fdr_col %in% colnames(values$stat_results) && alt_fdr_col %in% colnames(values$stat_results)) {
@@ -22696,7 +22810,7 @@ get_legend_grid_layout <- function(n_items) {
                                         }
                                         if (input$intersection_include_down && !input$intersection_include_up) {
                                           # Directional filtering - down only
-                                          if (input$sig_method == "rots") {
+                                          if (identical(input$sig_method, "rots")) {
                                             fdr_col <- paste0(comparison_name, "_FDR")
                                             alt_fdr_col <- paste0(group2, "_vs_", group1, "_FDR")
                                             if (!fdr_col %in% colnames(values$stat_results) && alt_fdr_col %in% colnames(values$stat_results)) {
@@ -23202,7 +23316,7 @@ get_legend_grid_layout <- function(n_items) {
         
         # Update the info display
         output$intersectionTypeInfo <- renderText({
-          if(input$intersection_source == "manual") {
+          if (identical(input$intersection_source, "manual")) {
             num_sets <- values$manual_sets_count
             if(num_sets <= 5) {
               return(paste("<div class='alert alert-info'>Displaying Venn diagram with", num_sets, "sets from uploaded file</div>"))
@@ -23468,7 +23582,7 @@ get_legend_grid_layout <- function(n_items) {
         
         # Update the info display
         output$intersectionTypeInfo <- renderText({
-          if(input$intersection_source == "manual") {
+          if (identical(input$intersection_source, "manual")) {
             num_sets <- values$manual_sets_count
             if(num_sets <= 5) {
               return(paste("<div class='alert alert-info'>Displaying Venn diagram with", num_sets, "sets from pasted data</div>"))
@@ -24128,7 +24242,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Add parameters sheet
       addWorksheet(wb, "Parameters")
-      if (input$intersection_source == "pairwise") {
+      if (identical(input$intersection_source, "pairwise")) {
         param_data <- data.frame(
           Parameter = c("Data Source", "Visualization Type", "Number of Sets",
                         "P-value Cutoff", "Log2FC Cutoff",
@@ -24322,7 +24436,7 @@ get_legend_grid_layout <- function(n_items) {
           writeData(wb, "Statistical Analysis", values$stat_results)
           
           # Add method-specific parameter sheets based on the statistical method used
-          if (input$sig_method == "rots") {
+          if (identical(input$sig_method, "rots")) {
             # Add a metadata sheet with ROTS parameters
             addWorksheet(wb, "ROTS Parameters")
             rots_mode <- input$rots_mode %||% "standard"
@@ -24363,10 +24477,10 @@ get_legend_grid_layout <- function(n_items) {
             )
             writeData(wb, "ROTS Parameters", rots_params)
           }
-          else if (input$sig_method == "limma") {
+          else if (identical(input$sig_method, "limma")) {
             # Add a metadata sheet with limma parameters
             addWorksheet(wb, "Limma Parameters")
-            limma_trend_param <- if (input$limma_trend == "auto") TRUE else as.logical(input$limma_trend)
+            limma_trend_param <- if (identical(input$limma_trend, "auto")) TRUE else as.logical(input$limma_trend)
             limma_robust_param <- isTRUE(input$limma_robust)
             limma_params <- data.frame(
               Parameter = c("Method", "Trend", "Robust"),
@@ -24600,7 +24714,7 @@ get_legend_grid_layout <- function(n_items) {
       fdr_values <- NULL
       fdr_column <- NULL
       is_fdr_reversed <- FALSE
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         # Check both possible orders for comparison name
         comparison_name_alt <- paste(rev(unlist(strsplit(comparison_name, " vs "))), collapse = " vs ")
         fdr_direct_name <- paste0(comparison_name, "_FDR")
@@ -25935,7 +26049,7 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       # Check if bootstrap is enabled
-      if (input$bootstrap_enabled == "yes") {
+      if (identical(input$bootstrap_enabled, "yes")) {
         message("  [ANALYSIS] bootstrap_enabled is YES, entering bootstrap code")
         # Show progress
         withProgress(message = "Calculating bootstrap statistics...", {
@@ -25991,15 +26105,15 @@ get_legend_grid_layout <- function(n_items) {
                   # Calculate p-value if we have enough data
                   if (length(group1_data) >= 2 && length(group2_data) >= 2) {
                     # Use the selected statistical test
-                    if (input$sig_method == "wilcox") {
+                    if (identical(input$sig_method, "wilcox")) {
                       test_result <- tryCatch({
                         wilcox.test(group1_data, group2_data)$p.value
                       }, error = function(e) { NA })
-                    } else if (input$sig_method == "t.test") {
+                    } else if (identical(input$sig_method, "t.test")) {
                       test_result <- tryCatch({
                         t.test(group1_data, group2_data)$p.value
                       }, error = function(e) { NA })
-                    } else if (input$sig_method == "kruskal") {
+                    } else if (identical(input$sig_method, "kruskal")) {
                       test_result <- tryCatch({
                         kruskal.test(list(group1_data, group2_data))$p.value
                       }, error = function(e) { NA })
@@ -26288,7 +26402,7 @@ get_legend_grid_layout <- function(n_items) {
                     tryCatch({
                       emm <- emmeans::emmeans(ancova_model, "Group")
                       
-                      if (input$posthoc_method == "dunnett") {
+                      if (identical(input$posthoc_method, "dunnett")) {
                         # Dunnett: each group vs reference (first level), on EMMs
                         dunnett_contr <- emmeans::contrast(emm, method = "trt.vs.ctrl")
                         dunnett_summary <- summary(dunnett_contr, adjust = "dunnett")
@@ -26737,7 +26851,7 @@ get_legend_grid_layout <- function(n_items) {
             # Fit the linear model
             setProgress(0.3, detail = "Fitting linear models...")
             fit <- limma::lmFit(expr_matrix, design)
-            limma_trend_param <- if (input$limma_trend == "auto") TRUE else as.logical(input$limma_trend)
+            limma_trend_param <- if (identical(input$limma_trend, "auto")) TRUE else as.logical(input$limma_trend)
             limma_robust_param <- isTRUE(input$limma_robust)
             
             # Create column to store limma results
@@ -28195,7 +28309,7 @@ get_legend_grid_layout <- function(n_items) {
             values$stat_results <- stat_results
           })
         }
-        else if (input$sig_method == "rots") {
+        else if (identical(input$sig_method, "rots")) {
           # Check if using lmROTS or standard ROTS
           rots_mode <- input$rots_mode %||% "standard"
           
@@ -29154,19 +29268,19 @@ get_legend_grid_layout <- function(n_items) {
                 
                 # Check if we have enough data
                 if (length(group1_data) >= 2 && length(group2_data) >= 2) {
-                  if (input$sig_method == "wilcox") {
+                  if (identical(input$sig_method, "wilcox")) {
                     tryCatch({
                       wilcox.test(group1_data, group2_data)$p.value
                     }, error = function(e) { NA })
-                  } else if (input$sig_method == "t.test") {
+                  } else if (identical(input$sig_method, "t.test")) {
                     tryCatch({
                       t.test(group1_data, group2_data)$p.value
                     }, error = function(e) { NA })
-                  } else if (input$sig_method == "kruskal") {
+                  } else if (identical(input$sig_method, "kruskal")) {
                     tryCatch({
                       kruskal.test(list(group1_data, group2_data))$p.value
                     }, error = function(e) { NA })
-                  } else if (input$sig_method == "anova") {
+                  } else if (identical(input$sig_method, "anova")) {
                     tryCatch({
                       Group <- factor(c(rep(group1, length(group1_data)), rep(group2, length(group2_data))),
                                       levels = c(group1, group2))
@@ -29411,7 +29525,7 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       # Add visual indication for bootstrap columns if bootstrap is enabled
-      if (input$bootstrap_enabled == "yes") {
+      if (identical(input$bootstrap_enabled, "yes")) {
         bootstrap_cols <- grep("Bootstrap", colnames(display_data))
         if (length(bootstrap_cols) > 0) {
           dt <- dt %>% DT::formatStyle(
@@ -29600,7 +29714,7 @@ get_legend_grid_layout <- function(n_items) {
         legend.text = element_text(size = 11)
       )
     
-    if (input$viz_plot_type == "hist") {
+    if (identical(input$viz_plot_type, "hist")) {
       # Create histogram of data values - properly flatten the matrix
       values_vec <- as.numeric(plot_data)
       values_vec <- values_vec[!is.na(values_vec)]
@@ -29625,7 +29739,7 @@ get_legend_grid_layout <- function(n_items) {
       
       return(p)
       
-    } else if (input$viz_plot_type == "density") {
+    } else if (identical(input$viz_plot_type, "density")) {
       # Create density plot of values - properly flatten the matrix
       values_vec <- as.numeric(plot_data)
       values_vec <- values_vec[!is.na(values_vec)]
@@ -29650,9 +29764,9 @@ get_legend_grid_layout <- function(n_items) {
       
       return(p)
       
-    } else if (input$viz_plot_type == "boxplot") {
+    } else if (identical(input$viz_plot_type, "boxplot")) {
       # Create boxplot of samples or groups
-      if (input$viz_grouping == "all") {
+      if (identical(input$viz_grouping, "all")) {
         # Long format data with each sample as a column
         plot_data_long <- reshape2::melt(
           plot_data,
@@ -29712,7 +29826,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "qq") {
+    } else if (identical(input$viz_plot_type, "qq")) {
       # Create Q-Q plot for normality checking
       # Determine if showing per-feature data
       feature_suffix <- ""
@@ -29720,7 +29834,7 @@ get_legend_grid_layout <- function(n_items) {
         feature_suffix <- paste0(" - ", input$viz_selected_feature)
       }
       
-      if (input$viz_grouping == "all") {
+      if (identical(input$viz_grouping, "all")) {
         # Use all data as a single group
         values_vec <- as.numeric(plot_data)
         values_vec <- values_vec[!is.na(values_vec)]
@@ -29777,7 +29891,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "mds") {
+    } else if (identical(input$viz_plot_type, "mds")) {
       # MDS Plot - use the data_matrix parameter which respects raw vs normalized choice
       # Convert to matrix and filter low-expression genes
       plot_matrix <- as.matrix(plot_data)
@@ -29841,9 +29955,9 @@ get_legend_grid_layout <- function(n_items) {
       
       return(p)
       
-    } else if (input$viz_plot_type == "pca") {
+    } else if (identical(input$viz_plot_type, "pca")) {
       # PCA Plot for DESeq2
-      if (input$sig_method == "deseq2") {
+      if (identical(input$sig_method, "deseq2")) {
         # Perform PCA on transposed data (samples as rows)
         pca_result <- prcomp(t(plot_data), scale. = TRUE)
         
@@ -29876,7 +29990,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "meanvar") {
+    } else if (identical(input$viz_plot_type, "meanvar")) {
       # Mean-Variance Plot for edgeR/limma-voom
       if (input$sig_method %in% c("edger", "limma_voom")) {
         # Calculate mean and variance for each gene
@@ -29903,7 +30017,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "libsize") {
+    } else if (identical(input$viz_plot_type, "libsize")) {
       # Library Size Distribution
       if (input$sig_method %in% c("edger", "limma_voom")) {
         # Calculate library sizes (column sums)
@@ -29930,7 +30044,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "bcv") {
+    } else if (identical(input$viz_plot_type, "bcv")) {
       # BCV Plot requires cached statistical analysis - not a data visualization
       # This plot type only uses the cached DGEList, so data_type is ignored
       if (data_type == "raw") {
@@ -30021,7 +30135,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "ql_disp") {
+    } else if (identical(input$viz_plot_type, "ql_disp")) {
       # QL Dispersion Plot requires cached statistical analysis - not a data visualization
       # This plot type only uses the cached edgeR QLF fit, so data_type is ignored
       if (data_type == "raw") {
@@ -30108,9 +30222,9 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "dispersion") {
+    } else if (identical(input$viz_plot_type, "dispersion")) {
       # Dispersion Plot for DESeq2
-      if (input$sig_method == "deseq2") {
+      if (identical(input$sig_method, "deseq2")) {
         # Create a simulated dispersion plot using the available data
         # In a real implementation, this would use the DESeqDataSet object
         
@@ -30143,7 +30257,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "ma_sizefactors") {
+    } else if (identical(input$viz_plot_type, "ma_sizefactors")) {
       # MA Plot using size factors - FIXED VERSION
       req(input$sig_method == "deseq2")
       
@@ -30201,7 +30315,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "meansd_plot") {
+    } else if (identical(input$viz_plot_type, "meansd_plot")) {
       # Mean-SD Plot (effect of transformations on variance) - NEW
       req(input$sig_method == "deseq2")
       
@@ -30272,7 +30386,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "count_outliers") {
+    } else if (identical(input$viz_plot_type, "count_outliers")) {
       # Count Outlier Detection Plot - NEW
       req(input$sig_method == "deseq2")
       
@@ -30331,7 +30445,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "ma_pvalues") {
+    } else if (identical(input$viz_plot_type, "ma_pvalues")) {
       # MA Plot with p-values (Expanded model matrices plot) - NEW
       req(input$sig_method == "deseq2")
       
@@ -30386,7 +30500,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "cooks") {
+    } else if (identical(input$viz_plot_type, "cooks")) {
       # Cook's Distance for DESeq2
       if (input$sig_method == "deseq2" && !is.null(values$dds)) {
         tryCatch({
@@ -30439,7 +30553,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "voom_weights") {
+    } else if (identical(input$viz_plot_type, "voom_weights")) {
       # Voom Precision Weights requires cached statistical analysis - not a data visualization
       # This plot type only uses the cached voom object, so data_type is ignored
       if (data_type == "raw") {
@@ -30513,7 +30627,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "residuals") {
+    } else if (identical(input$viz_plot_type, "residuals")) {
       # Model Residuals requires cached statistical analysis - not a data visualization
       # This plot type only uses the cached model fit, so data_type is ignored
       if (data_type == "raw") {
@@ -30578,7 +30692,7 @@ get_legend_grid_layout <- function(n_items) {
         return(p)
       }
       
-    } else if (input$viz_plot_type == "sample_dist") {
+    } else if (identical(input$viz_plot_type, "sample_dist")) {
       # Sample Distance Heatmap
       # Calculate sample-to-sample distances using specified method
       dist_method <- input$viz_dist_method %||% "euclidean"
@@ -30603,7 +30717,7 @@ get_legend_grid_layout <- function(n_items) {
       
       return(p)
       
-    } else if (input$viz_plot_type == "corr") {
+    } else if (identical(input$viz_plot_type, "corr")) {
       # Create correlation heatmap of samples
       # Get column names as sample identifiers
       sample_names <- colnames(values$normalized_data)
@@ -30801,7 +30915,7 @@ get_legend_grid_layout <- function(n_items) {
             "<p style='margin: 5px 0;'><strong>Mean:</strong> ", formatC(mean(values_vec, na.rm = TRUE), digits = 4, format = "f"), "</p>",
             "<p style='margin: 5px 0;'><strong>Median:</strong> ", formatC(median(values_vec, na.rm = TRUE), digits = 4, format = "f"), "</p>",
             "<p style='margin: 5px 0;'><strong>Standard Deviation:</strong> ", formatC(sd(values_vec, na.rm = TRUE), digits = 4, format = "f"), "</p>",
-            if (input$viz_plot_type == "boxplot") {
+            if (identical(input$viz_plot_type, "boxplot")) {
               quantiles <- quantile(values_vec, probs = c(0, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1), na.rm = TRUE)
               paste0(
                 "<h5 style='color: #34495e; margin-top: 15px; margin-bottom: 10px;'>Quantiles:</h5>",
@@ -30812,7 +30926,7 @@ get_legend_grid_layout <- function(n_items) {
                   collapse = ""
                 )
               )
-            } else if (input$viz_plot_type == "corr") {
+            } else if (identical(input$viz_plot_type, "corr")) {
               cor_values <- as.vector(cor(plot_data, use = "pairwise.complete.obs", method = input$viz_corr_method))
               cor_values <- cor_values[!is.na(cor_values) & cor_values != 1]
               paste0(
@@ -31237,7 +31351,7 @@ get_legend_grid_layout <- function(n_items) {
               fixed_column_split <- factor(clean_splits, levels = split_levels)
               
               # Handle the Small size option (EXACT same as UI staticHeatmap)
-              if(input$heatmap_cell_size == "Small") {
+              if (identical(input$heatmap_cell_size, "Small")) {
                 column_labels <- HeatmapAnnotation(
                   Group = anno_block(
                     gp = grid::gpar(fill = rainbow(length(unique(fixed_column_split)))),
@@ -31520,7 +31634,7 @@ get_legend_grid_layout <- function(n_items) {
   
   # Helper functions to determine which column to use for p-values and fold changes
   get_pvalue_column <- function(comparison_name) {
-    if (input$bootstrap_enabled == "yes") {
+    if (identical(input$bootstrap_enabled, "yes")) {
       paste0(comparison_name, "_Bootstrap_AdjPValue")
     } else {
       paste0(comparison_name, "_AdjPValue")
@@ -31602,7 +31716,7 @@ get_legend_grid_layout <- function(n_items) {
     
     showNotification("Running enrichment analysis...", type = "message", duration = 3)
     # Recalculate filtered gene list using adjusted values
-    if (input$proteomics_source == "intersection") {
+    if (identical(input$proteomics_source, "intersection")) {
       req(input$proteomics_intersection_set)
 
       feature_list <- values$intersection_comparison_results[[input$proteomics_intersection_set]]
@@ -31626,7 +31740,7 @@ get_legend_grid_layout <- function(n_items) {
       }
     }
     # In the pairwise comparison section of the get_gene_list() function
-    else if (input$proteomics_source == "pairwise") {
+    else if (identical(input$proteomics_source, "pairwise")) {
       # Get comparison stats with fallback to reversed comparison
       comp_stats <- get_comparison_stats(input$proteomics_pairwise_group1, input$proteomics_pairwise_group2)
       
@@ -31669,7 +31783,7 @@ get_legend_grid_layout <- function(n_items) {
       fdr_values <- NULL
       fdr_column <- NULL
       is_fdr_reversed <- FALSE
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         # Use the same comparison_name from get_comparison_stats to maintain consistency
         fdr_column_direct <- paste0(comparison_name, "_FDR")
         
@@ -31813,7 +31927,7 @@ get_legend_grid_layout <- function(n_items) {
         )
       }
     }
-    else if (input$proteomics_source == "manual") {
+    else if (identical(input$proteomics_source, "manual")) {
       # Use the updated get_gene_list function for manual input
       result <- get_gene_list()
       if (is.null(result$genes)) {
@@ -31872,7 +31986,7 @@ get_legend_grid_layout <- function(n_items) {
         proteomics_values$analysis_type <- "ORA"
       }
     }
-    else if (input$proteomics_source == "mofa_factor") {
+    else if (identical(input$proteomics_source, "mofa_factor")) {
       # Use the get_gene_list function for MOFA input
       result <- get_gene_list()
       if (is.null(result$genes)) {
@@ -31915,7 +32029,7 @@ get_legend_grid_layout <- function(n_items) {
     )
     
     # Add source-specific parameters to the cache key
-    if (input$proteomics_source == "pairwise") {
+    if (identical(input$proteomics_source, "pairwise")) {
       general_params$group1 <- input$proteomics_pairwise_group1
       general_params$group2 <- input$proteomics_pairwise_group2
       general_params$pval <- input$proteomics_pairwise_pval
@@ -31923,10 +32037,10 @@ get_legend_grid_layout <- function(n_items) {
       general_params$include_up <- input$proteomics_include_up
       general_params$include_down <- input$proteomics_include_down
       general_params$sig_method <- input$sig_method
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         general_params$fdr_cutoff <- input$proteomics_fdr_cutoff
       }
-    } else if (input$proteomics_source == "intersection") {
+    } else if (identical(input$proteomics_source, "intersection")) {
       general_params$intersection_set <- input$proteomics_intersection_set
     } else if (identical(input$proteomics_source, "mofa_factor")) {
       general_params$mofa_view <- input$mofa_enrich_view
@@ -31938,7 +32052,7 @@ get_legend_grid_layout <- function(n_items) {
     
     # Tool-specific parameters for cache key
     tool_params <- list()
-    if (input$proteomics_tool == "gprofiler") {
+    if (identical(input$proteomics_tool, "gprofiler")) {
       tool_params <- list(
         correction_method = input$proteomics_gprofiler_correction,
         significant = input$proteomics_gprofiler_sig,
@@ -31947,7 +32061,7 @@ get_legend_grid_layout <- function(n_items) {
         bg_source = input$proteomics_gprofiler_bg_source,
         custom_bg_text = input$proteomics_gprofiler_custom_bg
       )
-    } else if (input$proteomics_tool == "clusterprofiler") {
+    } else if (identical(input$proteomics_tool, "clusterprofiler")) {
       tool_params <- list(
         analysis = input$proteomics_cp_analysis,
         pval = input$proteomics_cp_pval,
@@ -31972,14 +32086,14 @@ get_legend_grid_layout <- function(n_items) {
         # For MOFA-factor source, ranking metric is always MOFA weights (log2FC-style ranking)
         tool_params$gsea_ranking_metric <- if (identical(input$proteomics_source, "mofa_factor")) "log2fc" else input$proteomics_gsea_ranking_metric
       }
-    } else if (input$proteomics_tool == "enrichr") {
+    } else if (identical(input$proteomics_tool, "enrichr")) {
       tool_params <- list(
         databases = input$proteomics_enrichr_db,
         bg_option = input$proteomics_enrichr_bg_option,
         bg_source = input$proteomics_enrichr_bg_source,
         custom_bg_text = input$proteomics_enrichr_custom_bg
       )
-    } else if (input$proteomics_tool == "reactomepa") {
+    } else if (identical(input$proteomics_tool, "reactomepa")) {
       tool_params <- list(
         pval = input$proteomics_reactome_pval,
         qval = input$proteomics_reactome_qval,
@@ -31987,7 +32101,7 @@ get_legend_grid_layout <- function(n_items) {
         bg_source = input$proteomics_reactome_bg_source,
         custom_bg_text = input$proteomics_reactome_custom_bg
       )
-    } else if (input$proteomics_tool == "topgo") {
+    } else if (identical(input$proteomics_tool, "topgo")) {
       tool_params <- list(
         ontology = input$proteomics_topgo_ontology,
         algorithm = input$proteomics_topgo_algorithm,
@@ -32058,14 +32172,14 @@ get_legend_grid_layout <- function(n_items) {
         original_fold_change_data <- fold_change_data
       }
       
-      if (input$proteomics_tool == "gprofiler") {
+      if (identical(input$proteomics_tool, "gprofiler")) {
         # Show global g:Profiler banner across all proteomics tabs
         session$sendCustomMessage(type = "showGProfilerProgress", message = list())
         tryCatch({
           # Prepare custom background if custom domain is selected
           custom_bg <- NULL
           if (input$proteomics_gprofiler_domain %in% c("custom", "custom_annotated")) {
-            if (input$proteomics_gprofiler_bg_source == "full_dataset") {
+            if (identical(input$proteomics_gprofiler_bg_source, "full_dataset")) {
               # Use full uploaded feature universe as background
               if (input$proteomics_source == "manual" &&
                   !is.null(proteomics_values$manual_full_gene_universe) &&
@@ -32082,7 +32196,7 @@ get_legend_grid_layout <- function(n_items) {
                                  type = "error", duration = 5)
                 return(NULL)
               }
-            } else if (input$proteomics_gprofiler_bg_source == "manual_input") {
+            } else if (identical(input$proteomics_gprofiler_bg_source, "manual_input")) {
               # Use manually pasted background
               if (!is.null(input$proteomics_gprofiler_custom_bg) && nchar(trimws(input$proteomics_gprofiler_custom_bg)) > 0) {
                 bg_text <- trimws(input$proteomics_gprofiler_custom_bg)
@@ -32142,7 +32256,7 @@ get_legend_grid_layout <- function(n_items) {
         # Hide banner after completion
         session$sendCustomMessage(type = "hideGProfilerProgress", message = list())
       }
-      else if (input$proteomics_tool == "clusterprofiler") {
+      else if (identical(input$proteomics_tool, "clusterprofiler")) {
         # Show progress bar specifically for ClusterProfiler
         session$sendCustomMessage(type = "showClusterProfilerProgress", message = list())
         
@@ -32172,7 +32286,7 @@ get_legend_grid_layout <- function(n_items) {
           annotation_db <- get_annotation_database(input$proteomics_organism)
           
           # First convert IDs if needed
-          if(input$proteomics_id_type != "ENTREZID") {
+          if (!identical(input$proteomics_id_type, "ENTREZID")) {
             showNotification("Converting IDs for ClusterProfiler...", type = "message")
             
             # Validate the actual ID type in gene_list to ensure it matches user selection
@@ -32257,7 +32371,7 @@ get_legend_grid_layout <- function(n_items) {
               }
               
               # Filter to only include significant molecules and convert to ENTREZ IDs
-              if(input$proteomics_id_type != "ENTREZID") {
+              if (!identical(input$proteomics_id_type, "ENTREZID")) {
                 # Map fold change data to ENTREZ IDs
                 fc_mapped <- fc_values[gene_list]  # Get FC values for our significant genes
                 fc_mapped <- fc_mapped[!is.na(fc_mapped)]  # Remove NA values
@@ -32303,7 +32417,7 @@ get_legend_grid_layout <- function(n_items) {
             fc_values <- fc_values[!is.na(fc_values)]
             
             if(length(fc_values) > 0) {
-              if(input$proteomics_id_type != "ENTREZID") {
+              if (!identical(input$proteomics_id_type, "ENTREZID")) {
                 # Map fold change data to ENTREZ IDs using the same mapping we did above
                 if(exists("gene_ids") && nrow(gene_ids) > 0) {
                   # Create mapping from original to ENTREZ IDs
@@ -32344,8 +32458,8 @@ get_legend_grid_layout <- function(n_items) {
           
           # Prepare custom background/universe if selected
           custom_universe <- NULL
-          if (input$proteomics_cp_background_type == "custom") {
-            if (input$proteomics_cp_bg_source == "full_dataset") {
+          if (identical(input$proteomics_cp_background_type, "custom")) {
+            if (identical(input$proteomics_cp_bg_source, "full_dataset")) {
               # Use full uploaded feature universe as background
               # For manual input with full gene universe, use that; otherwise use cleaned_molecules
               if (input$proteomics_source == "manual" && 
@@ -32363,7 +32477,7 @@ get_legend_grid_layout <- function(n_items) {
                                  type = "error", duration = 5)
                 return(NULL)
               }
-            } else if (input$proteomics_cp_bg_source == "manual_input") {
+            } else if (identical(input$proteomics_cp_bg_source, "manual_input")) {
               # Use manually pasted background
               if (!is.null(input$proteomics_cp_custom_bg) && nchar(trimws(input$proteomics_cp_custom_bg)) > 0) {
                 bg_text <- trimws(input$proteomics_cp_custom_bg)
@@ -32386,7 +32500,7 @@ get_legend_grid_layout <- function(n_items) {
             
             # Convert custom universe to ENTREZ IDs if needed
             if (!is.null(raw_universe)) {
-              if(input$proteomics_id_type != "ENTREZID") {
+              if (!identical(input$proteomics_id_type, "ENTREZID")) {
                 # Validate the actual ID type in raw_universe
                 universe_validation <- validate_ids(raw_universe)
                 
@@ -32447,7 +32561,7 @@ get_legend_grid_layout <- function(n_items) {
           }
           
           # Run the enrichment analysis based on the selected analysis type
-          if(input$proteomics_cp_analysis == "go") {
+          if (identical(input$proteomics_cp_analysis, "go")) {
             if (is.null(annotation_db)) {
               showNotification("GO enrichment requires an organism annotation database (e.g. org.Hs.eg.db). Please install the appropriate OrgDb package or select a supported organism.", type = "error")
               enrichment_results <- NULL
@@ -32464,7 +32578,7 @@ get_legend_grid_layout <- function(n_items) {
               )
             }
           }
-          else if(input$proteomics_cp_analysis == "kegg") {
+          else if (identical(input$proteomics_cp_analysis, "kegg")) {
             kegg_org <- switch(input$proteomics_organism,
                                hsapiens = "hsa",
                                mmusculus = "mmu",
@@ -32485,7 +32599,7 @@ get_legend_grid_layout <- function(n_items) {
               pAdjustMethod = input$proteomics_cp_pmethod
             )
           }
-          else if(input$proteomics_cp_analysis == "kegg_module") {
+          else if (identical(input$proteomics_cp_analysis, "kegg_module")) {
             # KEGG Module analysis using enrichMKEGG
             kegg_org <- switch(input$proteomics_organism,
                                hsapiens = "hsa",
@@ -32511,7 +32625,7 @@ get_legend_grid_layout <- function(n_items) {
               maxGSSize = input$proteomics_cp_maxGSSize
             )
           }
-          else if(input$proteomics_cp_analysis == "msigdb") {
+          else if (identical(input$proteomics_cp_analysis, "msigdb")) {
             # MSigDB analysis using msigdbr
             if (requireNamespace("msigdbr", quietly = TRUE)) {
               organism_code <- switch(input$proteomics_organism,
@@ -32576,7 +32690,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_results <- NULL
             }
           }
-          else if(input$proteomics_cp_analysis == "pathwaycommons") {
+          else if (identical(input$proteomics_cp_analysis, "pathwaycommons")) {
             # Pathway Commons analysis using enrichPC
             if (requireNamespace("clusterProfiler", quietly = TRUE)) {
               showNotification("Running Pathway Commons enrichment analysis...", type = "message")
@@ -32588,12 +32702,12 @@ get_legend_grid_layout <- function(n_items) {
                 pc_genes <- NULL
                 conversion_type <- NULL
                 
-                if(input$proteomics_id_type == "SYMBOL") {
+                if (identical(input$proteomics_id_type, "SYMBOL")) {
                   # Already in HGNC symbols, use directly
                   pc_genes <- mapped_genes
                   conversion_type <- "SYMBOL"
                   showNotification(paste("Using", length(pc_genes), "HGNC symbols for Pathway Commons analysis"), type = "message")
-                } else if(input$proteomics_id_type == "UNIPROT") {
+                } else if (identical(input$proteomics_id_type, "UNIPROT")) {
                   # Already in UniProt IDs, use directly - no conversion needed
                   pc_genes <- mapped_genes
                   conversion_type <- "UNIPROT"
@@ -32602,7 +32716,7 @@ get_legend_grid_layout <- function(n_items) {
                   # For other ID types, try to convert to HGNC symbols first, then UniProt if that fails
                   if(exists("gene_ids") && nrow(gene_ids) > 0) {
                     # First attempt: Convert to SYMBOL
-                    if(input$proteomics_id_type == "ENTREZID") {
+                    if (identical(input$proteomics_id_type, "ENTREZID")) {
                       # Map ENTREZ to SYMBOL
                       if("SYMBOL" %in% colnames(gene_ids)) {
                         entrez_to_symbol <- setNames(gene_ids$SYMBOL, gene_ids$ENTREZID)
@@ -32636,7 +32750,7 @@ get_legend_grid_layout <- function(n_items) {
                     if((is.null(pc_genes) || length(pc_genes) < 10) && "UNIPROT" %in% colnames(gene_ids)) {
                       showNotification("SYMBOL conversion yielded insufficient genes. Attempting UniProt ID conversion...", type = "message")
                       
-                      if(input$proteomics_id_type == "ENTREZID") {
+                      if (identical(input$proteomics_id_type, "ENTREZID")) {
                         # Map ENTREZ to UNIPROT
                         entrez_to_uniprot <- setNames(gene_ids$UNIPROT, gene_ids$ENTREZID)
                         pc_genes <- entrez_to_uniprot[mapped_genes]
@@ -32683,7 +32797,7 @@ get_legend_grid_layout <- function(n_items) {
                   } else if(exists("gene_ids") && nrow(gene_ids) > 0) {
                     # Only convert if input type differs from conversion type
                     if(conversion_type == "SYMBOL" && "SYMBOL" %in% colnames(gene_ids)) {
-                      if(input$proteomics_id_type == "ENTREZID") {
+                      if (identical(input$proteomics_id_type, "ENTREZID")) {
                         entrez_to_symbol <- setNames(gene_ids$SYMBOL, gene_ids$ENTREZID)
                         pc_universe <- entrez_to_symbol[custom_universe]
                         pc_universe <- pc_universe[!is.na(pc_universe)]
@@ -32702,7 +32816,7 @@ get_legend_grid_layout <- function(n_items) {
                         }
                       }
                     } else if(conversion_type == "UNIPROT" && "UNIPROT" %in% colnames(gene_ids)) {
-                      if(input$proteomics_id_type == "ENTREZID") {
+                      if (identical(input$proteomics_id_type, "ENTREZID")) {
                         entrez_to_uniprot <- setNames(gene_ids$UNIPROT, gene_ids$ENTREZID)
                         pc_universe <- entrez_to_uniprot[custom_universe]
                         pc_universe <- pc_universe[!is.na(pc_universe)]
@@ -32748,7 +32862,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_results <- NULL
             }
           }
-          else if(input$proteomics_cp_analysis == "do") {
+          else if (identical(input$proteomics_cp_analysis, "do")) {
             # Disease Ontology analysis using enrichDO
             if (requireNamespace("DOSE", quietly = TRUE)) {
               showNotification("Running Disease Ontology enrichment analysis...", type = "message")
@@ -32767,7 +32881,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_results <- NULL
             }
           }
-          else if(input$proteomics_cp_analysis == "reactome") {
+          else if (identical(input$proteomics_cp_analysis, "reactome")) {
             # Reactome analysis using enrichPathway
             if (requireNamespace("ReactomePA", quietly = TRUE)) {
               showNotification("Running Reactome pathway enrichment analysis...", type = "message")
@@ -32811,7 +32925,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_results <- NULL
             }
           }
-          else if(input$proteomics_cp_analysis == "wikipathways") {
+          else if (identical(input$proteomics_cp_analysis, "wikipathways")) {
             # WikiPathways analysis using enrichWP
             if (requireNamespace("clusterProfiler", quietly = TRUE)) {
               showNotification("Running WikiPathways enrichment analysis...", type = "message")
@@ -32891,7 +33005,7 @@ get_legend_grid_layout <- function(n_items) {
             enrichment_results <- NULL
             } else {
               # Create ranked gene list based on selected metric
-              if(input$proteomics_gsea_ranking_metric == "log2fc") {
+              if (identical(input$proteomics_gsea_ranking_metric, "log2fc")) {
                 # Use log2 fold change directly
                 if (input$proteomics_source == "pairwise" && !is.null(values$stat_results)) {
                   comparison_name <- paste(input$proteomics_pairwise_group1, "vs", input$proteomics_pairwise_group2)
@@ -32921,7 +33035,7 @@ get_legend_grid_layout <- function(n_items) {
                 } else {
                   ranked_genes <- fold_change_data
                 }
-              } else if(input$proteomics_gsea_ranking_metric == "signed_pval") {
+              } else if (identical(input$proteomics_gsea_ranking_metric, "signed_pval")) {
                 # Create signed p-value metric: -log10(p) * sign(fc)
                 # This requires access to p-values from the statistical results
                 
@@ -32950,7 +33064,7 @@ get_legend_grid_layout <- function(n_items) {
                     names(signed_pvals) <- id_names
                     
                     # Map to ENTREZ IDs if needed
-                    if(input$proteomics_id_type != "ENTREZID") {
+                    if (!identical(input$proteomics_id_type, "ENTREZID")) {
                       if(exists("gene_ids") && nrow(gene_ids) > 0) {
                         name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
                         entrez_names <- name_to_entrez[names(signed_pvals)]
@@ -32987,7 +33101,7 @@ get_legend_grid_layout <- function(n_items) {
                   names(signed_pvals) <- gene_list
                   
                   # Map to ENTREZ IDs if needed
-                  if(input$proteomics_id_type != "ENTREZID") {
+                  if (!identical(input$proteomics_id_type, "ENTREZID")) {
                     if(exists("gene_ids") && nrow(gene_ids) > 0) {
                       name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
                       entrez_names <- name_to_entrez[names(signed_pvals)]
@@ -33021,7 +33135,7 @@ get_legend_grid_layout <- function(n_items) {
               if(!is.null(ranked_genes) && length(ranked_genes) > 0) {
                 showNotification(paste("Running GSEA with", length(ranked_genes), "ranked genes..."), type = "message")
                 
-                if(input$proteomics_cp_analysis == "gsea_go") {
+                if (identical(input$proteomics_cp_analysis, "gsea_go")) {
                   # Ensure we have an annotation database (OrgDb) available
                   can_run_gsea <- TRUE
                   if (is.null(annotation_db)) {
@@ -33033,7 +33147,7 @@ get_legend_grid_layout <- function(n_items) {
                   # If using MOFA or other non-ENTREZ identifiers, attempt to convert ranked gene names to ENTREZ IDs
                   if (can_run_gsea && !is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes)) && length(names(ranked_genes)) > 0) {
                     # Only attempt conversion if ID type is not ENTREZ
-                    if (input$proteomics_id_type != "ENTREZID") {
+                    if (!identical(input$proteomics_id_type, "ENTREZID")) {
                       # Validate the actual ID type in the ranked gene names
                       ranked_validation <- validate_ids(names(ranked_genes))
                       
@@ -33118,7 +33232,7 @@ get_legend_grid_layout <- function(n_items) {
                     )
                   }
                 }
-                else if(input$proteomics_cp_analysis == "gsea_kegg") {
+                else if (identical(input$proteomics_cp_analysis, "gsea_kegg")) {
                   kegg_org <- switch(input$proteomics_organism,
                                      hsapiens = "hsa", mmusculus = "mmu", rnorvegicus = "rno",
                                      dmelanogaster = "dme", drerio = "dre", athaliana = "ath",
@@ -33189,7 +33303,7 @@ get_legend_grid_layout <- function(n_items) {
                     )
                   }
                 }
-                else if(input$proteomics_cp_analysis == "gsea_kegg_module") {
+                else if (identical(input$proteomics_cp_analysis, "gsea_kegg_module")) {
                   # KEGG Module GSEA analysis using gseMKEGG
                   kegg_org <- switch(input$proteomics_organism,
                                      hsapiens = "hsa", mmusculus = "mmu", rnorvegicus = "rno",
@@ -33263,7 +33377,7 @@ get_legend_grid_layout <- function(n_items) {
                     )
                   }
                 }
-                else if(input$proteomics_cp_analysis == "gsea_reactome") {
+                else if (identical(input$proteomics_cp_analysis, "gsea_reactome")) {
                   # Reactome GSEA analysis using gsePathway
                   if (requireNamespace("ReactomePA", quietly = TRUE)) {
                     showNotification("Running Reactome GSEA analysis...", type = "message")
@@ -33360,7 +33474,7 @@ get_legend_grid_layout <- function(n_items) {
                     enrichment_results <- NULL
                   }
                 }
-                else if(input$proteomics_cp_analysis == "gsea_pathwaycommons") {
+                else if (identical(input$proteomics_cp_analysis, "gsea_pathwaycommons")) {
                   # Pathway Commons GSEA analysis using gsePC
                   pc_org <- switch(input$proteomics_organism,
                                    hsapiens = "hsa", mmusculus = "mmu", rnorvegicus = "rno",
@@ -33376,12 +33490,12 @@ get_legend_grid_layout <- function(n_items) {
                       pc_ranked_genes <- NULL
                       conversion_type <- NULL
                       
-                      if(input$proteomics_id_type == "SYMBOL") {
+                      if (identical(input$proteomics_id_type, "SYMBOL")) {
                         # Already in HGNC symbols, use directly
                         pc_ranked_genes <- ranked_genes
                         conversion_type <- "SYMBOL"
                         showNotification(paste("Using", length(pc_ranked_genes), "HGNC symbols for Pathway Commons GSEA"), type = "message")
-                      } else if(input$proteomics_id_type == "UNIPROT") {
+                      } else if (identical(input$proteomics_id_type, "UNIPROT")) {
                         # Already in UniProt IDs, use directly - no conversion needed
                         pc_ranked_genes <- ranked_genes
                         conversion_type <- "UNIPROT"
@@ -33390,7 +33504,7 @@ get_legend_grid_layout <- function(n_items) {
                         # For other ID types, try to convert to HGNC symbols first, then UniProt if that fails
                         if(exists("gene_ids") && nrow(gene_ids) > 0) {
                           # First attempt: Convert to SYMBOL
-                          if(input$proteomics_id_type == "ENTREZID") {
+                          if (identical(input$proteomics_id_type, "ENTREZID")) {
                             # Map ENTREZ to SYMBOL
                             if("SYMBOL" %in% colnames(gene_ids)) {
                               entrez_to_symbol <- setNames(gene_ids$SYMBOL, gene_ids$ENTREZID)
@@ -33454,7 +33568,7 @@ get_legend_grid_layout <- function(n_items) {
                           if((is.null(pc_ranked_genes) || length(pc_ranked_genes) < 10) && "UNIPROT" %in% colnames(gene_ids)) {
                             showNotification("SYMBOL conversion yielded insufficient genes. Attempting UniProt ID conversion...", type = "message")
                             
-                            if(input$proteomics_id_type == "ENTREZID") {
+                            if (identical(input$proteomics_id_type, "ENTREZID")) {
                               # Map ENTREZ to UNIPROT
                               entrez_to_uniprot <- setNames(gene_ids$UNIPROT, gene_ids$ENTREZID)
                               uniprot_names <- entrez_to_uniprot[names(ranked_genes)]
@@ -33547,7 +33661,7 @@ get_legend_grid_layout <- function(n_items) {
                     enrichment_results <- NULL
                   }
                 }
-                else if(input$proteomics_cp_analysis == "gsea_wikipathways") {
+                else if (identical(input$proteomics_cp_analysis, "gsea_wikipathways")) {
                   # WikiPathways GSEA analysis using gseWP
                   if (requireNamespace("clusterProfiler", quietly = TRUE)) {
                     showNotification("Running WikiPathways GSEA analysis...", type = "message")
@@ -33639,7 +33753,7 @@ get_legend_grid_layout <- function(n_items) {
                     enrichment_results <- NULL
                   }
                 }
-                else if(input$proteomics_cp_analysis == "gsea_msigdb") {
+                else if (identical(input$proteomics_cp_analysis, "gsea_msigdb")) {
                   # MSigDB GSEA analysis
                   if (requireNamespace("msigdbr", quietly = TRUE)) {
                     organism_code <- switch(input$proteomics_organism,
@@ -33846,15 +33960,15 @@ get_legend_grid_layout <- function(n_items) {
           session$sendCustomMessage(type = "hideClusterProfilerProgress", message = list())
           NULL
         })
-      } else if (input$proteomics_tool == "enrichr") {
+      } else if (identical(input$proteomics_tool, "enrichr")) {
         # Show global Enrichr banner across all proteomics tabs
         session$sendCustomMessage(type = "showEnrichrProgress", message = list())
         tryCatch({
           # Prepare custom background for Enrichr if selected
           enrichr_background <- NULL
           
-          if (input$proteomics_enrichr_bg_option == "custom") {
-            if (input$proteomics_enrichr_bg_source == "full_dataset") {
+          if (identical(input$proteomics_enrichr_bg_option, "custom")) {
+            if (identical(input$proteomics_enrichr_bg_source, "full_dataset")) {
               # Use full uploaded feature universe as background
               if (input$proteomics_source == "manual" &&
                   !is.null(proteomics_values$manual_full_gene_universe) &&
@@ -33870,7 +33984,7 @@ get_legend_grid_layout <- function(n_items) {
                 showNotification("No uploaded dataset available for custom background. Using default Enrichr background.",
                                  type = "warning", duration = 5)
               }
-            } else if (input$proteomics_enrichr_bg_source == "manual_input") {
+            } else if (identical(input$proteomics_enrichr_bg_source, "manual_input")) {
               # Use manual input as background
               bg_text <- input$proteomics_enrichr_custom_bg
               if (!is.null(bg_text) && nchar(trimws(bg_text)) > 0) {
@@ -33977,7 +34091,7 @@ get_legend_grid_layout <- function(n_items) {
         
       }
       
-      else if (input$proteomics_tool == "reactomepa") {
+      else if (identical(input$proteomics_tool, "reactomepa")) {
         # Show progress bar specifically for ReactomePA
         session$sendCustomMessage(type = "showReactomePAProgress", message = list())
         
@@ -33996,7 +34110,7 @@ get_legend_grid_layout <- function(n_items) {
           showNotification("Converting IDs for ReactomePA...", type = "message")
           
           # Convert IDs to ENTREZ
-          if (input$proteomics_id_type != "ENTREZID") {
+          if (!identical(input$proteomics_id_type, "ENTREZID")) {
             # Use cached bitr to convert IDs
             gene_ids <- cached_bitr(
               geneID = gene_list,
@@ -34025,8 +34139,8 @@ get_legend_grid_layout <- function(n_items) {
           
           # Prepare custom universe (background) for ReactomePA
           reactome_universe <- NULL
-          if (input$proteomics_reactome_bg_type == "custom") {
-            if (input$proteomics_reactome_bg_source == "full_dataset") {
+          if (identical(input$proteomics_reactome_bg_type, "custom")) {
+            if (identical(input$proteomics_reactome_bg_source, "full_dataset")) {
               # Use full uploaded dataset as background
               background_genes <- NULL
               if (input$proteomics_source == "manual" &&
@@ -34043,7 +34157,7 @@ get_legend_grid_layout <- function(n_items) {
                                  type = "message", duration = 3)
                 
                 # Convert background genes to ENTREZ if needed
-                if (input$proteomics_id_type != "ENTREZID") {
+                if (!identical(input$proteomics_id_type, "ENTREZID")) {
                   bg_ids <- cached_bitr(
                     geneID = background_genes,
                     fromType = input$proteomics_id_type,
@@ -34063,7 +34177,7 @@ get_legend_grid_layout <- function(n_items) {
                 showNotification("Full dataset not available. Using default ReactomePA background.",
                                  type = "warning", duration = 5)
               }
-            } else if (input$proteomics_reactome_bg_source == "manual_input") {
+            } else if (identical(input$proteomics_reactome_bg_source, "manual_input")) {
               # Use manually entered background
               bg_text <- input$proteomics_reactome_custom_bg
               if (!is.null(bg_text) && nchar(trimws(bg_text)) > 0) {
@@ -34076,7 +34190,7 @@ get_legend_grid_layout <- function(n_items) {
                                    type = "message", duration = 3)
                   
                   # Convert background genes to ENTREZ if needed
-                  if (input$proteomics_id_type != "ENTREZID") {
+                  if (!identical(input$proteomics_id_type, "ENTREZID")) {
                     bg_ids <- cached_bitr(
                       geneID = background_genes,
                       fromType = input$proteomics_id_type,
@@ -34138,7 +34252,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Modify the topGO section to store results directly in values$proteomics_results
       
-      else if (input$proteomics_tool == "topgo") {
+      else if (identical(input$proteomics_tool, "topgo")) {
         # Show progress bar specifically for topGO
         session$sendCustomMessage(type = "showTopGOProgress", message = list())
         
@@ -34168,7 +34282,7 @@ get_legend_grid_layout <- function(n_items) {
                                ecoli = "org.EcK12.eg.db")
           
           # Convert IDs if needed
-          if(input$proteomics_id_type != "ENTREZID") {
+          if (!identical(input$proteomics_id_type, "ENTREZID")) {
             showNotification("Converting IDs for topGO...", type = "message")
             
             # Use cached bitr to convert IDs
@@ -34199,8 +34313,8 @@ get_legend_grid_layout <- function(n_items) {
           
           # Prepare custom background/universe for topGO
           all_genes <- NULL
-          if (input$proteomics_topgo_bg_type == "custom") {
-            if (input$proteomics_topgo_bg_source == "full_dataset") {
+          if (identical(input$proteomics_topgo_bg_type, "custom")) {
+            if (identical(input$proteomics_topgo_bg_source, "full_dataset")) {
               # Use full uploaded dataset as background
               background_genes <- NULL
               if (input$proteomics_source == "manual" &&
@@ -34217,7 +34331,7 @@ get_legend_grid_layout <- function(n_items) {
                                  type = "message", duration = 3)
                 
                 # Convert background genes to ENTREZ if needed
-                if (input$proteomics_id_type != "ENTREZID") {
+                if (!identical(input$proteomics_id_type, "ENTREZID")) {
                   bg_ids <- cached_bitr(
                     geneID = background_genes,
                     fromType = input$proteomics_id_type,
@@ -34237,7 +34351,7 @@ get_legend_grid_layout <- function(n_items) {
                 showNotification("Full dataset not available. Using default topGO background.",
                                  type = "warning", duration = 5)
               }
-            } else if (input$proteomics_topgo_bg_source == "manual_input") {
+            } else if (identical(input$proteomics_topgo_bg_source, "manual_input")) {
               # Use manually entered background
               bg_text <- input$proteomics_topgo_custom_bg
               if (!is.null(bg_text) && nchar(trimws(bg_text)) > 0) {
@@ -34250,7 +34364,7 @@ get_legend_grid_layout <- function(n_items) {
                                    type = "message", duration = 3)
                   
                   # Convert background genes to ENTREZ if needed
-                  if (input$proteomics_id_type != "ENTREZID") {
+                  if (!identical(input$proteomics_id_type, "ENTREZID")) {
                     bg_ids <- cached_bitr(
                       geneID = background_genes,
                       fromType = input$proteomics_id_type,
@@ -34588,7 +34702,7 @@ get_legend_grid_layout <- function(n_items) {
           DT::datatable(data.frame(Message = "No enrichment results found."),
                         options = list(scrollX = TRUE, pageLength = 10))
         }
-      } else if (input$proteomics_tool == "clusterprofiler") {
+      } else if (identical(input$proteomics_tool, "clusterprofiler")) {
         # Safely convert enrichment results to data frame with validation
         df <- NULL
         tryCatch({
@@ -34738,7 +34852,7 @@ get_legend_grid_layout <- function(n_items) {
           DT::datatable(data.frame(Message = "No enrichment results found."),
                         options = list(scrollX = TRUE, pageLength = 10))
         }
-      } else if (input$proteomics_tool == "enrichr") {
+      } else if (identical(input$proteomics_tool, "enrichr")) {
         res <- do.call(rbind, lapply(enrichment_results, function(x) {
           if (is.data.frame(x)) x else NULL
         }))
@@ -34757,7 +34871,7 @@ get_legend_grid_layout <- function(n_items) {
           DT::datatable(data.frame(Message = "No enrichment results found."),
                         options = list(scrollX = TRUE, pageLength = 10))
         }
-      } else if (input$proteomics_tool == "reactomepa") {
+      } else if (identical(input$proteomics_tool, "reactomepa")) {
         df <- as.data.frame(enrichment_results)
         if (ncol(df) > 0 && nrow(df) > 0) {
           # Remove any columns with empty, NA, or whitespace-only names
@@ -34775,7 +34889,7 @@ get_legend_grid_layout <- function(n_items) {
                         options = list(scrollX = TRUE, pageLength = 10))
         }
       }
-      else if (input$proteomics_tool == "topgo") {
+      else if (identical(input$proteomics_tool, "topgo")) {
         # Now properly check for table in the results
         if (!is.null(enrichment_results) && !is.null(enrichment_results$table)) {
           # Print debug info
@@ -35019,7 +35133,7 @@ get_legend_grid_layout <- function(n_items) {
         }
         
         # Manhattan plot for g:Profiler
-        if (input$proteomics_plot_type == "manhattan") {
+        if (identical(input$proteomics_plot_type, "manhattan")) {
           # Check if this is static mode
           if (!is.null(proteomics_manhattan_mode()) && proteomics_manhattan_mode() == "static") {
             # Get capped setting
@@ -35063,7 +35177,7 @@ get_legend_grid_layout <- function(n_items) {
             return()
           }
         }
-        else if (input$proteomics_plot_type == "barplot") {
+        else if (identical(input$proteomics_plot_type, "barplot")) {
           # Get results data
           gost_results <- enrichment_results$result
           
@@ -35136,7 +35250,7 @@ get_legend_grid_layout <- function(n_items) {
         }
       }
       # ClusterProfiler visualization - FIXED IMPLEMENTATION
-      else if (input$proteomics_tool == "clusterprofiler") {
+      else if (identical(input$proteomics_tool, "clusterprofiler")) {
         tryCatch({
           # Check if we have valid results to plot
           if (is.null(enrichment_results) || get_enrichment_results_nrow(enrichment_results, input$proteomics_tool) == 0) {
@@ -35160,7 +35274,7 @@ get_legend_grid_layout <- function(n_items) {
           }
           
           # Generate the appropriate plot based on plot type
-          if (input$proteomics_plot_type == "dotplot") {
+          if (identical(input$proteomics_plot_type, "dotplot")) {
             return(enrichplot::dotplot(enrichment_results, showCategory = num_terms) +
                      theme(
                        # Make all text black and bold
@@ -35179,7 +35293,7 @@ get_legend_grid_layout <- function(n_items) {
                        panel.grid.minor = element_blank()
                      ))
           }
-          else if (input$proteomics_plot_type == "barplot") {
+          else if (identical(input$proteomics_plot_type, "barplot")) {
             # Create barplot using enrichplot barplot function (more compatible)
             tryCatch({
               if (requireNamespace("enrichplot", quietly = TRUE)) {
@@ -35378,7 +35492,7 @@ get_legend_grid_layout <- function(n_items) {
               text(0.5, 0.5, paste("Error creating barplot:", e$message), cex = 1.2)
             })
           }
-          else if (input$proteomics_plot_type == "heatplot") {
+          else if (identical(input$proteomics_plot_type, "heatplot")) {
             # Create heatplot using enrichplot's heatplot
             # Check if this is GSEA results first
             enrichment_df_check <- as.data.frame(enrichment_results)
@@ -35462,7 +35576,7 @@ get_legend_grid_layout <- function(n_items) {
                        ))
             }
           }
-          else if (input$proteomics_plot_type == "treeplot") {
+          else if (identical(input$proteomics_plot_type, "treeplot")) {
             # Create treeplot using enrichplot's treeplot
             # Treeplot often requires term similarity calculation like enrichmap
             tryCatch({
@@ -35570,12 +35684,12 @@ get_legend_grid_layout <- function(n_items) {
               }
             })
           }
-          else if (input$proteomics_plot_type == "enrichmap") {
+          else if (identical(input$proteomics_plot_type, "enrichmap")) {
             # Compute pairwise term similarities before using emapplot
             enrichment_results_with_sim <- enrichplot::pairwise_termsim(enrichment_results)
             return(enrichplot::emapplot(enrichment_results_with_sim, showCategory = min(num_terms, 50)))
           }
-          else if (input$proteomics_plot_type == "cnetplot") {
+          else if (identical(input$proteomics_plot_type, "cnetplot")) {
             # Check if this is GSEA results first and if ranking metric requires fold change
             enrichment_df_check <- as.data.frame(enrichment_results)
             is_gsea <- "NES" %in% colnames(enrichment_df_check)
@@ -35590,7 +35704,7 @@ get_legend_grid_layout <- function(n_items) {
               return(enrichplot::cnetplot(enrichment_results, showCategory = min(num_terms, 10)))
             }
           }
-          else if (input$proteomics_plot_type == "upsetplot") {
+          else if (identical(input$proteomics_plot_type, "upsetplot")) {
             # Generate UpSet plot for ClusterProfiler results
             tryCatch({
               # For upsetplot to show expression box plots, we need to use the original enrichment results
@@ -35698,7 +35812,7 @@ get_legend_grid_layout <- function(n_items) {
               })
             })
           }
-          else if (input$proteomics_plot_type == "gseaplot2") {
+          else if (identical(input$proteomics_plot_type, "gseaplot2")) {
             # Generate gseaplot2 for ClusterProfiler GSEA results
             plot_result <- tryCatch({
               cat("Generating gseaplot2 plot\n")
@@ -35915,7 +36029,7 @@ get_legend_grid_layout <- function(n_items) {
         })
       }
       # Enrichr visualization
-      else if (input$proteomics_tool == "enrichr") {
+      else if (identical(input$proteomics_tool, "enrichr")) {
         plot_result <- tryCatch({
           req(input$proteomics_enrichr_db_to_plot)
           
@@ -35958,7 +36072,7 @@ get_legend_grid_layout <- function(n_items) {
           top_results$Term <- gsub("\\s*\\(GO:\\d+\\)\\s*$", "", top_results$Term)
           
           # Use the plotEnrich function from enrichR package
-          if (input$proteomics_plot_type == "barplot") {
+          if (identical(input$proteomics_plot_type, "barplot")) {
             # Create a bar plot using custom ggplot2 (more reliable than plotEnrich)
             tryCatch({
               return(ggplot(top_results, aes(x = -log10(Adjusted.P.value),
@@ -35986,7 +36100,7 @@ get_legend_grid_layout <- function(n_items) {
               return(NULL)
             })
           }
-          else if (input$proteomics_plot_type == "dotplot") {
+          else if (identical(input$proteomics_plot_type, "dotplot")) {
             # Create a custom dot plot for EnrichR results
             return(ggplot(top_results, aes(x = -log10(Adjusted.P.value),
                                            y = reorder(Term, -log10(Adjusted.P.value)),
@@ -36010,7 +36124,7 @@ get_legend_grid_layout <- function(n_items) {
                        panel.grid.minor = element_blank()
                      ))
           }
-          else if (input$proteomics_plot_type == "enrichplot") {
+          else if (identical(input$proteomics_plot_type, "enrichplot")) {
             # Create an enrichment plot showing both p-value and combined score
             # Extract gene count from Overlap column (format: "5/123")
             top_results$gene_count <- as.numeric(gsub("/.*", "", top_results$Overlap))
@@ -36076,7 +36190,7 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       # ReactomePA visualization
-      else if (input$proteomics_tool == "reactomepa") {
+      else if (identical(input$proteomics_tool, "reactomepa")) {
         tryCatch({
           if (is.null(enrichment_results) || get_enrichment_results_nrow(enrichment_results, input$proteomics_tool) == 0) {
             plot.new()
@@ -36091,11 +36205,11 @@ get_legend_grid_layout <- function(n_items) {
           }
           
           # Generate appropriate visualization
-          if (input$proteomics_plot_type == "dotplot") {
+          if (identical(input$proteomics_plot_type, "dotplot")) {
             # Use enrichplot::dotplot to avoid namespace conflicts
             enrichplot::dotplot(enrichment_results, showCategory = num_terms)
           }
-          else if (input$proteomics_plot_type == "barplot") {
+          else if (identical(input$proteomics_plot_type, "barplot")) {
             # FIX 1: Create a custom barplot using ggplot2 to avoid namespace issues
             df <- as.data.frame(enrichment_results)[1:num_terms, ]
             
@@ -36109,12 +36223,12 @@ get_legend_grid_layout <- function(n_items) {
               theme_bw() +
               theme(axis.text.y = element_text(size = 10))
           }
-          else if (input$proteomics_plot_type == "enrichmap") {
+          else if (identical(input$proteomics_plot_type, "enrichmap")) {
             # FIX 2: First compute pairwise term similarities before using emapplot
             enrichment_results_with_sim <- enrichplot::pairwise_termsim(enrichment_results)
             enrichplot::emapplot(enrichment_results_with_sim, showCategory = min(num_terms, 30))
           }
-          else if (input$proteomics_plot_type == "cnetplot") {
+          else if (identical(input$proteomics_plot_type, "cnetplot")) {
             # Check if this is GSEA results first and if ranking metric requires fold change
             enrichment_df_check <- as.data.frame(enrichment_results)
             is_gsea <- "NES" %in% colnames(enrichment_df_check)
@@ -36131,7 +36245,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichplot::cnetplot(enrichment_results, showCategory = min(num_terms, 10))
             }
           }
-          else if (input$proteomics_plot_type == "pathview") {
+          else if (identical(input$proteomics_plot_type, "pathview")) {
             # FIX 3: Completely revised pathway viewer with better error handling for UI integration
             output$proteomics_plot <- renderUI({
               # Get pathway IDs from the results
@@ -36245,11 +36359,11 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       # topGO visualization - MAIN RENDER SECTION
-      else if (input$proteomics_tool == "topgo") {
+      else if (identical(input$proteomics_tool, "topgo")) {
         tryCatch({
           req(enrichment_results)
           
-          if (input$proteomics_plot_type == "barplot") {
+          if (identical(input$proteomics_plot_type, "barplot")) {
             # Use the barplot function stored in results
             if (!is.null(enrichment_results$barplot)) {
               plot_result <- enrichment_results$barplot()
@@ -36332,7 +36446,7 @@ get_legend_grid_layout <- function(n_items) {
                           })
                        }))
             }
-          } else if (input$proteomics_plot_type == "gograph") {
+          } else if (identical(input$proteomics_plot_type, "gograph")) {
             # Generate GO graph with user-selected parameters
             if (!is.null(enrichment_results$go_graph_cmd)) {
               # Get user selections for graph parameters
@@ -36424,7 +36538,7 @@ get_legend_grid_layout <- function(n_items) {
       
       cat("Generating new proteomics network plot and caching it\n")
       
-      if (input$proteomics_tool == "clusterprofiler") {
+      if (identical(input$proteomics_tool, "clusterprofiler")) {
         enrichplot::cnetplot(enrichment_results, foldChange = NULL, showCategory = input$proteomics_network_terms)
       } else {
         plot.new()
@@ -36640,7 +36754,7 @@ get_legend_grid_layout <- function(n_items) {
             } else {
               # Try to perform ID conversion using current organism
               cat("Attempting direct ID conversion...\n")
-              if (input$proteomics_id_type != "ENTREZID") {
+              if (!identical(input$proteomics_id_type, "ENTREZID")) {
                 if (requireNamespace("clusterProfiler", quietly = TRUE)) {
                   tryCatch({
                     # Get organism database
@@ -36736,11 +36850,11 @@ get_legend_grid_layout <- function(n_items) {
           }
           
           # Set color scheme
-          if (input$pathview_colorscheme == "green_gray_red") {
+          if (identical(input$pathview_colorscheme, "green_gray_red")) {
             low_color <- "green"
             mid_color <- "gray"
             high_color <- "red"
-          } else if (input$pathview_colorscheme == "blue_gray_yellow") {
+          } else if (identical(input$pathview_colorscheme, "blue_gray_yellow")) {
             low_color <- "blue"
             mid_color <- "gray"
             high_color <- "yellow"
@@ -36792,8 +36906,8 @@ get_legend_grid_layout <- function(n_items) {
             same.layer = FALSE,  # Helps with gene expression overlay
             kegg.dir = getwd(),
             out.suffix = paste0("_", format(Sys.time(), "%Y%m%d_%H%M%S")),
-            split.group = if (input$pathview_engine == "graphviz") isTRUE(input$graphviz_split_group) else NULL,
-            expand.node = if (input$pathview_engine == "graphviz") isTRUE(input$graphviz_expand_node) else NULL
+            split.group = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_split_group) else NULL,
+            expand.node = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_expand_node) else NULL
           )
           
           setProgress(0.8, detail = "Processing results...")
@@ -37159,9 +37273,9 @@ get_legend_grid_layout <- function(n_items) {
     
     tryCatch({
       # Read file based on type
-      if (input$proteomics_manual_filetype == "csv") {
+      if (identical(input$proteomics_manual_filetype, "csv")) {
         data <- read.csv(input$proteomics_manual_file$datapath, stringsAsFactors = FALSE)
-      } else if (input$proteomics_manual_filetype == "tab") {
+      } else if (identical(input$proteomics_manual_filetype, "tab")) {
         # Handle both .tab and .tsv files
         data <- read.delim(input$proteomics_manual_file$datapath, stringsAsFactors = FALSE)
       }
@@ -37405,7 +37519,7 @@ get_legend_grid_layout <- function(n_items) {
   
   # Get gene list based on selected source
   get_gene_list <- function() {
-    if (input$proteomics_source == "intersection") {
+    if (identical(input$proteomics_source, "intersection")) {
       if (is.null(values$intersection_comparison_results) || length(values$intersection_comparison_results) == 0) {
         return(list(genes = NULL, message = "Intersection analysis not performed yet."))
       }
@@ -37451,7 +37565,7 @@ get_legend_grid_layout <- function(n_items) {
       validation <- validate_ids(genes)
       return(list(genes = genes,
                   message = sprintf("Found %d genes/proteins. %s", length(genes), validation$message)))
-    } else if (input$proteomics_source == "pairwise") {
+    } else if (identical(input$proteomics_source, "pairwise")) {
       req(values$normalized_data, values$cleaned_molecules,
           input$proteomics_pairwise_group1, input$proteomics_pairwise_group2)
       
@@ -37602,8 +37716,8 @@ get_legend_grid_layout <- function(n_items) {
           )
         }
       ))
-    } else if (input$proteomics_source == "manual") {
-      if (input$proteomics_manual_input_type == "paste") {
+    } else if (identical(input$proteomics_source, "manual")) {
+      if (identical(input$proteomics_manual_input_type, "paste")) {
         # Handle pasted text input - only for ORA
         genes_text <- input$proteomics_manual_text
         if (is.null(genes_text) || genes_text == "") {
@@ -37634,7 +37748,7 @@ get_legend_grid_layout <- function(n_items) {
         req(input$proteomics_manual_file)
         
         tryCatch({
-          if (input$proteomics_manual_filetype == "single") {
+          if (identical(input$proteomics_manual_filetype, "single")) {
             # Read as single column file - only for ORA
             genes <- readLines(input$proteomics_manual_file$datapath)
             genes <- genes[genes != ""] # Remove empty lines
@@ -37654,7 +37768,7 @@ get_legend_grid_layout <- function(n_items) {
                         message = sprintf("Found %d genes/proteins from single column file (ORA only). %s",
                                           length(genes), validation$message)))
             
-          } else if (input$proteomics_manual_filetype == "csv") {
+          } else if (identical(input$proteomics_manual_filetype, "csv")) {
             # Read as CSV
             data <- read.csv(input$proteomics_manual_file$datapath, stringsAsFactors = FALSE)
             req(input$proteomics_manual_column)
@@ -37730,7 +37844,7 @@ get_legend_grid_layout <- function(n_items) {
             pvalues <- filtered_pvalues
             fold_changes <- filtered_fold_changes
             
-          } else if (input$proteomics_manual_filetype == "tab") {
+          } else if (identical(input$proteomics_manual_filetype, "tab")) {
             # Read as tab-delimited
             data <- read.delim(input$proteomics_manual_file$datapath, stringsAsFactors = FALSE)
             req(input$proteomics_manual_column)
@@ -37848,7 +37962,7 @@ get_legend_grid_layout <- function(n_items) {
         })
       }
     }
-    else if (input$proteomics_source == "mofa_factor") {
+    else if (identical(input$proteomics_source, "mofa_factor")) {
       # Extract gene list from MOFA factor weights
       req(multiomics$integration_results)
       req(input$mofa_enrich_view)
@@ -37884,11 +37998,11 @@ get_legend_grid_layout <- function(n_items) {
         feature_names <- rownames(weights_matrix)
         
         # Filter based on sign selection if not "both"
-        if (input$mofa_enrich_sign != "both") {
-          if (input$mofa_enrich_sign == "positive") {
+        if (!identical(input$mofa_enrich_sign, "both")) {
+          if (identical(input$mofa_enrich_sign, "positive")) {
             feature_names <- feature_names[factor_weights > 0]
             factor_weights <- factor_weights[factor_weights > 0]
-          } else if (input$mofa_enrich_sign == "negative") {
+          } else if (identical(input$mofa_enrich_sign, "negative")) {
             feature_names <- feature_names[factor_weights < 0]
             factor_weights <- factor_weights[factor_weights < 0]
           }
@@ -38018,23 +38132,23 @@ get_legend_grid_layout <- function(n_items) {
                                "manual" = "Manual Input",
                                "mofa_factor" = "MOFA Factor"), "\n")
     
-    if (input$proteomics_tool == "gprofiler") {
+    if (identical(input$proteomics_tool, "gprofiler")) {
       cat("Significance threshold:", input$proteomics_gprofiler_pval, "\n")
       cat("Correction method:", input$proteomics_gprofiler_correction, "\n")
       cat("Sources:", paste(input$proteomics_gprofiler_sources, collapse = ", "), "\n")
-    } else if (input$proteomics_tool == "clusterprofiler") {
+    } else if (identical(input$proteomics_tool, "clusterprofiler")) {
       cat("p-value cutoff:", input$proteomics_cp_pval, "\n")
       cat("q-value cutoff:", input$proteomics_cp_qval, "\n")
       cat("Min gene set size:", input$proteomics_cp_min_gs, "\n")
       cat("Max gene set size:", input$proteomics_cp_max_gs, "\n")
-    } else if (input$proteomics_tool == "enrichr") {
+    } else if (identical(input$proteomics_tool, "enrichr")) {
       cat("Databases:", paste(input$proteomics_enrichr_dbs, collapse = ", "), "\n")
-    } else if (input$proteomics_tool == "reactomepa") {
+    } else if (identical(input$proteomics_tool, "reactomepa")) {
       cat("p-value cutoff:", input$proteomics_reactome_pval, "\n")
       cat("q-value cutoff:", input$proteomics_reactome_qval, "\n")
       cat("Min gene set size:", input$proteomics_reactome_min_gs, "\n")
       cat("Max gene set size:", input$proteomics_reactome_max_gs, "\n")
-    } else if (input$proteomics_tool == "topgo") {
+    } else if (identical(input$proteomics_tool, "topgo")) {
       cat("GO category:", input$proteomics_topgo_ontology, "\n")
       cat("Algorithm:", input$proteomics_topgo_algorithm, "\n")
       cat("Test statistic:", input$proteomics_topgo_statistic, "\n")
@@ -38062,7 +38176,7 @@ get_legend_grid_layout <- function(n_items) {
     plot_type <- input$proteomics_plot_type
     
     # Generate plot based on selected tool and plot type
-    if (input$proteomics_tool == "gprofiler") {
+    if (identical(input$proteomics_tool, "gprofiler")) {
       if (plot_type == "manhattan") {
         # Generate Manhattan plot for g:Profiler
         output$proteomics_plot <- renderPlot({ 
@@ -38122,7 +38236,7 @@ get_legend_grid_layout <- function(n_items) {
       
     }
     
-    else if (input$proteomics_tool == "clusterprofiler") {
+    else if (identical(input$proteomics_tool, "clusterprofiler")) {
       tryCatch({
         # Make sure to use values$proteomics_results instead of enrichment_results
         req(values$proteomics_results)
@@ -38154,19 +38268,19 @@ get_legend_grid_layout <- function(n_items) {
         }
         
         # Now create the plots using the selected result
-        if (input$proteomics_plot_type == "dotplot") {
+        if (identical(input$proteomics_plot_type, "dotplot")) {
           # Dotplot visualization
           clusterProfiler::dotplot(result_to_plot,
                                    showCategory = as.numeric(input$proteomics_top_terms),
                                    title = paste("Top Enriched Terms"))
           
-        } else if (input$proteomics_plot_type == "barplot") {
+        } else if (identical(input$proteomics_plot_type, "barplot")) {
           # Barplot visualization
           clusterProfiler::barplot(result_to_plot,
                                    showCategory = as.numeric(input$proteomics_top_terms),
                                    title = paste("Top Enriched Terms"))
           
-        } else if (input$proteomics_plot_type == "enrichmap") {
+        } else if (identical(input$proteomics_plot_type, "enrichmap")) {
           # Enrichment map (network of similar terms)
           if (nrow(result_to_plot) > 0) {
             # Limit to a reasonable number of terms to avoid visualization issues
@@ -38177,7 +38291,7 @@ get_legend_grid_layout <- function(n_items) {
             text(0.5, 0.5, "No significant terms found for visualization")
           }
           
-        } else if (input$proteomics_plot_type == "cnetplot") {
+        } else if (identical(input$proteomics_plot_type, "cnetplot")) {
           # Gene-concept network
           if (nrow(result_to_plot) > 0) {
             # Limit to fewer categories for better visualization
@@ -38196,7 +38310,7 @@ get_legend_grid_layout <- function(n_items) {
       }, res = UI_PLOT_RES)
     }
     
-    else if (input$proteomics_tool == "reactomepa") {
+    else if (identical(input$proteomics_tool, "reactomepa")) {
       if (plot_type %in% c("dotplot", "barplot")) {
         output$proteomics_plot <- renderPlot({ 
           if (plot_type == "dotplot") {
@@ -38359,18 +38473,18 @@ get_legend_grid_layout <- function(n_items) {
               species = gsub("hsapiens", "hsa", input$proteomics_organism),
               kegg.native = (input$pathview_engine == "kegg_native"),
               same.layer = FALSE,
-              split.group = if (input$pathview_engine == "graphviz") isTRUE(input$graphviz_split_group) else NULL,
-              expand.node = if (input$pathview_engine == "graphviz") isTRUE(input$graphviz_expand_node) else NULL
+              split.group = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_split_group) else NULL,
+              expand.node = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_expand_node) else NULL
             )
           }, silent = TRUE)
         }, res = UI_PLOT_RES)
       }
       
-      else if (input$proteomics_tool == "topgo") {
+      else if (identical(input$proteomics_tool, "topgo")) {
         tryCatch({
           req(enrichment_results)
           
-          if (input$proteomics_plot_type == "barplot") {
+          if (identical(input$proteomics_plot_type, "barplot")) {
             # Use the barplot function stored in results
             if (!is.null(enrichment_results$barplot)) {
               enrichment_results$barplot()
@@ -38441,7 +38555,7 @@ get_legend_grid_layout <- function(n_items) {
                 theme(axis.text.y = element_text(size = 10),
                       plot.subtitle = element_text(size = 10, color = "gray50"))
             }
-          } else if (input$proteomics_plot_type == "gograph") {
+          } else if (identical(input$proteomics_plot_type, "gograph")) {
             # Generate GO graph
             if (!is.null(enrichment_results$go_graph_cmd)) {
               enrichment_results$go_graph_cmd()
@@ -38784,7 +38898,7 @@ get_legend_grid_layout <- function(n_items) {
   output$proteomics_table <- DT::renderDataTable({
     req(proteomics_values$enrichment_results)
     
-    if (input$proteomics_tool == "gprofiler") {
+    if (identical(input$proteomics_tool, "gprofiler")) {
       # Format g:Profiler results
       if (is.null(proteomics_values$enrichment_results) ||
           is.null(proteomics_values$enrichment_results$result)) {
@@ -38837,7 +38951,7 @@ get_legend_grid_layout <- function(n_items) {
                              options = list(pageLength = 15, scrollX = TRUE)))
       })
       
-    } else if (input$proteomics_tool == "clusterprofiler") {
+    } else if (identical(input$proteomics_tool, "clusterprofiler")) {
       req(input$proteomics_cp_result_to_plot)
       
       # Check if selected category exists
@@ -38859,7 +38973,7 @@ get_legend_grid_layout <- function(n_items) {
       DT::datatable(results_df, options = list(pageLength = 15, scrollX = TRUE)) %>%
         DT::formatSignif(columns = c("pvalue", "p.adjust", "qvalue"), digits = 3)
       
-    } else if (input$proteomics_tool == "enrichr") {
+    } else if (identical(input$proteomics_tool, "enrichr")) {
       req(input$proteomics_enrichr_db_to_plot)
       
       # Check if selected database exists
@@ -38880,7 +38994,7 @@ get_legend_grid_layout <- function(n_items) {
       DT::datatable(db_results, options = list(pageLength = 15, scrollX = TRUE)) %>%
         DT::formatSignif(columns = c("P.value", "Adjusted.P.value", "Combined.Score"), digits = 3)
       
-    } else if (input$proteomics_tool == "reactomepa") {
+    } else if (identical(input$proteomics_tool, "reactomepa")) {
       results_df <- as.data.frame(proteomics_values$enrichment_results)
       
       # Clean column names and remove empty columns
@@ -38893,7 +39007,7 @@ get_legend_grid_layout <- function(n_items) {
       DT::datatable(results_df, options = list(pageLength = 15, scrollX = TRUE)) %>%
         DT::formatSignif(columns = c("pvalue", "p.adjust", "qvalue"), digits = 3)
       
-    } else if (input$proteomics_tool == "topgo") {
+    } else if (identical(input$proteomics_tool, "topgo")) {
       # For topGO, check if we have results in proteomics_values$enrichment_results
       if (!is.null(proteomics_values$enrichment_results) && !is.null(proteomics_values$enrichment_results$table)) {
         results_table <- proteomics_values$enrichment_results$table
@@ -38956,17 +39070,17 @@ get_legend_grid_layout <- function(n_items) {
         wb <- openxlsx::createWorkbook()
         
         # Add enrichment results as the first sheet
-        if (input$proteomics_tool == "gprofiler") {
+        if (identical(input$proteomics_tool, "gprofiler")) {
           openxlsx::addWorksheet(wb, "Enrichment Results")
           results <- enrichment_data$result
           openxlsx::writeData(wb, "Enrichment Results", results)
           
-        } else if (input$proteomics_tool == "clusterprofiler") {
+        } else if (identical(input$proteomics_tool, "clusterprofiler")) {
           # For ClusterProfiler, the enrichment_data is the enrichResult object directly
           openxlsx::addWorksheet(wb, "Enrichment Results")
           results_df <- as.data.frame(enrichment_data)
           openxlsx::writeData(wb, "Enrichment Results", results_df)
-        } else if (input$proteomics_tool == "enrichr") {
+        } else if (identical(input$proteomics_tool, "enrichr")) {
           # Add combined results as first sheet, then individual databases
           combined_results <- do.call(rbind, lapply(names(enrichment_data), function(db) {
             db_results <- enrichment_data[[db]]
@@ -38992,12 +39106,12 @@ get_legend_grid_layout <- function(n_items) {
             }
           }
           
-        } else if (input$proteomics_tool == "reactomepa") {
+        } else if (identical(input$proteomics_tool, "reactomepa")) {
           openxlsx::addWorksheet(wb, "Enrichment Results")
           results_df <- as.data.frame(enrichment_data)
           openxlsx::writeData(wb, "Enrichment Results", results_df)
           
-        } else if (input$proteomics_tool == "topgo") {
+        } else if (identical(input$proteomics_tool, "topgo")) {
           openxlsx::addWorksheet(wb, "Enrichment Results")
           results_table <- enrichment_data$table
           openxlsx::writeData(wb, "Enrichment Results", results_table)
@@ -39119,12 +39233,12 @@ get_legend_grid_layout <- function(n_items) {
             return()
           }
           
-          if (input$proteomics_plot_type == "manhattan") {
+          if (identical(input$proteomics_plot_type, "manhattan")) {
             # For manhattan plot from g:Profiler - simplified version matching backup
             capped_value <- ifelse(is.null(input$proteomics_manhattan_capped), TRUE, input$proteomics_manhattan_capped)
             p <- gprofiler2::gostplot(enrichment_results, capped = capped_value, interactive = FALSE)
             ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = "png")
-          } else if (input$proteomics_plot_type == "barplot") {
+          } else if (identical(input$proteomics_plot_type, "barplot")) {
             # For barplot - EXACTLY matching the backup implementation
             gost_results <- enrichment_results$result
             
@@ -39167,7 +39281,7 @@ get_legend_grid_layout <- function(n_items) {
             
             ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = "png")
           }
-        } else if (input$proteomics_tool == "clusterprofiler") {
+        } else if (identical(input$proteomics_tool, "clusterprofiler")) {
           # ClusterProfiler plot download - EXACTLY matching UI plot generation
           enrichment_results <- proteomics_values$enrichment_results
           req(enrichment_results)
@@ -39189,7 +39303,7 @@ get_legend_grid_layout <- function(n_items) {
           }
           
           # Generate the appropriate plot based on plot type - EXACTLY matching UI
-          if (input$proteomics_plot_type == "dotplot") {
+          if (identical(input$proteomics_plot_type, "dotplot")) {
             p <- enrichplot::dotplot(enrichment_results, showCategory = num_terms) +
               theme(
                 # Make all text black and bold
@@ -39209,7 +39323,7 @@ get_legend_grid_layout <- function(n_items) {
               )
             ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
-          else if (input$proteomics_plot_type == "barplot") {
+          else if (identical(input$proteomics_plot_type, "barplot")) {
             # Create barplot using enrichplot barplot function (more compatible)
             tryCatch({
               if (requireNamespace("enrichplot", quietly = TRUE)) {
@@ -39372,7 +39486,7 @@ get_legend_grid_layout <- function(n_items) {
               dev.off()
             })
           }
-          else if (input$proteomics_plot_type == "heatplot") {
+          else if (identical(input$proteomics_plot_type, "heatplot")) {
             # Create heatplot using enrichplot's heatplot - EXACTLY matching UI
             # Check if this is GSEA results first
             enrichment_df_check <- as.data.frame(enrichment_results)
@@ -39426,7 +39540,7 @@ get_legend_grid_layout <- function(n_items) {
             }
             ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
-          else if (input$proteomics_plot_type == "treeplot") {
+          else if (identical(input$proteomics_plot_type, "treeplot")) {
             # Create treeplot using enrichplot's treeplot - EXACTLY matching UI
             tryCatch({
               # Compute pairwise term similarities if needed
@@ -39534,13 +39648,13 @@ get_legend_grid_layout <- function(n_items) {
             })
             ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
-          else if (input$proteomics_plot_type == "enrichmap") {
+          else if (identical(input$proteomics_plot_type, "enrichmap")) {
             # Compute pairwise term similarities before using emapplot - EXACTLY matching UI
             enrichment_results_with_sim <- enrichplot::pairwise_termsim(enrichment_results)
             p <- enrichplot::emapplot(enrichment_results_with_sim, showCategory = min(num_terms, 50))
             ggsave(file, plot = p, width = 12, height = 10, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
-          else if (input$proteomics_plot_type == "cnetplot") {
+          else if (identical(input$proteomics_plot_type, "cnetplot")) {
             # Check if this is GSEA results first and if ranking metric requires fold change
             enrichment_df_check <- as.data.frame(enrichment_results)
             is_gsea <- "NES" %in% colnames(enrichment_df_check)
@@ -39556,7 +39670,7 @@ get_legend_grid_layout <- function(n_items) {
             }
             ggsave(file, plot = p, width = 12, height = 10, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
-          else if (input$proteomics_plot_type == "upsetplot") {
+          else if (identical(input$proteomics_plot_type, "upsetplot")) {
             # Generate UpSet plot for ClusterProfiler results - EXACTLY matching UI
             tryCatch({
               # For upsetplot to show expression box plots, we need to use the original enrichment results
@@ -39679,7 +39793,7 @@ get_legend_grid_layout <- function(n_items) {
               })
             })
           }
-          else if (input$proteomics_plot_type == "gseaplot2") {
+          else if (identical(input$proteomics_plot_type, "gseaplot2")) {
             # Generate gseaplot2 for download - EXACTLY matching UI implementation
             tryCatch({
               # Check if we have GSEA results
@@ -39837,7 +39951,7 @@ get_legend_grid_layout <- function(n_items) {
             ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
           
-        } else if (input$proteomics_tool == "enrichr") {
+        } else if (identical(input$proteomics_tool, "enrichr")) {
           # Enrichr plot download implementation
           req(input$proteomics_enrichr_db_to_plot)
           
@@ -39879,7 +39993,7 @@ get_legend_grid_layout <- function(n_items) {
           top_results$Term <- gsub("\\s*\\(GO:\\d+\\)\\s*$", "", top_results$Term)
           
           # Generate plot based on plot type
-          if (input$proteomics_plot_type == "barplot") {
+          if (identical(input$proteomics_plot_type, "barplot")) {
             # Create a bar plot using custom ggplot2 (more reliable)
             tryCatch({
               p <- ggplot(top_results, aes(x = -log10(Adjusted.P.value),
@@ -39909,7 +40023,7 @@ get_legend_grid_layout <- function(n_items) {
               dev.off()
             })
           }
-          else if (input$proteomics_plot_type == "dotplot") {
+          else if (identical(input$proteomics_plot_type, "dotplot")) {
             # Create a custom dot plot for EnrichR results
             p <- ggplot(top_results, aes(x = -log10(Adjusted.P.value),
                                          y = reorder(Term, -log10(Adjusted.P.value)),
@@ -39934,7 +40048,7 @@ get_legend_grid_layout <- function(n_items) {
               )
             ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
-          else if (input$proteomics_plot_type == "enrichplot") {
+          else if (identical(input$proteomics_plot_type, "enrichplot")) {
             # Create an enrichment plot showing both p-value and combined score
             # Extract gene count from Overlap column (format: "5/123")
             top_results$gene_count <- as.numeric(gsub("/.*", "", top_results$Overlap))
@@ -39993,7 +40107,7 @@ get_legend_grid_layout <- function(n_items) {
             })
           }
           
-        } else if (input$proteomics_tool == "topgo") {
+        } else if (identical(input$proteomics_tool, "topgo")) {
           # topGO plot download implementation
           req(enrichment_results)
           
@@ -40005,7 +40119,7 @@ get_legend_grid_layout <- function(n_items) {
             return()
           }
           
-          if (input$proteomics_plot_type == "barplot") {
+          if (identical(input$proteomics_plot_type, "barplot")) {
             # Use the barplot function if available, otherwise create fallback
             if (!is.null(enrichment_results$barplot)) {
               # Use the stored barplot function
@@ -40075,7 +40189,7 @@ get_legend_grid_layout <- function(n_items) {
                 })
               ggsave(file, plot = p, width = 10, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
             }
-          } else if (input$proteomics_plot_type == "gograph") {
+          } else if (identical(input$proteomics_plot_type, "gograph")) {
             # Generate GO graph with user-selected parameters for download
             if (!is.null(enrichment_results$go_graph_cmd)) {
               # Get user selections for graph parameters
@@ -40175,7 +40289,7 @@ get_legend_grid_layout <- function(n_items) {
   output$proteomics_cp_category_ui <- renderUI({
     req(proteomics_values$enrichment_results)
     
-    if (input$proteomics_tool == "clusterprofiler") {
+    if (identical(input$proteomics_tool, "clusterprofiler")) {
       selectInput(
         "proteomics_cp_result_to_plot",
         "Select Result Category:",
@@ -40188,7 +40302,7 @@ get_legend_grid_layout <- function(n_items) {
   output$proteomics_enrichr_db_ui <- renderUI({
     req(proteomics_values$enrichment_results)
     
-    if (input$proteomics_tool == "enrichr") {
+    if (identical(input$proteomics_tool, "enrichr")) {
       selectInput(
         "proteomics_enrichr_db_to_plot",
         "Select Database:",
@@ -40438,9 +40552,9 @@ get_legend_grid_layout <- function(n_items) {
     
     if (!is.null(input$metab_source) && input$metab_source == "manual") {
       if (!is.null(input$metab_manual_input_type)) {
-        if (input$metab_manual_input_type == "file") {
+        if (identical(input$metab_manual_input_type, "file")) {
           shinyjs::show("metab_manual_file_block")
-        } else if (input$metab_manual_input_type == "paste") {
+        } else if (identical(input$metab_manual_input_type, "paste")) {
           shinyjs::show("metab_manual_paste_block")
         }
       }
@@ -40547,14 +40661,14 @@ get_legend_grid_layout <- function(n_items) {
     
     bg_molecules <- NULL
     
-    if (input$metab_manual_input_type == "paste") {
+    if (identical(input$metab_manual_input_type, "paste")) {
       # Get from pasted background text
       if (!is.null(input$metab_custom_background_paste) && nchar(trimws(input$metab_custom_background_paste)) > 0) {
         bg_molecules <- strsplit(input$metab_custom_background_paste, "\\n")[[1]]
         bg_molecules <- trimws(bg_molecules)
         bg_molecules <- bg_molecules[bg_molecules != "" & !is.na(bg_molecules)]
       }
-    } else if (input$metab_manual_input_type == "file") {
+    } else if (identical(input$metab_manual_input_type, "file")) {
       # Get from sheet 2 of uploaded Excel file
       req(input$metab_manual_file)
       
@@ -40710,7 +40824,7 @@ get_legend_grid_layout <- function(n_items) {
     molecule_names <- NULL
     
     # Determine source and get appropriate metabolite list
-    if (input$metab_source == "intersection") {
+    if (identical(input$metab_source, "intersection")) {
       # Get metabolites from selected intersection set
       req(input$metab_intersection_set)
       
@@ -40733,7 +40847,7 @@ get_legend_grid_layout <- function(n_items) {
         return()
       }
       
-    } else if (input$metab_source == "pairwise") {
+    } else if (identical(input$metab_source, "pairwise")) {
       # Get metabolites from pairwise comparison with filters
       req(input$metab_pairwise_group1, input$metab_pairwise_group2)
       req(values$stat_results)
@@ -40783,9 +40897,9 @@ get_legend_grid_layout <- function(n_items) {
       showNotification(paste("Using", length(molecule_names), "significant metabolites from", comparison_name),
                       type = "message", duration = 3)
       
-    } else if (input$metab_source == "manual") {
+    } else if (identical(input$metab_source, "manual")) {
       # Get metabolites from manual input
-      if (input$metab_manual_input_type == "file") {
+      if (identical(input$metab_manual_input_type, "file")) {
         req(input$metab_manual_file)
         
         # Read metabolites from file
@@ -41364,14 +41478,14 @@ get_legend_grid_layout <- function(n_items) {
                 # Get background molecules from paste or file sheet 2
                 custom_bg_molecules <- NULL
                 
-                if (input$metab_manual_input_type == "paste") {
+                if (identical(input$metab_manual_input_type, "paste")) {
                   # Get from pasted background text
                   if (!is.null(input$metab_custom_background_paste) && nchar(trimws(input$metab_custom_background_paste)) > 0) {
                     custom_bg_molecules <- strsplit(input$metab_custom_background_paste, "\\n")[[1]]
                     custom_bg_molecules <- trimws(custom_bg_molecules)
                     custom_bg_molecules <- custom_bg_molecules[custom_bg_molecules != "" & !is.na(custom_bg_molecules)]
                   }
-                } else if (input$metab_manual_input_type == "file") {
+                } else if (identical(input$metab_manual_input_type, "file")) {
                   # Get from sheet 2 of uploaded Excel file
                   if (!is.null(input$metab_manual_file)) {
                     file_path <- input$metab_manual_file$datapath
@@ -41450,13 +41564,13 @@ get_legend_grid_layout <- function(n_items) {
               if (bg_type == "custom") {
                 custom_bg_molecules <- NULL
                 
-                if (input$metab_manual_input_type == "paste") {
+                if (identical(input$metab_manual_input_type, "paste")) {
                   if (!is.null(input$metab_custom_background_paste) && nchar(trimws(input$metab_custom_background_paste)) > 0) {
                     custom_bg_molecules <- strsplit(input$metab_custom_background_paste, "\\n")[[1]]
                     custom_bg_molecules <- trimws(custom_bg_molecules)
                     custom_bg_molecules <- custom_bg_molecules[custom_bg_molecules != "" & !is.na(custom_bg_molecules)]
                   }
-                } else if (input$metab_manual_input_type == "file") {
+                } else if (identical(input$metab_manual_input_type, "file")) {
                   if (!is.null(input$metab_manual_file)) {
                     file_path <- input$metab_manual_file$datapath
                     file_name <- input$metab_manual_file$name
@@ -41808,7 +41922,7 @@ get_legend_grid_layout <- function(n_items) {
               viridis::viridis_pal(option = input$metab_color_palette)(n_cats),
               unique_cats
             )
-          } else if (input$metab_color_palette == "rainbow") {
+          } else if (identical(input$metab_color_palette, "rainbow")) {
             category_colors <- setNames(
               rainbow(n_cats),
               unique_cats
@@ -41829,13 +41943,13 @@ get_legend_grid_layout <- function(n_items) {
               viridis::viridis_pal(option = input$metab_color_palette)(n_groups),
               unique(plot_data$Group)
             )
-          } else if (input$metab_color_palette == "rainbow") {
+          } else if (identical(input$metab_color_palette, "rainbow")) {
             group_colors <- setNames(
               rainbow(n_groups),
               unique(plot_data$Group)
             )
           } else {
-            palette <- if (input$metab_color_palette == "metabolite") "Set1" else input$metab_color_palette
+            palette <- if (identical(input$metab_color_palette, "metabolite")) "Set1" else input$metab_color_palette
             colors_vec <- RColorBrewer::brewer.pal(min(max(3, n_groups), 9), palette)
             if (n_groups > 9) {
               colors_vec <- colorRampPalette(colors_vec)(n_groups)
@@ -41888,7 +42002,7 @@ get_legend_grid_layout <- function(n_items) {
                   viridis::viridis_pal(option = input$metab_color_palette)(n_all_cats),
                   all_categories_in_pies
                 )
-              } else if (input$metab_color_palette == "rainbow") {
+              } else if (identical(input$metab_color_palette, "rainbow")) {
                 global_cat_colors <- setNames(rainbow(n_all_cats), all_categories_in_pies)
               } else {
                 palette <- input$metab_color_palette
@@ -42859,7 +42973,7 @@ get_legend_grid_layout <- function(n_items) {
                 viridis::viridis_pal(option = input$metab_color_palette)(n_cats),
                 unique_cats
               )
-            } else if (input$metab_color_palette == "rainbow") {
+            } else if (identical(input$metab_color_palette, "rainbow")) {
               global_cat_colors <- setNames(rainbow(n_cats), unique_cats)
             } else {
               palette <- input$metab_color_palette
@@ -43037,7 +43151,7 @@ get_legend_grid_layout <- function(n_items) {
                 viridis::viridis_pal(option = input$metab_color_palette)(n_cats),
                 unique_cats
               )
-            } else if (input$metab_color_palette == "rainbow") {
+            } else if (identical(input$metab_color_palette, "rainbow")) {
               category_colors <- setNames(rainbow(n_cats), unique_cats)
             } else {
               palette <- input$metab_color_palette
@@ -43095,10 +43209,10 @@ get_legend_grid_layout <- function(n_items) {
               viridis::viridis_pal(option = input$metab_color_palette)(n_groups),
               unique(plot_data$Group)
             )
-          } else if (input$metab_color_palette == "rainbow") {
+          } else if (identical(input$metab_color_palette, "rainbow")) {
             group_colors <- setNames(rainbow(n_groups), unique(plot_data$Group))
           } else {
-            palette <- if (input$metab_color_palette == "metabolite") "Set1" else input$metab_color_palette
+            palette <- if (identical(input$metab_color_palette, "metabolite")) "Set1" else input$metab_color_palette
             colors_vec <- RColorBrewer::brewer.pal(min(max(3, n_groups), 9), palette)
             if (n_groups > 9) colors_vec <- colorRampPalette(colors_vec)(n_groups)
             group_colors <- setNames(colors_vec[1:n_groups], unique(plot_data$Group))
@@ -45416,7 +45530,7 @@ get_legend_grid_layout <- function(n_items) {
     parsed_glycans <- glyco_values$parsed_glycans_original
     
     # Apply classification based on current selection
-    if (input$glycan_classification_type == "simple") {
+    if (identical(input$glycan_classification_type, "simple")) {
       message("Reclassifying as simple (High-mannose, Complex, Hybrid only)")
       for (id in names(parsed_glycans)) {
         parsed_glycans[[id]]$type <- determine_glycan_type_simple(parsed_glycans[[id]]$monosaccharides)
@@ -46174,9 +46288,9 @@ get_legend_grid_layout <- function(n_items) {
     # Reset summary table for each run to avoid stale content across analysis modes
     glyco_values$summary_table <- NULL
     
-    plot_type_var <- if(input$glyco_analysis_type == "group_comparison") {
+    plot_type_var <- if (identical(input$glyco_analysis_type, "group_comparison")) {
       input$glyco_plot_type_group_comp
-    } else if(input$glyco_analysis_type == "glycan_comparison") {
+    } else if (identical(input$glyco_analysis_type, "glycan_comparison")) {
       input$glyco_plot_type_glycan_comp
     } else {
       input$glyco_plot_type
@@ -46189,7 +46303,7 @@ get_legend_grid_layout <- function(n_items) {
     legend_text_size <- if(!is.null(input$glyco_legend_text_size)) input$glyco_legend_text_size else 12
     
     withProgress(message = "Generating glycomics visualization...", value = 0, {
-      if (input$glyco_analysis_type == "distribution") {
+      if (identical(input$glyco_analysis_type, "distribution")) {
         setProgress(0.3, detail = "Creating distribution chart")
         
         # Prepare data for distribution analysis using normalized abundances per sample
@@ -46300,7 +46414,7 @@ get_legend_grid_layout <- function(n_items) {
         # Prepare plot data
         plot_data <- all_distributions
         # Create specialized color palette for glycans
-        if (input$glyco_color_palette == "glycan") {
+        if (identical(input$glyco_color_palette, "glycan")) {
           # Your existing glycan-specific colors
           glycan_colors <- c(
             "N-linked (Pauci-mannose)" = "#A0522D",
@@ -46529,13 +46643,13 @@ get_legend_grid_layout <- function(n_items) {
             req(input$glyco_grid_cols)
             
             # Determine which error value to use based on user selection
-            error_col <- if(input$glyco_error_type == "sem") "SEM" else "SD"
+            error_col <- if (identical(input$glyco_error_type, "sem")) "SEM" else "SD"
             plot_data$Error <- plot_data[[error_col]]
             
             # Generate colors for groups based on selected palette
             n_groups <- length(unique(plot_data$Group))
             
-            if (input$glyco_color_palette == "glycan") {
+            if (identical(input$glyco_color_palette, "glycan")) {
               # Use default ggplot colors for groups
               group_colors <- NULL
             } else if (input$glyco_color_palette %in% c("viridis", "plasma", "magma", "inferno")) {
@@ -46599,13 +46713,13 @@ get_legend_grid_layout <- function(n_items) {
             
           } else {
             # Determine which error value to use based on user selection
-            error_col <- if(input$glyco_error_type == "sem") "SEM" else "SD"
+            error_col <- if (identical(input$glyco_error_type, "sem")) "SEM" else "SD"
             plot_data$Error <- plot_data[[error_col]]
             
             # Generate colors for groups based on selected palette
             n_groups <- length(unique(plot_data$Group))
             
-            if (input$glyco_color_palette == "glycan") {
+            if (identical(input$glyco_color_palette, "glycan")) {
               # Use default ggplot colors for groups
               group_colors <- NULL
             } else if (input$glyco_color_palette %in% c("viridis", "plasma", "magma", "inferno")) {
@@ -46701,27 +46815,27 @@ get_legend_grid_layout <- function(n_items) {
           mid_val <- median(heatmap_long$Percentage, na.rm = TRUE)
           
           # Determine 3-color scale based on selected palette
-          if (input$glyco_color_palette == "viridis") {
+          if (identical(input$glyco_color_palette, "viridis")) {
             color_scale <- scale_fill_gradient2(low = "#440154", mid = "#21908C", high = "#FDE725", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "plasma") {
+          } else if (identical(input$glyco_color_palette, "plasma")) {
             color_scale <- scale_fill_gradient2(low = "#0D0887", mid = "#CC4678", high = "#F0F921", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "magma") {
+          } else if (identical(input$glyco_color_palette, "magma")) {
             color_scale <- scale_fill_gradient2(low = "#000004", mid = "#B63679", high = "#FCFDBF", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "inferno") {
+          } else if (identical(input$glyco_color_palette, "inferno")) {
             color_scale <- scale_fill_gradient2(low = "#000004", mid = "#BB3754", high = "#FCFFA4", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "glycan") {
+          } else if (identical(input$glyco_color_palette, "glycan")) {
             color_scale <- scale_fill_gradient2(low = "#F1F8FF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Set1") {
+          } else if (identical(input$glyco_color_palette, "Set1")) {
             color_scale <- scale_fill_gradient2(low = "#FFFFCC", mid = "#FD8D3C", high = "#800026", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Set2") {
+          } else if (identical(input$glyco_color_palette, "Set2")) {
             color_scale <- scale_fill_gradient2(low = "#F7FCF5", mid = "#74C476", high = "#00441B", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Set3") {
+          } else if (identical(input$glyco_color_palette, "Set3")) {
             color_scale <- scale_fill_gradient2(low = "#FFF7EC", mid = "#FE9929", high = "#662506", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Pastel1") {
+          } else if (identical(input$glyco_color_palette, "Pastel1")) {
             color_scale <- scale_fill_gradient2(low = "#F7FCF0", mid = "#7BCCC4", high = "#0868AC", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Pastel2") {
+          } else if (identical(input$glyco_color_palette, "Pastel2")) {
             color_scale <- scale_fill_gradient2(low = "#FFF7FB", mid = "#D4B9DA", high = "#67001F", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Dark2") {
+          } else if (identical(input$glyco_color_palette, "Dark2")) {
             color_scale <- scale_fill_gradient2(low = "#F7FBFF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Percentage")
           } else {
             color_scale <- scale_fill_gradient2(low = "#F1F8FF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Percentage")
@@ -46794,7 +46908,7 @@ get_legend_grid_layout <- function(n_items) {
           n_groups <- length(groups)
           if (input$glyco_color_palette %in% c("viridis", "plasma", "magma", "inferno")) {
             group_colors <- viridis::viridis_pal(option = input$glyco_color_palette)(n_groups)
-          } else if (input$glyco_color_palette != "glycan") {
+          } else if (!identical(input$glyco_color_palette, "glycan")) {
             palette <- input$glyco_color_palette
             group_colors <- RColorBrewer::brewer.pal(max(3, min(9, n_groups)), palette)
             if (n_groups > 9) group_colors <- colorRampPalette(group_colors)(n_groups)
@@ -46941,7 +47055,7 @@ get_legend_grid_layout <- function(n_items) {
           class_df <- do.call(rbind, class_df)
           
           # Show only ID and Type for Simple classification
-          if (input$glycan_classification_type == "simple") {
+          if (identical(input$glycan_classification_type, "simple")) {
             class_df <- class_df[, c("ID", "Type"), drop = FALSE]
             
             DT::datatable(class_df,
@@ -46983,7 +47097,7 @@ get_legend_grid_layout <- function(n_items) {
         })
       }
       
-      else if (input$glyco_analysis_type == "structure") {
+      else if (identical(input$glyco_analysis_type, "structure")) {
         setProgress(0.3, detail = "Analyzing glycan structural features")
         
         # Make sure we have classification data and normalized data
@@ -47136,7 +47250,7 @@ get_legend_grid_layout <- function(n_items) {
         ))
         
         # Determine which error value to use
-        error_col <- if(input$glyco_error_type == "sem") "SEM" else "SD"
+        error_col <- if (identical(input$glyco_error_type, "sem")) "SEM" else "SD"
         all_features$Error <- all_features[[error_col]]
         
         # Define colors for each category
@@ -47161,7 +47275,7 @@ get_legend_grid_layout <- function(n_items) {
             # Require color palette input
             req(input$glyco_color_palette)
             
-            if (input$glyco_color_palette == "glycan") {
+            if (identical(input$glyco_color_palette, "glycan")) {
               # Use default ggplot colors for groups
               group_colors <- NULL
             } else if (input$glyco_color_palette %in% c("viridis", "plasma", "magma", "inferno")) {
@@ -47220,7 +47334,7 @@ get_legend_grid_layout <- function(n_items) {
             categories <- unique(all_features$Category)
             n_categories <- length(categories)
             
-            if (input$glyco_color_palette == "glycan") {
+            if (identical(input$glyco_color_palette, "glycan")) {
               # Use default category colors
               category_colors <- cat_colors
             } else if (input$glyco_color_palette %in% c("viridis", "plasma", "magma", "inferno")) {
@@ -47283,7 +47397,7 @@ get_legend_grid_layout <- function(n_items) {
               n_features <- nrow(cat_data)
               
               # Use the user-selected color palette instead of hardcoded colors
-              if (input$glyco_color_palette == "glycan") {
+              if (identical(input$glyco_color_palette, "glycan")) {
                 # For glycan-specific palette, use smart color generation
                 if (cat_name == "Branching") {
                   # Generate distinct colors ensuring all branching types get unique colors
@@ -47374,27 +47488,27 @@ get_legend_grid_layout <- function(n_items) {
           
           mid_val <- median(all_features$Count, na.rm = TRUE)
           
-          if (input$glyco_color_palette == "viridis") {
+          if (identical(input$glyco_color_palette, "viridis")) {
             color_scale <- scale_fill_gradient2(low = "#440154", mid = "#21908C", high = "#FDE725", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "plasma") {
+          } else if (identical(input$glyco_color_palette, "plasma")) {
             color_scale <- scale_fill_gradient2(low = "#0D0887", mid = "#CC4678", high = "#F0F921", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "magma") {
+          } else if (identical(input$glyco_color_palette, "magma")) {
             color_scale <- scale_fill_gradient2(low = "#000004", mid = "#B63679", high = "#FCFDBF", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "inferno") {
+          } else if (identical(input$glyco_color_palette, "inferno")) {
             color_scale <- scale_fill_gradient2(low = "#000004", mid = "#BB3754", high = "#FCFFA4", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "glycan") {
+          } else if (identical(input$glyco_color_palette, "glycan")) {
             color_scale <- scale_fill_gradient2(low = "#F1F8FF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "Set1") {
+          } else if (identical(input$glyco_color_palette, "Set1")) {
             color_scale <- scale_fill_gradient2(low = "#FFFFCC", mid = "#FD8D3C", high = "#800026", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "Set2") {
+          } else if (identical(input$glyco_color_palette, "Set2")) {
             color_scale <- scale_fill_gradient2(low = "#F7FCF5", mid = "#74C476", high = "#00441B", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "Set3") {
+          } else if (identical(input$glyco_color_palette, "Set3")) {
             color_scale <- scale_fill_gradient2(low = "#FFF7EC", mid = "#FE9929", high = "#662506", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "Pastel1") {
+          } else if (identical(input$glyco_color_palette, "Pastel1")) {
             color_scale <- scale_fill_gradient2(low = "#F7FCF0", mid = "#7BCCC4", high = "#0868AC", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "Pastel2") {
+          } else if (identical(input$glyco_color_palette, "Pastel2")) {
             color_scale <- scale_fill_gradient2(low = "#FFF7FB", mid = "#D4B9DA", high = "#67001F", midpoint = mid_val, name = "Count")
-          } else if (input$glyco_color_palette == "Dark2") {
+          } else if (identical(input$glyco_color_palette, "Dark2")) {
             color_scale <- scale_fill_gradient2(low = "#F7FBFF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Count")
           } else {
             color_scale <- scale_fill_gradient2(low = "#F1F8FF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Count")
@@ -47601,7 +47715,7 @@ get_legend_grid_layout <- function(n_items) {
         })
       }
       
-      else if (input$glyco_analysis_type == "group_comparison") {
+      else if (identical(input$glyco_analysis_type, "group_comparison")) {
         setProgress(0.3, detail = "Analyzing group differences in glycan profiles")
         
         # Make sure we have parsed glycans, normalized data and group information
@@ -47693,7 +47807,7 @@ get_legend_grid_layout <- function(n_items) {
         # Generate visualization based on selected plot type
         setProgress(0.7, detail = "Creating group comparison visualization")
         
-        if (input$glyco_plot_type_group_comp == "bar") {
+        if (identical(input$glyco_plot_type_group_comp, "bar")) {
           # Create bar chart with error bars using sample-level percentages
           p <- ggplot(plot_data, aes(x = Type, y = Percentage, fill = Group)) +
             geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
@@ -47830,7 +47944,7 @@ get_legend_grid_layout <- function(n_items) {
           })
           
           # Add Complex glycan branching breakdown chart if using simple classification
-          if (input$glycan_classification_type == "simple") {
+          if (identical(input$glycan_classification_type, "simple")) {
             # Filter classification data for complex glycans only
             complex_indices <- which(sapply(glyco_values$classification_data, function(x) x$type == "Complex"))
             
@@ -48081,7 +48195,7 @@ get_legend_grid_layout <- function(n_items) {
           }
         }
         
-        else if (input$glyco_plot_type_group_comp == "heatmap") {
+        else if (identical(input$glyco_plot_type_group_comp, "heatmap")) {
           # Create a heatmap showing glycan type distribution across groups
           
           # Reshape data for heatmap - ensure we use Percentage column
@@ -48099,27 +48213,27 @@ get_legend_grid_layout <- function(n_items) {
           # Create heatmap with 3-color gradient based on palette
           mid_val <- median(heatmap_data_long$Percentage, na.rm = TRUE)
           
-          if (input$glyco_color_palette == "viridis") {
+          if (identical(input$glyco_color_palette, "viridis")) {
             fill_scale <- scale_fill_gradient2(low = "#440154", mid = "#21908C", high = "#FDE725", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "plasma") {
+          } else if (identical(input$glyco_color_palette, "plasma")) {
             fill_scale <- scale_fill_gradient2(low = "#0D0887", mid = "#CC4678", high = "#F0F921", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "magma") {
+          } else if (identical(input$glyco_color_palette, "magma")) {
             fill_scale <- scale_fill_gradient2(low = "#000004", mid = "#B63679", high = "#FCFDBF", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "inferno") {
+          } else if (identical(input$glyco_color_palette, "inferno")) {
             fill_scale <- scale_fill_gradient2(low = "#000004", mid = "#BB3754", high = "#FCFFA4", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "glycan") {
+          } else if (identical(input$glyco_color_palette, "glycan")) {
             fill_scale <- scale_fill_gradient2(low = "#F1F8FF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Set1") {
+          } else if (identical(input$glyco_color_palette, "Set1")) {
             fill_scale <- scale_fill_gradient2(low = "#FFFFCC", mid = "#FD8D3C", high = "#800026", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Set2") {
+          } else if (identical(input$glyco_color_palette, "Set2")) {
             fill_scale <- scale_fill_gradient2(low = "#F7FCF5", mid = "#74C476", high = "#00441B", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Set3") {
+          } else if (identical(input$glyco_color_palette, "Set3")) {
             fill_scale <- scale_fill_gradient2(low = "#FFF7EC", mid = "#FE9929", high = "#662506", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Pastel1") {
+          } else if (identical(input$glyco_color_palette, "Pastel1")) {
             fill_scale <- scale_fill_gradient2(low = "#F7FCF0", mid = "#7BCCC4", high = "#0868AC", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Pastel2") {
+          } else if (identical(input$glyco_color_palette, "Pastel2")) {
             fill_scale <- scale_fill_gradient2(low = "#FFF7FB", mid = "#D4B9DA", high = "#67001F", midpoint = mid_val, name = "Percentage")
-          } else if (input$glyco_color_palette == "Dark2") {
+          } else if (identical(input$glyco_color_palette, "Dark2")) {
             fill_scale <- scale_fill_gradient2(low = "#F7FBFF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Percentage")
           } else {
             fill_scale <- scale_fill_gradient2(low = "#F1F8FF", mid = "#6BAED6", high = "#08306B", midpoint = mid_val, name = "Percentage")
@@ -48147,7 +48261,7 @@ get_legend_grid_layout <- function(n_items) {
             )
         }
         
-        else if (input$glyco_plot_type_group_comp == "radar") {
+        else if (identical(input$glyco_plot_type_group_comp, "radar")) {
           # Create a radar chart comparing glycan types across groups
           
           # First make sure fmsb package is available
@@ -48198,7 +48312,7 @@ get_legend_grid_layout <- function(n_items) {
               # Set up colors for each group - use the user's color palette if possible
               if (input$glyco_color_palette %in% c("viridis", "plasma", "magma", "inferno")) {
                 group_colors <- viridis::viridis_pal(option = input$glyco_color_palette)(ncol(radar_matrix))
-              } else if (input$glyco_color_palette != "glycan") {
+              } else if (!identical(input$glyco_color_palette, "glycan")) {
                 # Use selected RColorBrewer palette
                 palette <- input$glyco_color_palette
                 if (ncol(radar_matrix) <= 9) {
@@ -48322,7 +48436,7 @@ get_legend_grid_layout <- function(n_items) {
         })
       }
       
-      else if (input$glyco_analysis_type == "glycan_comparison") {
+      else if (identical(input$glyco_analysis_type, "glycan_comparison")) {
         setProgress(0.3, detail = "Analyzing individual glycan differences across groups")
         
         # Make sure we have parsed glycans, normalized data and group information
@@ -48601,7 +48715,7 @@ get_legend_grid_layout <- function(n_items) {
         })
       }
       
-      else if (input$glyco_analysis_type == "network") {
+      else if (identical(input$glyco_analysis_type, "network")) {
         setProgress(0.3, detail = "Analyzing glycan networks")
         
         # For network analysis, we need more advanced libraries
@@ -48876,9 +48990,9 @@ get_legend_grid_layout <- function(n_items) {
   output$download_glyco_plot <- downloadHandler(
     filename = function() {
       analysis_type <- input$glyco_analysis_type
-      plot_type <- if(input$glyco_analysis_type == "group_comparison") {
+      plot_type <- if (identical(input$glyco_analysis_type, "group_comparison")) {
         input$glyco_plot_type_group_comp
-      } else if(input$glyco_analysis_type == "glycan_comparison") {
+      } else if (identical(input$glyco_analysis_type, "glycan_comparison")) {
         input$glyco_plot_type_glycan_comp
       } else {
         input$glyco_plot_type
@@ -48887,9 +49001,9 @@ get_legend_grid_layout <- function(n_items) {
     },
     content = function(file) {
       dpi <- ifelse(is.null(input$global_dpi), 300, input$global_dpi)
-      plot_type <- if(input$glyco_analysis_type == "group_comparison") {
+      plot_type <- if (identical(input$glyco_analysis_type, "group_comparison")) {
         input$glyco_plot_type_group_comp
-      } else if(input$glyco_analysis_type == "glycan_comparison") {
+      } else if (identical(input$glyco_analysis_type, "glycan_comparison")) {
         input$glyco_plot_type_glycan_comp
       } else {
         input$glyco_plot_type
@@ -49206,7 +49320,7 @@ get_legend_grid_layout <- function(n_items) {
     # Get sample names (column names)
     sample_names <- colnames(values$raw_data)[-1]
     
-    if(input$batch_info_source == "names") {
+    if (identical(input$batch_info_source, "names")) {
       # Extract batch information from sample names using regular expression
       batch_pattern <- input$batch_pattern
       batch_info <- rep(NA, length(sample_names))
@@ -49238,7 +49352,7 @@ get_legend_grid_layout <- function(n_items) {
       # Store batch information
       values$batch_info <- batch_info
       
-    } else if(input$batch_info_source == "metadata") {
+    } else if (identical(input$batch_info_source, "metadata")) {
       req(values$metadata, input$metadata_id_col, input$metadata_batch_col)
       
       # Map sample names to batch information from metadata
@@ -50790,7 +50904,7 @@ get_legend_grid_layout <- function(n_items) {
       )
       
       # Add points showing imputed values for boxplot
-      if(input$impute_comparison_view == "boxplot") {
+      if (identical(input$impute_comparison_view, "boxplot")) {
         # Highlight imputed values in the "After Imputation" group
         imputed_data <- subset(plot_df, Type == "After Imputation" & Imputed == TRUE)
         if(nrow(imputed_data) > 0) {
@@ -50817,7 +50931,7 @@ get_legend_grid_layout <- function(n_items) {
   
   # Global reactive for intersection analysis UI conditional panels
   output$numSelectedSets <- reactive({
-    if(input$intersection_source == "manual") {
+    if (identical(input$intersection_source, "manual")) {
       return(values$manual_sets_count %||% 0)
     } else {
       return(length(input$intersection_sets %||% character(0)))
@@ -50911,7 +51025,7 @@ get_legend_grid_layout <- function(n_items) {
   output$glyco_analysis_type_ui <- renderUI({
     req(input$glycan_classification_type)
     
-    if (input$glycan_classification_type == "simple") {
+    if (identical(input$glycan_classification_type, "simple")) {
       # Simple: only distribution and network
       selectInput("glyco_analysis_type", "Analysis Type:",
                   choices = c(
@@ -50936,22 +51050,22 @@ get_legend_grid_layout <- function(n_items) {
   # Dynamic Plot Type based on analysis type
   output$metab_plot_type_ui <- renderUI({
     req(input$metab_analysis_type)
-    if (input$metab_analysis_type == "classification") {
+    if (identical(input$metab_analysis_type, "classification")) {
       selectInput("metab_plot_type", "Plot Type:",
                   choices = c("Pie Chart" = "pie", "Bar Chart" = "bar"),
                   selected = isolate(input$metab_plot_type) %||% "pie",
                   width = "100%")
-    } else if (input$metab_analysis_type == "pathway") {
+    } else if (identical(input$metab_analysis_type, "pathway")) {
       selectInput("metab_plot_type", "Plot Type:",
                   choices = c("Bar Chart" = "bar", "Dot Plot" = "dot"),
                   selected = isolate(input$metab_plot_type) %||% "bar",
                   width = "100%")
-    } else if (input$metab_analysis_type == "module") {
+    } else if (identical(input$metab_analysis_type, "module")) {
       selectInput("metab_plot_type", "Plot Type:",
                   choices = c("Bar Chart (Horizontal)" = "bar", "Dot Plot" = "dot"),
                   selected = isolate(input$metab_plot_type) %||% "bar",
                   width = "100%")
-    } else if (input$metab_analysis_type == "biospecimen") {
+    } else if (identical(input$metab_analysis_type, "biospecimen")) {
       selectInput("metab_plot_type", "Plot Type:",
                   choices = c("Pie Chart" = "pie", "Vertical Bar" = "bar", "Horizontal Bar" = "barh"),
                   selected = isolate(input$metab_plot_type) %||% "bar",
@@ -50968,7 +51082,7 @@ get_legend_grid_layout <- function(n_items) {
   output$glyco_plot_type_ui <- renderUI({
     req(input$glyco_analysis_type)
     
-    if (input$glyco_analysis_type == "structure") {
+    if (identical(input$glyco_analysis_type, "structure")) {
       # Structural Features: only Bar Chart
       selectInput("glyco_plot_type", "Plot Type:",
                   choices = c(
@@ -51027,7 +51141,7 @@ get_legend_grid_layout <- function(n_items) {
         )
         
         # Switch to a different plot type automatically to prevent crash
-        if(input$glyco_analysis_type == "group_comparison") {
+        if (identical(input$glyco_analysis_type, "group_comparison")) {
           updateSelectInput(session, "glyco_plot_type_group_comp", selected = "bar")
         } else {
           updateSelectInput(session, "glyco_plot_type", selected = "bar")
@@ -51483,7 +51597,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Apply initial filtering if selected
       if (!is.null(input$feature_filtering_method) && input$feature_filtering_method != "none") {
-        if (input$feature_filtering_method == "variance") {
+        if (identical(input$feature_filtering_method, "variance")) {
           tryCatch({
             vars <- apply(mlfs$data, 2, var, na.rm = TRUE)
             vars <- vars[!is.na(vars)]  # Remove any NAs
@@ -51511,7 +51625,7 @@ get_legend_grid_layout <- function(n_items) {
             return()
           })
           
-        } else if (input$feature_filtering_method == "correlation") {
+        } else if (identical(input$feature_filtering_method, "correlation")) {
           tryCatch({
             # Handle different target variable types
             y_for_filter <- mlfs$labels
@@ -51562,7 +51676,7 @@ get_legend_grid_layout <- function(n_items) {
             showNotification(paste("Correlation filtering error:", e$message), type = "error")
             return()
           })
-        } else if (input$feature_filtering_method == "pca") {
+        } else if (identical(input$feature_filtering_method, "pca")) {
           tryCatch({
             # Check if PCA features are available
             if (is.null(values$pca_top_features) || length(values$pca_top_features) == 0) {
@@ -51839,7 +51953,7 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       # Validate glmnet family selection for LASSO method
-      if (input$feature_selection_method == "lasso") {
+      if (identical(input$feature_selection_method, "lasso")) {
         n_classes <- length(unique(y))
         family_type <- input$glmnet_family
         
@@ -51950,7 +52064,7 @@ get_legend_grid_layout <- function(n_items) {
       perf <- NULL
       
       # Enhanced LASSO/ElasticNet Implementation
-      if (input$feature_selection_method == "lasso") {
+      if (identical(input$feature_selection_method, "lasso")) {
         # Check for sufficient data
         if (nrow(X) == 0 || ncol(X) == 0 || length(unique(y)) < 2) {
           showNotification("No data available for LASSO/ElasticNet after filtering. Check your pairwise/group selections.", type = "error")
@@ -52202,7 +52316,7 @@ get_legend_grid_layout <- function(n_items) {
             lambda_best <- cv_fit[[input$lambda_rule]]
             cat("Using lambda from best alpha's CV fit:", lambda_best, "\n")
             
-          } else if (input$lambda_selection == "manual") {
+          } else if (identical(input$lambda_selection, "manual")) {
             # Manual lambda specification with validation
             lambda_val <- input$feature_selection_lambda %||% 0.01
             if (is.null(lambda_val) || is.na(lambda_val) || lambda_val <= 0) {
@@ -52217,7 +52331,7 @@ get_legend_grid_layout <- function(n_items) {
             lambda_best <- lambda_val
             cv_fit <- NULL
             
-          } else if (input$lambda_selection == "sequence") {
+          } else if (identical(input$lambda_selection, "sequence")) {
             # Lambda sequence specification
             lambda_seq <- exp(seq(log(input$lambda_max), log(input$lambda_min), length.out = input$lambda_length))
             glmnet_args$lambda <- lambda_seq
@@ -52709,7 +52823,7 @@ get_legend_grid_layout <- function(n_items) {
           values$ml_cv_fit <- NULL
         })
         
-      } else if (input$feature_selection_method == "rf") {
+      } else if (identical(input$feature_selection_method, "rf")) {
         # Enhanced Random Forest implementation with stability analysis support
         tryCatch({
           cat("=== Random Forest Feature Selection ===\n")
@@ -53501,7 +53615,7 @@ get_legend_grid_layout <- function(n_items) {
           values$ml_rf_stability_features <- NULL
           values$ml_rf_stability_method <- NULL
         })
-      } else if (input$feature_selection_method == "permutation") {
+      } else if (identical(input$feature_selection_method, "permutation")) {
         # Permutation Importance using randomForest and iml
         if (!requireNamespace("iml", quietly = TRUE)) install.packages("iml")
         if (!requireNamespace("randomForest", quietly = TRUE)) install.packages("randomForest")
@@ -53885,7 +53999,7 @@ get_legend_grid_layout <- function(n_items) {
               values$ml_performance <- paste("Permutation importance error:", e$message)
             })
           })
-      } else if (input$feature_selection_method == "boruta") {
+      } else if (identical(input$feature_selection_method, "boruta")) {
         if (!requireNamespace("Boruta", quietly = TRUE)) install.packages("Boruta")
         if (!requireNamespace("ranger", quietly = TRUE)) install.packages("ranger")
         
@@ -54416,7 +54530,7 @@ get_legend_grid_layout <- function(n_items) {
           values$boruta_stats <- NULL
           values$boruta_plot_data <- NULL
         })
-      } else if (input$feature_selection_method == "rfe") {
+      } else if (identical(input$feature_selection_method, "rfe")) {
         # Enhanced Recursive Feature Elimination
         if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
         
@@ -54640,7 +54754,7 @@ get_legend_grid_layout <- function(n_items) {
           # Override the summary and selectSize functions if needed
           # Ensure summary function matches train_control metric expectations
           # Will set after train_control is created (guard later if object exists)
-          if (input$rfe_selection_function == "pickSizeTolerance") {
+          if (identical(input$rfe_selection_function, "pickSizeTolerance")) {
             rfe_functions$selectSize <- function(x, metric, tol = input$rfe_tolerance, maximize) {
               caret::pickSizeTolerance(x, metric, tol, maximize)
             }
@@ -54862,7 +54976,7 @@ get_legend_grid_layout <- function(n_items) {
             
             # Provide specific guidance based on error type and model
             if (grepl("subscript out of bounds", e$message)) {
-              if (input$rfe_base_model == "glm") {
+              if (identical(input$rfe_base_model, "glm")) {
                 guidance <- paste("GLM 'subscript out of bounds' error. Try:",
                                   "  Reduce CV folds to =", min(5, nrow(X) - 1),
                                   "  Reduce max subset size to =", min(nrow(X) - 5, ncol(X)),
@@ -54874,13 +54988,13 @@ get_legend_grid_layout <- function(n_items) {
                                   "  Check for perfect class separation")
               }
             } else if (grepl("Stopping", e$message)) {
-              if (input$rfe_base_model == "gbm") {
+              if (identical(input$rfe_base_model, "gbm")) {
                 guidance <- paste("GBM 'Stopping' error. Try:",
                                   "  Reduce n.trees to 50-200",
                                   "  Set interaction.depth to 1-3",
                                   "  Use shrinkage between 0.01-0.1",
                                   "  Increase min samples per node")
-              } else if (input$rfe_base_model == "nb") {
+              } else if (identical(input$rfe_base_model, "nb")) {
                 guidance <- paste("Naive Bayes 'Stopping' error. Try:",
                                   "  Check for features with zero variance",
                                   "  Ensure adequate samples per class",
@@ -54983,8 +55097,8 @@ get_legend_grid_layout <- function(n_items) {
               "RFE Analysis Complete:\n",
               "  Base Model: ", input$rfe_base_model, "\n",
               "  CV Method: ", input$rfe_cv_method,
-              if(input$rfe_cv_method == "cv") paste0(" (", input$rfe_cv_folds, "-fold)") else "",
-              if(input$rfe_cv_method == "repeatedcv") paste0(" (", input$rfe_cv_folds, "-fold, ", input$rfe_cv_repeats, " repeats)") else "",
+              if (identical(input$rfe_cv_method, "cv")) paste0(" (", input$rfe_cv_folds, "-fold)") else "",
+              if (identical(input$rfe_cv_method, "repeatedcv")) paste0(" (", input$rfe_cv_folds, "-fold, ", input$rfe_cv_repeats, " repeats)") else "",
               "\n  Optimal Features (RFE): ", optimal_size,
               "\n  Features Selected: ", nrow(selected_result), " (limited to user request)",
               "\n  Best ", input$rfe_metric, ": ", round(best_performance[[input$rfe_metric]], 4),
@@ -55617,7 +55731,7 @@ get_legend_grid_layout <- function(n_items) {
       top_n <- min(input$importance_top_n %||% 20, nrow(values$ml_importance))
       plot_data <- head(values$ml_importance, top_n)
       
-      if (input$importance_plot_type == "bar") {
+      if (identical(input$importance_plot_type, "bar")) {
         ggplot(plot_data, aes(x = reorder(Feature, Importance), y = Importance)) +
           geom_col(fill = "#3498db", alpha = 0.8) +
           coord_flip() +
@@ -55635,7 +55749,7 @@ get_legend_grid_layout <- function(n_items) {
             axis.line = element_line(color = "black", size = 0.5)
           )
         
-      } else if (input$importance_plot_type == "dot") {
+      } else if (identical(input$importance_plot_type, "dot")) {
         ggplot(plot_data, aes(x = Importance, y = reorder(Feature, Importance))) +
           geom_point(color = "#e74c3c", size = 3) +
           geom_segment(aes(x = 0, xend = Importance, yend = reorder(Feature, Importance)),
@@ -55654,7 +55768,7 @@ get_legend_grid_layout <- function(n_items) {
             axis.line = element_line(color = "black", size = 0.5)
           )
         
-      } else if (input$importance_plot_type == "heatmap") {
+      } else if (identical(input$importance_plot_type, "heatmap")) {
         # Create a single-column heatmap
         plot_data$rank <- seq_len(nrow(plot_data))
         ggplot(plot_data, aes(x = 1, y = reorder(Feature, Importance), fill = Importance)) +
@@ -55675,7 +55789,7 @@ get_legend_grid_layout <- function(n_items) {
             axis.line = element_line(color = "black", size = 0.5)
           )
         
-      } else if (input$importance_plot_type == "boruta_history") {
+      } else if (identical(input$importance_plot_type, "boruta_history")) {
         # Boruta importance history plot (plotImpHistory equivalent)
         if (is.null(values$boruta_plot_data) || is.null(values$boruta_plot_data$ImpHistory)) {
           ggplot() +
@@ -55902,7 +56016,7 @@ get_legend_grid_layout <- function(n_items) {
           })
         }
         
-      } else if (input$importance_plot_type == "boruta_box") {
+      } else if (identical(input$importance_plot_type, "boruta_box")) {
         # Boruta box plot visualization (similar to plot.Boruta)
         if (is.null(values$boruta_object)) {
           ggplot() +
@@ -57466,7 +57580,7 @@ get_legend_grid_layout <- function(n_items) {
             if (!is.null(cv_boot)) {
               # Get selected features using the same lambda rule as original
               lambda_use <- tryCatch({
-                if (input$lambda_rule == "1se") cv_boot$lambda.1se else cv_boot$lambda.min
+                if (identical(input$lambda_rule, "1se")) cv_boot$lambda.1se else cv_boot$lambda.min
               }, error = function(e) cv_boot$lambda.min)
               
               coefs <- coef(cv_boot, s = lambda_use)
@@ -60289,7 +60403,7 @@ get_legend_grid_layout <- function(n_items) {
         
         # Calculate appropriate canvas size for the download
         # For pairwise plots, use grid dimensions
-        if (input$pcaType == "pairwise") {
+        if (identical(input$pcaType, "pairwise")) {
           # Use actual pairwise comparison count (not all-possible-pairs from unique_groups)
           n_plots <- if (!is.null(values$current_pairwise_combinations)) {
             max(1, nrow(values$current_pairwise_combinations))
@@ -61774,7 +61888,7 @@ get_legend_grid_layout <- function(n_items) {
         
         # Calculate appropriate canvas size for the download
         # For pairwise plots, use grid dimensions
-        if (input$pcaType == "pairwise") {
+        if (identical(input$pcaType, "pairwise")) {
           # Use actual pairwise comparison count (not all-possible-pairs from unique_groups)
           n_plots <- if (!is.null(values$current_pairwise_combinations)) {
             max(1, nrow(values$current_pairwise_combinations))
@@ -66934,7 +67048,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           context_parts <- c(context_parts, sprintf("\nCurrent view: %s", input$glyco_analysis_type))
           
           # Distribution analysis
-          if (input$glyco_analysis_type == "distribution") {
+          if (identical(input$glyco_analysis_type, "distribution")) {
             context_parts <- c(context_parts, "Showing glycan type distribution across all samples")
             if (!is.null(input$glyco_plot_type)) {
               context_parts <- c(context_parts, sprintf("Plot type: %s", input$glyco_plot_type))
@@ -66942,12 +67056,12 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           }
           
           # Structure analysis
-          else if (input$glyco_analysis_type == "structure") {
+          else if (identical(input$glyco_analysis_type, "structure")) {
             context_parts <- c(context_parts, "Analyzing structural features (sialylation, fucosylation, branching)")
           }
           
           # Group comparison
-          else if (input$glyco_analysis_type == "group_comparison") {
+          else if (identical(input$glyco_analysis_type, "group_comparison")) {
             context_parts <- c(context_parts, "Comparing glycan profiles between groups")
             if (!is.null(values$unique_groups)) {
               context_parts <- c(context_parts, sprintf("Groups compared: %s",
@@ -66956,7 +67070,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           }
           
           # Glycan comparison
-          else if (input$glyco_analysis_type == "glycan_comparison") {
+          else if (identical(input$glyco_analysis_type, "glycan_comparison")) {
             context_parts <- c(context_parts, "Comparing individual glycan abundances across groups")
           }
         }
@@ -68596,8 +68710,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         corr_data <- corr_filtered_data()
         if (!is.null(corr_data)) {
           context_parts <- c(context_parts, sprintf("Analysis type: %s", 
-                                                    if(input$corr_analysis_type == "pairwise") "Pairwise comparison" else "All groups"))
-          if (input$corr_analysis_type == "pairwise") {
+                                                    if (identical(input$corr_analysis_type, "pairwise")) "Pairwise comparison" else "All groups"))
+          if (identical(input$corr_analysis_type, "pairwise")) {
             context_parts <- c(context_parts, sprintf("Comparing: %s vs %s", input$corr_group1, input$corr_group2))
           }
           
@@ -71728,7 +71842,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       return()
     }
     
-    if (input$enrichment_omics_type == "") {
+    if (identical(input$enrichment_omics_type, "")) {
       showNotification("Please select an omics type.", type = "error")
       return()
     }
@@ -74157,7 +74271,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     available_enrichments <- unique(c(session_enrichments, loaded_enrichments))
     has_enrichments <- length(available_enrichments) >= 2
     
-    if (input$integration_method == "pathway") {
+    if (identical(input$integration_method, "pathway")) {
       if (!has_enrichments) {
         showNotification(
           "Please load or save at least 2 enrichment datasets for pathway concordance",
@@ -74399,7 +74513,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       # Run selected method
       result <- tryCatch({
-        if (input$integration_method == "correlation") {
+        if (identical(input$integration_method, "correlation")) {
           # Cross-omics correlation analysis
           incProgress(0.3, detail = "Computing correlations...")
 
@@ -74627,7 +74741,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             node_list = node_list
           )
           
-        } else if (input$integration_method == "mofa") {
+        } else if (identical(input$integration_method, "mofa")) {
           incProgress(0.3, detail = "Running MOFA...")
           
           # Check if MOFA2 is installed
@@ -75322,7 +75436,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             training_options = train_opts
           )
           
-        } else if (input$integration_method == "diablo") {
+        } else if (identical(input$integration_method, "diablo")) {
           incProgress(0.3, detail = "Running DIABLO...")
           
           # Validate group variable - check if metadata has the selected column
@@ -75412,7 +75526,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             message = "DIABLO integration completed using pairwise PLS correlations"
           )
           
-        } else if (input$integration_method == "pathway") {
+        } else if (identical(input$integration_method, "pathway")) {
           # ===== PATHWAY-LEVEL INTEGRATION (Using Saved Enrichments) =====
           incProgress(0.1, detail = "Loading saved enrichment results...")
           
@@ -79530,7 +79644,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           return()
         }
 
-        if (input$dimred_method == "UMAP") {
+        if (identical(input$dimred_method, "UMAP")) {
           showNotification("Computing UMAP (MOFA2)...", type = "message", duration = NULL, id = "dimred_progress")
           model <- MOFA2::run_umap(
             model,
@@ -79538,7 +79652,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             n_neighbors = input$dimred_umap_n_neighbors,
             min_dist = input$dimred_umap_min_dist
           )
-        } else if (input$dimred_method == "t-SNE") {
+        } else if (identical(input$dimred_method, "t-SNE")) {
           showNotification("Computing t-SNE (MOFA2)...", type = "message", duration = NULL, id = "dimred_progress")
           model <- MOFA2::run_tsne(
             model,
@@ -79629,7 +79743,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           return()
         }
 
-        if (input$dimred_method == "UMAP") {
+        if (identical(input$dimred_method, "UMAP")) {
           if (!requireNamespace("umap", quietly = TRUE)) {
             showNotification("umap package is required for view-based UMAP", type = "warning")
             return()
@@ -79725,8 +79839,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       req(multiomics$view_dimred)
       df <- multiomics$view_dimred
 
-      x_col <- if (input$dimred_method == "UMAP") "UMAP1" else "tSNE1"
-      y_col <- if (input$dimred_method == "UMAP") "UMAP2" else "tSNE2"
+      x_col <- if (identical(input$dimred_method, "UMAP")) "UMAP1" else "tSNE1"
+      y_col <- if (identical(input$dimred_method, "UMAP")) "UMAP2" else "tSNE2"
 
       color_by <- input$dimred_color
       if (is.null(color_by) || identical(color_by, "Loading...")) color_by <- "group"
@@ -79786,7 +79900,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                                 size = 5, color = "#667eea") + theme_void())
     }
 
-    method_arg <- if (input$dimred_method == "UMAP") "UMAP" else "TSNE"
+    method_arg <- if (identical(input$dimred_method, "UMAP")) "UMAP" else "TSNE"
     color_by <- input$dimred_color
 
     model_to_plot <- multiomics$mofa_model_dimred %||% result$mofa_model
@@ -80144,7 +80258,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
   # Observer to show/hide Top Features slider based on plot type
   observeEvent(input$feature_weights_plot_type, {
     if (is.null(input$feature_weights_plot_type)) return()
-    if (input$feature_weights_plot_type == "all") {
+    if (identical(input$feature_weights_plot_type, "all")) {
       # Hide the Top Features slider when "All Weights" is selected
       shinyjs::hide("feature_weights_n")
     } else {
@@ -81564,8 +81678,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           if (identical(dimred_space, "view")) {
             req(multiomics$view_dimred)
             df <- multiomics$view_dimred
-            x_col <- if (input$dimred_method == "UMAP") "UMAP1" else "tSNE1"
-            y_col <- if (input$dimred_method == "UMAP") "UMAP2" else "tSNE2"
+            x_col <- if (identical(input$dimred_method, "UMAP")) "UMAP1" else "tSNE1"
+            y_col <- if (identical(input$dimred_method, "UMAP")) "UMAP2" else "tSNE2"
             color_by <- input$dimred_color
             if (is.null(color_by) || identical(color_by, "Loading...")) color_by <- "group"
 
@@ -81606,7 +81720,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                                 label = "MOFA model not available",
                                 size = 5, color = "#667eea") + theme_void()
           } else {
-            method_arg <- if (input$dimred_method == "UMAP") "UMAP" else "TSNE"
+            method_arg <- if (identical(input$dimred_method, "UMAP")) "UMAP" else "TSNE"
             model_to_plot <- multiomics$mofa_model_dimred %||% result$mofa_model
             p <- MOFA2::plot_dimred(
               model_to_plot,
@@ -90247,7 +90361,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
   
   # Toggle pairwise options visibility for K-Means
   observe({
-    if (input$kmeans_analysis_type == "pairwise") {
+    if (identical(input$kmeans_analysis_type, "pairwise")) {
       shinyjs::show("kmeansPairwiseOptions")
     } else {
       shinyjs::hide("kmeansPairwiseOptions")
@@ -90299,7 +90413,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     normalized_data <- values$normalized_data
     
     # Determine which comparison to use
-    if (input$kmeans_analysis_type == "pairwise") {
+    if (identical(input$kmeans_analysis_type, "pairwise")) {
       req(input$kmeans_group1, input$kmeans_group2)
       comparison_name <- paste(input$kmeans_group1, "vs", input$kmeans_group2)
       
@@ -90338,7 +90452,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       # Find FDR column if ROTS
       fdr_values <- NULL
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         fdr_col <- paste0(comparison_name, "_FDR")
         alt_comparison_name <- paste(input$kmeans_group2, "vs", input$kmeans_group1)
         alt_fdr_col <- paste0(alt_comparison_name, "_FDR")
@@ -90373,7 +90487,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       # Find FDR columns if ROTS
       fdr_values <- NULL
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         fdr_col <- grep("_FDR$", colnames(stat_results), value = TRUE)
         if (length(fdr_col) > 0) {
           fdr_values <- apply(stat_results[, fdr_col, drop = FALSE], 1, min, na.rm = TRUE)
@@ -90894,7 +91008,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
   
   # Toggle pairwise options visibility for correlation
   observe({
-    if (input$corr_analysis_type == "pairwise") {
+    if (identical(input$corr_analysis_type, "pairwise")) {
       shinyjs::show("corrPairwiseOptions")
     } else {
       shinyjs::hide("corrPairwiseOptions")
@@ -90946,7 +91060,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     normalized_data <- values$normalized_data
     
     # Determine which comparison to use
-    if (input$corr_analysis_type == "pairwise") {
+    if (identical(input$corr_analysis_type, "pairwise")) {
       req(input$corr_group1, input$corr_group2)
       comparison_name <- paste(input$corr_group1, "vs", input$corr_group2)
       
@@ -90985,7 +91099,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       # Find FDR column if ROTS
       fdr_values <- NULL
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         fdr_col <- paste0(comparison_name, "_FDR")
         alt_comparison_name <- paste(input$corr_group2, "vs", input$corr_group1)
         alt_fdr_col <- paste0(alt_comparison_name, "_FDR")
@@ -91022,7 +91136,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       # Find FDR columns if ROTS
       fdr_values <- NULL
-      if (input$sig_method == "rots") {
+      if (identical(input$sig_method, "rots")) {
         fdr_col <- grep("_FDR$", colnames(stat_results), value = TRUE)
         if (length(fdr_col) > 0) {
           fdr_values <- apply(stat_results[, fdr_col, drop = FALSE], 1, min, na.rm = TRUE)

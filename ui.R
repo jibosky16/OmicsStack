@@ -1,6 +1,7 @@
 ui <- tagList(
   navbarPage(
     useShinyjs(),
+    shinyjs::hidden(colourpicker::colourInput("dummy_colour_deps", NULL)),
     
     tags$head(
       includeCSS("omics-dashboard.css"),
@@ -387,6 +388,75 @@ ui <- tagList(
         margin-bottom: 15px;
         padding-bottom: 10px;
         border-bottom: 1px solid #e9ecef;
+      }
+      .dimred-card-header-gear-center {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: center;
+        column-gap: 8px;
+      }
+      .dimred-card-header-gear-center .header-left {
+        justify-self: start;
+        min-width: 0;
+      }
+      .dimred-card-header-gear-center .header-center {
+        justify-self: center;
+      }
+      .dimred-card-header-gear-center .header-right {
+        justify-self: end;
+      }
+      .dimred-plot-header-controls {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+      .dimred-plot-download-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .dimred-plot-settings {
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .dimred-plot-settings .dropdown-menu {
+        padding: 10px 14px 14px 14px;
+        box-sizing: border-box;
+      }
+      .dimred-plot-settings .dropdown-menu .row {
+        margin-left: -6px;
+        margin-right: -6px;
+      }
+      .dimred-plot-settings .dropdown-menu .row > [class*='col-'] {
+        padding-left: 6px;
+        padding-right: 6px;
+      }
+      .heatmap-row-column-options .form-group {
+        margin-bottom: 0;
+      }
+      .heatmap-row-column-options .checkbox {
+        margin-top: 0;
+        margin-bottom: 0;
+      }
+      .heatmap-row-column-options .checkbox label {
+        white-space: nowrap;
+      }
+      .heatmap-label-options .radio {
+        margin-top: 0;
+        margin-bottom: 0;
+      }
+      .heatmap-label-options .radio-inline {
+        margin-right: 18px;
+      }
+      .diff-label-options .radio {
+        margin-top: 0;
+        margin-bottom: 0;
+      }
+      .diff-label-options .radio-inline {
+        margin-right: 24px;
       }
       .dimred-feature-icon {
         color: #3498db;
@@ -2027,8 +2097,8 @@ ui <- tagList(
         border-radius: 8px !important;
         border: 2px solid var(--border-color) !important;
         width: 100% !important;  /* Full width within container */
-        min-width: 150px !important;  /* Minimum width to prevent being too narrow */
-        max-width: 300px !important;  /* Maximum width to prevent being too wide */
+        min-width: 0 !important;
+        max-width: 100% !important;
         height: 40px !important;  /* Slightly taller for better appearance */
         cursor: pointer;
         transition: all 0.2s ease;
@@ -5960,74 +6030,76 @@ ui <- tagList(
                             tabsetPanel(
                               id = "pcaTabset",
                               tabPanel("PCA Plot",
-                                       value = "pcaPlotTab",
-                                       div(class = "dimred-card",
-                                           div(class = "dimred-card-header",
-                                               h4(icon("chart-area", class = "dimred-feature-icon"), "PCA Plot"),
-                                               div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
-                                                   shinyWidgets::dropdownButton(
-                                                     circle = FALSE,
-                                                     status = "default",
-                                                     size = "sm",
-                                                     icon = icon("cogs"),
-                                                     tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
-                                                     right = TRUE,
-                                                     inline = TRUE,
-                                                     width = "600px",
-                                                     # Pairwise grid controls
-                                                     conditionalPanel(
-                                                       condition = "input.pcaType == 'pairwise'",
-                                                       fluidRow(
-                                                         column(4, numericInput("pcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")),
-                                                         column(4, numericInput("pcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")),
-                                                         column(4, numericInput("pcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px"))
-                                                       )
-                                                     ),
-                                                     # All groups plot controls
-                                                     conditionalPanel(
-                                                       condition = "input.pcaType == 'all'",
-                                                       fluidRow(
-                                                         column(6, numericInput("pcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")),
-                                                         column(6, numericInput("pcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px"))
-                                                       )
-                                                     ),
-                                                     # Shared appearance controls
-                                                     hr(style = "margin: 12px 0;"),
-                                                     fluidRow(
-                                                       column(3, numericInput("pca_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
-                                                       column(3, numericInput("pca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")),
-                                                       column(3, numericInput("pca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
-                                                       column(3, numericInput("pca_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%"))
-                                                     ),
-                                                     fluidRow(
-                                                       column(3, numericInput("pca_pairwise_label_size", "Pairwise Labels", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%")),
-                                                       column(3, numericInput("pca_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
-                                                       column(3, numericInput("pca_border_size", "Border Thickness", value = 1, min = 0, max = 5, step = 0.1, width = "100%")),
-                                                       column(3, numericInput("pca_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5, width = "100%"))
-                                                     ),
-                                                     tags$details(
-                                                       tags$summary(icon("palette"), " Color Customization"),
-                                                       checkboxInput("pca_custom_colors", "Use Custom Colors", value = FALSE),
-                                                       conditionalPanel(
-                                                         condition = "input.pca_custom_colors",
-                                                         div(id = "pca_color_controls",
-                                                             uiOutput("pca_color_picker_ui")
-                                                         )
-                                                       )
-                                                     )
-                                                   )
-                                               ),
-                                               div(style = "display: inline-block; margin-left: 10px;",
-                                                   downloadButton("downloadPCABtn", label = NULL,
-                                                                  class = "btn btn-sm btn-primary power-download-icon",
-                                                                  icon = icon("download"),
-                                                                  title = "Download Current Plot"),
-                                                   downloadButton("downloadPCAGridBtn", label = NULL,
-                                                                  class = "btn btn-sm btn-info power-download-icon",
-                                                                  icon = icon("th"),
-                                                                  title = "Download PCA Grid")
-                                               )
-                                           ),
+                                        value = "pcaPlotTab",
+                                        div(class = "dimred-card",
+                                             div(class = "dimred-card-header dimred-card-header-gear-center",
+                                                 div(class = "header-left",
+                                                     h4(icon("chart-area", class = "dimred-feature-icon"), "PCA Plot")
+                                                 ),
+                                                 div(class = "header-center dimred-plot-settings",
+                                                     shinyWidgets::dropdownButton(
+                                                      circle = FALSE,
+                                                      status = "default",
+                                                      size = "sm",
+                                                      icon = icon("cogs"),
+                                                      tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
+                                                      right = TRUE,
+                                                      inline = TRUE,
+                                                      width = "600px",
+                                                      # Pairwise grid controls
+                                                      conditionalPanel(
+                                                        condition = "input.pcaType == 'pairwise'",
+                                                        fluidRow(
+                                                          column(4, numericInput("pcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")),
+                                                          column(4, numericInput("pcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")),
+                                                          column(4, numericInput("pcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px"))
+                                                        )
+                                                      ),
+                                                      # All groups plot controls
+                                                      conditionalPanel(
+                                                        condition = "input.pcaType == 'all'",
+                                                        fluidRow(
+                                                          column(6, numericInput("pcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")),
+                                                          column(6, numericInput("pcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px"))
+                                                        )
+                                                      ),
+                                                      # Shared appearance controls
+                                                      hr(style = "margin: 12px 0;"),
+                                                      fluidRow(
+                                                        column(3, numericInput("pca_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
+                                                        column(3, numericInput("pca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")),
+                                                        column(3, numericInput("pca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
+                                                        column(3, numericInput("pca_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%"))
+                                                      ),
+                                                      fluidRow(
+                                                        column(3, numericInput("pca_pairwise_label_size", "Pairwise Labels", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                        column(3, numericInput("pca_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                        column(3, numericInput("pca_border_size", "Border Thickness", value = 1, min = 0, max = 5, step = 0.1, width = "100%")),
+                                                        column(3, numericInput("pca_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5, width = "100%"))
+                                                      ),
+                                                      tags$details(
+                                                        tags$summary(icon("palette"), " Color Customization"),
+                                                        checkboxInput("pca_custom_colors", "Use Custom Colors", value = FALSE),
+                                                        conditionalPanel(
+                                                          condition = "input.pca_custom_colors",
+                                                          div(id = "pca_color_controls",
+                                                              uiOutput("pca_color_picker_ui")
+                                                          )
+                                                        )
+                                                      )
+                                                    )
+                                                 ),
+                                                     div(class = "header-right dimred-plot-download-controls",
+                                                         downloadButton("downloadPCABtn", label = NULL,
+                                                                        class = "btn btn-sm btn-primary power-download-icon",
+                                                                        icon = icon("download"),
+                                                                       title = "Download Current Plot"),
+                                                        downloadButton("downloadPCAGridBtn", label = NULL,
+                                                                       class = "btn btn-sm btn-info power-download-icon",
+                                                                       icon = icon("th"),
+                                                                       title = "Download PCA Grid")
+                                                    )
+                                                ),
                                            div(style = "display: flex; align-items: center; gap: 8px; margin-bottom: 6px;",
                                                tags$small(style = "color: #888; font-style: italic;",
                                                           icon("mouse-pointer"), "Click points to pin sample labels (included in downloads)"),
@@ -6177,74 +6249,75 @@ ui <- tagList(
                               tabPanel("sPCA Plot",
                                                                        value = "spcaPlotTab",
 
-
-                                                                       div(class = "dimred-card",
-                                                                           div(class = "dimred-card-header",
-                                                                               h4(icon("chart-area", class = "dimred-feature-icon"), "sPCA Plot"),
-                                                                               div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
-                                                                                   shinyWidgets::dropdownButton(
-                                                                                     circle = FALSE,
-                                                                                     status = "default",
-                                                                                     size = "sm",
-                                                                                     icon = icon("cogs"),
-                                                                                     tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
-                                                                                     right = TRUE,
-                                                                                     inline = TRUE,
-                                                                                     width = "600px",
-                                                                                     # Pairwise grid controls
-                                                                                     conditionalPanel(
-                                                                                       condition = "input.spcaType == 'pairwise'",
-                                                                                       fluidRow(
-                                                                                         column(4, numericInput("spcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")),
-                                                                                         column(4, numericInput("spcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")),
-                                                                                         column(4, numericInput("spcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px"))
-                                                                                       )
+                                                                        div(class = "dimred-card",
+                                                                             div(class = "dimred-card-header dimred-card-header-gear-center",
+                                                                                 div(class = "header-left",
+                                                                                     h4(icon("chart-area", class = "dimred-feature-icon"), "sPCA Plot")
+                                                                                 ),
+                                                                                 div(class = "header-center dimred-plot-settings",
+                                                                                        shinyWidgets::dropdownButton(
+                                                                                          circle = FALSE,
+                                                                                          status = "default",
+                                                                                          size = "sm",
+                                                                                          icon = icon("cogs"),
+                                                                                          tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
+                                                                                          right = TRUE,
+                                                                                          inline = TRUE,
+                                                                                          width = "600px",
+                                                                                          # Pairwise grid controls
+                                                                                          conditionalPanel(
+                                                                                            condition = "input.spcaType == 'pairwise'",
+                                                                                            fluidRow(
+                                                                                              column(4, numericInput("spcaGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")),
+                                                                                              column(4, numericInput("spcaGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")),
+                                                                                              column(4, numericInput("spcaGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px"))
+                                                                                            )
+                                                                                          ),
+                                                                                          # All groups plot controls
+                                                                                          conditionalPanel(
+                                                                                            condition = "input.spcaType == 'all'",
+                                                                                            fluidRow(
+                                                                                              column(6, numericInput("spcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")),
+                                                                                              column(6, numericInput("spcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px"))
+                                                                                            )
+                                                                                          ),
+                                                                                          # Shared appearance controls
+                                                                                          hr(style = "margin: 12px 0;"),
+                                                                                          fluidRow(
+                                                                                            column(3, numericInput("spca_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
+                                                                                            column(3, numericInput("spca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")),
+                                                                                            column(3, numericInput("spca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
+                                                                                            column(3, numericInput("spca_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%"))
+                                                                                          ),
+                                                                                          fluidRow(
+                                                                                            column(3, numericInput("spca_pairwise_label_size", "Pairwise Labels", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                                                            column(3, numericInput("spca_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
+                                                                                            column(3, numericInput("spca_border_size", "Border Thickness", value = 1, min = 0, max = 5, step = 0.1, width = "100%")),
+                                                                                            column(3, checkboxInput("spcaGridLegend", "Show Legend", value = TRUE))
+                                                                                          ),
+                                                                                          tags$details(
+                                                                                            tags$summary(icon("palette"), " Color Customization"),
+                                                                                            checkboxInput("spca_custom_colors", "Use Custom Colors", value = FALSE),
+                                                                                            conditionalPanel(
+                                                                                              condition = "input.spca_custom_colors",
+                                                                                              div(id = "spca_color_controls",
+                                                                                                  uiOutput("spca_color_picker_ui")
+                                                                                              )
+                                                                                            )
+                                                                                          )
+                                                                                        )
                                                                                      ),
-                                                                                     # All groups plot controls
-                                                                                     conditionalPanel(
-                                                                                       condition = "input.spcaType == 'all'",
-                                                                                       fluidRow(
-                                                                                         column(6, numericInput("spcaAllHeight", "Plot Height (px)", value = 500, min = 400, max = 1000, width = "140px")),
-                                                                                         column(6, numericInput("spcaAllWidth", "Plot Width (px)", value = 500, min = 400, max = 1200, width = "140px"))
-                                                                                       )
-                                                                                     ),
-                                                                                     # Shared appearance controls
-                                                                                     hr(style = "margin: 12px 0;"),
-                                                                                     fluidRow(
-                                                                                       column(3, numericInput("spca_title_size", "Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
-                                                                                       column(3, numericInput("spca_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")),
-                                                                                       column(3, numericInput("spca_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
-                                                                                       column(3, numericInput("spca_legend_text_size", "Legend", value = 12, min = 6, max = 18, step = 1, width = "100%"))
-                                                                                     ),
-                                                                                     fluidRow(
-                                                                                       column(3, numericInput("spca_pairwise_label_size", "Pairwise Labels", value = 2.5, min = 1, max = 10, step = 0.5, width = "100%")),
-                                                                                       column(3, numericInput("spca_sample_label_size", "Sample Labels", value = 3.5, min = 1, max = 10, step = 0.5, width = "100%")),
-                                                                                       column(3, numericInput("spca_border_size", "Border Thickness", value = 1, min = 0, max = 5, step = 0.1, width = "100%")),
-                                                                                       column(3, checkboxInput("spcaGridLegend", "Show Legend", value = TRUE))
-                                                                                     ),
-                                                                                     tags$details(
-                                                                                       tags$summary(icon("palette"), " Color Customization"),
-                                                                                       checkboxInput("spca_custom_colors", "Use Custom Colors", value = FALSE),
-                                                                                       conditionalPanel(
-                                                                                         condition = "input.spca_custom_colors",
-                                                                                         div(id = "spca_color_controls",
-                                                                                             uiOutput("spca_color_picker_ui")
-                                                                                         )
-                                                                                       )
-                                                                                     )
-                                                                                   )
-                                                                               ),
-                                                                               div(style = "display: inline-block; margin-left: 10px;",
-                                                                                   downloadButton("downloadSPCABtn", label = NULL,
-                                                                                                  class = "btn btn-sm btn-primary power-download-icon",
-                                                                                                  icon = icon("download"),
-                                                                                                  title = "Download Current Plot"),
-                                                                                   downloadButton("downloadSPCAGridBtn", label = NULL,
-                                                                                                  class = "btn btn-sm btn-info power-download-icon",
-                                                                                                  icon = icon("th"),
-                                                                                                  title = "Download sPCA Grid")
-                                                                               )
-                                                                           ),
+                                                                                     div(class = "header-right dimred-plot-download-controls",
+                                                                                        downloadButton("downloadSPCABtn", label = NULL,
+                                                                                                       class = "btn btn-sm btn-primary power-download-icon",
+                                                                                                       icon = icon("download"),
+                                                                                                       title = "Download Current Plot"),
+                                                                                        downloadButton("downloadSPCAGridBtn", label = NULL,
+                                                                                                       class = "btn btn-sm btn-info power-download-icon",
+                                                                                                       icon = icon("th"),
+                                                                                                       title = "Download sPCA Grid")
+                                                                                    )
+                                                                                ),
                                                                            # Add some debugging info
                                                                            verbatimTextOutput("spcaDebugInfo"),
                                                                            div(style = "display: flex; align-items: center; gap: 8px; margin-bottom: 6px;",
@@ -6367,12 +6440,12 @@ ui <- tagList(
                              ),
 
                              div(class = "dimred-card",
-                                 div(class = "dimred-card-header",
-                                     h4(icon("project-diagram", class = "dimred-feature-icon"), "UMAP Plot"),
-                                     div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
-                                         shinyWidgets::dropdownButton(
-                                           circle = FALSE,
-                                           status = "default",
+                                  div(class = "dimred-card-header",
+                                      h4(icon("project-diagram", class = "dimred-feature-icon"), "UMAP Plot"),
+                                      div(class = "dimred-plot-settings",
+                                          shinyWidgets::dropdownButton(
+                                            circle = FALSE,
+                                            status = "default",
                                            size = "sm",
                                            icon = icon("cogs"),
                                            tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
@@ -6453,12 +6526,12 @@ ui <- tagList(
                              ),
 
                              div(class = "dimred-card",
-                                 div(class = "dimred-card-header",
-                                     h4(icon("project-diagram", class = "dimred-feature-icon"), "t-SNE Plot"),
-                                     div(style = "display: inline-block; vertical-align: middle; margin-right: 5px;",
-                                         shinyWidgets::dropdownButton(
-                                           circle = FALSE,
-                                           status = "default",
+                                  div(class = "dimred-card-header",
+                                      h4(icon("project-diagram", class = "dimred-feature-icon"), "t-SNE Plot"),
+                                      div(class = "dimred-plot-settings",
+                                          shinyWidgets::dropdownButton(
+                                            circle = FALSE,
+                                            status = "default",
                                            size = "sm",
                                            icon = icon("cogs"),
                                            tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
@@ -8185,7 +8258,7 @@ ui <- tagList(
                                                 )
                                          ),
                                          column(6,
-                                                h5(icon("chart-scatter"), " Predicted vs Actual"),
+                                                h5(icon("chart-line"), " Predicted vs Actual"),
                                                 shinycssloaders::withSpinner(
                                                   plotOutput("predicted_vs_actual_plot", height = "350px"),
                                                   type = 4, color = "#e67e22"
@@ -8397,7 +8470,7 @@ ui <- tagList(
             3,
             div(class = "mlfs-card",
                 div(class = "mlfs-card-header",
-                    h4(icon("heat-map", class = "mlfs-feature-icon"), "Heatmap Settings"),
+                    h4(icon("th", class = "mlfs-feature-icon"), "Heatmap Settings"),
                     shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
                                     "Configure heatmap generation parameters and visualization options")
                 ),
@@ -8467,72 +8540,13 @@ ui <- tagList(
                 )
             ),
             
-            div(class = "mlfs-card",
-                div(class = "mlfs-card-header",
-                    h4(icon("cogs", class = "mlfs-feature-icon"), "Visualization Options"),
-                    shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                    "Customize heatmap appearance and clustering")
-                ),
-                checkboxInput("cluster_rows", "Cluster Rows", value = TRUE),
-                checkboxInput("cluster_cols", "Cluster Columns", value = FALSE),
-                checkboxInput("show_row_names", "Show Row Names", value = TRUE),
-                
-                conditionalPanel(
-                  condition = "input.show_row_names == true",
-                  radioButtons("heatmap_label_type", "Row Label Type:",
-                               choices = c("Feature Names" = "features",
-                                           "IDs" = "ids"),
-                               selected = "features")
-                ),
-                
-                h5("Color Scheme", class = "mlfs-section-title"),
-                fluidRow(
-                  column(4, colourInput("lowColor", "Low Value Color", value = "green", showColour = "both")),
-                  column(4, colourInput("midColor", "Mid Value Color", value = "black", showColour = "both")),
-                  column(4, colourInput("highColor", "High Value Color", value = "red", showColour = "both"))
-                ),
-                fluidRow(
-                  column(6, colourInput("naColor", "Missing Value Color", value = "gray", showColour = "both")),
-                  column(6,
-                         div(style = "margin-top: 25px;",
-                             shinyBS::tipify(
-                               icon("info-circle", style = "color: #3498db; font-size: 16px;"),
-                               "Color used for cells with missing or NA values in the heatmap"
-                             )
-                         )
-                  )
-                ),
-                
-                selectInput("heatmap_cell_size", "Cell Size:",
-                            choices = c("Small", "Compact", "Medium", "Large"),
-                            selected = "Medium",
-                            width = "100%"),
-                
-                h5("Font Sizes", class = "mlfs-section-title", style = "margin-top: 10px;"),
-                fluidRow(
-                  column(6,
-                         numericInput("heatmap_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")
-                  ),
-                  column(6,
-                         numericInput("heatmap_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%")
-                  )
-                ),
-                fluidRow(
-                  column(6,
-                         numericInput("heatmap_row_label_size", "Row Labels (Features)", value = 10, min = 6, max = 18, step = 1, width = "100%")
-                  ),
-                  column(6,
-                         numericInput("heatmap_col_label_size", "Column/Group Labels", value = 10, min = 6, max = 18, step = 1, width = "100%")
-                  )
-                ),
-                
-                br()
-            )
+            
           ),
           
           column(9,
-                 # Dual grouping level toggle for heatmap analysis
-                 uiOutput("heatmap_grouping_toggle_ui"),
+                 div(style = "margin-bottom: 15px;",
+                     uiOutput("heatmap_grouping_toggle_ui")
+                 ),
                  tabsetPanel(
                    id = "heatmapTabs",
                    tabPanel("Interactive Heatmap",
@@ -8542,11 +8556,85 @@ ui <- tagList(
                                 )
                             )
                    ),
-                   tabPanel("Static Heatmap",
-                            div(class = "mlfs-card",
-                                div(style = "display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-bottom: 1px solid #e9ecef;",
-                                    h4(style = "margin: 0;", "Static Heatmap"),
-                                    div(
+                    tabPanel("Static Heatmap",
+                             div(class = "mlfs-card",
+                                div(class = "dimred-card-header dimred-card-header-gear-center",
+                                    div(class = "header-left",
+                                        h4(style = "margin: 0;", "Static Heatmap")
+                                    ),
+                                    div(class = "header-center dimred-plot-settings",
+                                        shinyWidgets::dropdownButton(
+                                          circle = FALSE,
+                                          status = "default",
+                                          size = "sm",
+                                          icon = icon("cogs"),
+                                          tooltip = shinyWidgets::tooltipOptions(title = "Visualization Options"),
+                                          right = TRUE,
+                                          inline = TRUE,
+                                          width = "700px",
+                                          h5("Rows and Columns", class = "mlfs-section-title"),
+                                          div(class = "heatmap-row-column-options",
+                                              fluidRow(
+                                                column(4, checkboxInput("cluster_rows", "Cluster Rows", value = TRUE)),
+                                                column(4, checkboxInput("cluster_cols", "Cluster Columns", value = FALSE)),
+                                                column(4, checkboxInput("show_row_names", "Show Row Names", value = TRUE))
+                                              )
+                                          ),
+                                          conditionalPanel(
+                                            condition = "input.show_row_names == true",
+                                            div(class = "heatmap-label-options",
+                                                tags$label("Row Label Type", style = "font-weight: 600; margin-bottom: 6px; display: block;"),
+                                                radioButtons("heatmap_label_type", NULL,
+                                                             choices = c("Feature Names" = "features",
+                                                                         "IDs" = "ids"),
+                                                             selected = "features",
+                                                             inline = TRUE)
+                                            )
+                                          ),
+                                          
+                                          h5("Color Scheme", class = "mlfs-section-title"),
+                                          fluidRow(
+                                            column(4, colourInput("lowColor", "Low Value Color", value = "green", showColour = "both")),
+                                            column(4, colourInput("midColor", "Mid Value Color", value = "black", showColour = "both")),
+                                            column(4, colourInput("highColor", "High Value Color", value = "red", showColour = "both"))
+                                          ),
+                                          fluidRow(
+                                            column(6, colourInput("naColor", "Missing Value Color", value = "gray", showColour = "both")),
+                                            column(6,
+                                                   div(style = "margin-top: 25px;",
+                                                       shinyBS::tipify(
+                                                         icon("info-circle", style = "color: #3498db; font-size: 16px;"),
+                                                         "Color used for cells with missing or NA values in the heatmap"
+                                                       )
+                                                   )
+                                            )
+                                          ),
+                                          
+                                          selectInput("heatmap_cell_size", "Cell Size:",
+                                                      choices = c("Small", "Compact", "Medium", "Large"),
+                                                      selected = "Medium",
+                                                      width = "100%"),
+                                          
+                                          h5("Font Sizes", class = "mlfs-section-title", style = "margin-top: 10px;"),
+                                          fluidRow(
+                                            column(6,
+                                                   numericInput("heatmap_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")
+                                            ),
+                                            column(6,
+                                                   numericInput("heatmap_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%")
+                                            )
+                                          ),
+                                          fluidRow(
+                                            column(6,
+                                                   numericInput("heatmap_row_label_size", "Row Labels (Features)", value = 10, min = 6, max = 18, step = 1, width = "100%")
+                                            ),
+                                            column(6,
+                                                   numericInput("heatmap_col_label_size", "Column/Group Labels", value = 10, min = 6, max = 18, step = 1, width = "100%")
+                                            )
+                                          )
+                                        )
+                                    ),
+                                    div(class = "header-right",
                                       downloadButton("downloadHeatmapBtn", NULL,
                                                      icon = icon("download"),
                                                      class = "btn-outline-primary btn-sm",
@@ -8673,7 +8761,7 @@ ui <- tagList(
                        div(class = "mlfs-card-header",
                            h4(icon("cogs", class = "mlfs-feature-icon"), "Visualization Options"),
                            shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                           "Customize plot appearance and behavior")
+                                            "Configure plot behavior, statistics, and y-axis scaling")
                        ),
                        checkboxInput("showPoints", "Show Individual Points", value = TRUE),
                        checkboxInput("showErrorBars", "Show Error Bars", value = TRUE),
@@ -8691,61 +8779,7 @@ ui <- tagList(
                        conditionalPanel(
                          condition = "input.dist_y_scale !== 'linear'",
                          sliderInput("dist_annotation_spacing", "Annotation spacing factor", value = 1.10, min = 1.01, max = 3.00, step = 0.01, width = "100%")
-                       ),
-                       
-                       h5("Appearance", class = "mlfs-section-title"),
-                       checkboxInput("dist_remove_top_right_border", "Remove top/right plot borders", value = FALSE),
-                       numericInput("dist_border_thickness", "Border Thickness", value = 0.6, min = 0.1, max = 5, step = 0.1, width = "100%"),
-                       selectInput("palette", "Color Palette",
-                                   choices = c("Default" = "dimred_default",
-                                               "Set 1" = "default",
-                                               "Metro" = "Metro",
-                                               "Sunset" = "Sunset",
-                                               "Ocean" = "Ocean",
-                                               "Forest" = "Forest",
-                                               "Berry" = "Berry",
-                                               "Citrus" = "Citrus",
-                                               "Stone" = "Stone",
-                                               "Candy" = "Candy",
-                                               "Skyline" = "Skyline"),
-                                   selected = "dimred_default",
-                                   width = "100%"),
-                       
-                       fluidRow(
-                         column(6,
-                                numericInput("plotHeight", "Plot Height (px)",
-                                             value = 500, min = 300, max = 2000, step = 10, width = "100%")
-                         ),
-                         column(6,
-                                numericInput("plotWidth", "Plot Width (px)",
-                                             value = 500, min = 400, max = 2000, step = 10, width = "100%")
-                         )
-                       ),
-                       
-                       h5("Font Sizes", class = "mlfs-section-title"),
-                       fluidRow(
-                         column(6,
-                                numericInput("dist_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")
-                         ),
-                         column(6,
-                                numericInput("dist_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")
-                         )
-                       ),
-                       fluidRow(
-                            column(6,
-                              numericInput("dist_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%"),
-                            ),
-                         column(6,
-                                numericInput("dist_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%")
-                         )
-                       ),
-                       fluidRow(
-                         column(6,
-                                numericInput("dist_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5, width = "100%")
-                         )
-                       ),
-                       
-
+                       )
                    )
                  ),
                  
@@ -8756,21 +8790,95 @@ ui <- tagList(
                    tabsetPanel(id = "distResultTabs",
                                tabPanel("Plot",
                                         div(class = "mlfs-card",
-                                            div(style = "display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-bottom: 1px solid #e9ecef;",
-                                                h4(style = "margin: 0;", "Distribution Plot"),
-                                                div(
-                                                  downloadButton("downloadDistPlot", NULL,
-                                                                 icon = icon("download"),
-                                                                 class = "btn-outline-primary btn-sm",
-                                                                 title = "Download current plot",
-                                                                 style = "margin-right: 8px;"),
-                                                  shinyBS::tipify(
-                                                    downloadButton("generateAllDistPlots", NULL,
-                                                                   icon = icon("file-archive"),
-                                                                   class = "btn-outline-warning btn-sm",
-                                                                   title = "Download all plots"),
-                                                    title = "Generate and download distribution plots for all features as a ZIP file"
-                                                  )
+                                            div(class = "dimred-card-header dimred-card-header-gear-center",
+                                                div(class = "header-left",
+                                                    h4(style = "margin: 0;", "Distribution Plot")
+                                                ),
+                                                div(class = "header-center dimred-plot-settings",
+                                                    shinyWidgets::dropdownButton(
+                                                      circle = FALSE,
+                                                      status = "default",
+                                                      size = "sm",
+                                                      icon = icon("cogs"),
+                                                      tooltip = shinyWidgets::tooltipOptions(title = "Plot Controls"),
+                                                      right = TRUE,
+                                                      inline = TRUE,
+                                                      width = "700px",
+                                                      h5("Appearance", class = "mlfs-section-title"),
+                                                      checkboxInput("dist_remove_top_right_border", "Remove top/right plot borders", value = FALSE),
+                                                      fluidRow(
+                                                        column(6,
+                                                               numericInput("dist_border_thickness", "Border Thickness",
+                                                                            value = 0.6, min = 0.1, max = 5, step = 0.1, width = "100%")
+                                                        ),
+                                                        column(6,
+                                                               selectInput("palette", "Color Palette",
+                                                                           choices = c("Default" = "dimred_default",
+                                                                                       "Set 1" = "default",
+                                                                                       "Metro" = "Metro",
+                                                                                       "Sunset" = "Sunset",
+                                                                                       "Ocean" = "Ocean",
+                                                                                       "Forest" = "Forest",
+                                                                                       "Berry" = "Berry",
+                                                                                       "Citrus" = "Citrus",
+                                                                                       "Stone" = "Stone",
+                                                                                       "Candy" = "Candy",
+                                                                                       "Skyline" = "Skyline"),
+                                                                           selected = "dimred_default",
+                                                                           width = "100%")
+                                                        )
+                                                      ),
+                                                      fluidRow(
+                                                        column(6,
+                                                               numericInput("plotHeight", "Plot Height (px)",
+                                                                            value = 500, min = 300, max = 2000, step = 10, width = "100%")
+                                                        ),
+                                                        column(6,
+                                                               numericInput("plotWidth", "Plot Width (px)",
+                                                                            value = 500, min = 400, max = 2000, step = 10, width = "100%")
+                                                        )
+                                                      ),
+                                                      h5("Font Sizes", class = "mlfs-section-title"),
+                                                      fluidRow(
+                                                        column(6,
+                                                               numericInput("dist_title_size", "Plot Title",
+                                                                            value = 14, min = 8, max = 24, step = 1, width = "100%")
+                                                        ),
+                                                        column(6,
+                                                               numericInput("dist_axis_title_size", "Axis Titles",
+                                                                            value = 12, min = 8, max = 20, step = 1, width = "100%")
+                                                        )
+                                                      ),
+                                                      fluidRow(
+                                                        column(6,
+                                                               numericInput("dist_axis_text_size", "Axis Text",
+                                                                            value = 10, min = 6, max = 18, step = 1, width = "100%")
+                                                        ),
+                                                        column(6,
+                                                               numericInput("dist_legend_text_size", "Legend Text",
+                                                                            value = 12, min = 6, max = 18, step = 1, width = "100%")
+                                                        )
+                                                      ),
+                                                      fluidRow(
+                                                        column(6,
+                                                               numericInput("dist_jitter_size", "Jitter Size",
+                                                                            value = 2, min = 0.5, max = 10, step = 0.5, width = "100%")
+                                                        )
+                                                      )
+                                                    )
+                                                ),
+                                                div(class = "header-right dimred-plot-download-controls",
+                                                    downloadButton("downloadDistPlot", NULL,
+                                                                   icon = icon("download"),
+                                                                   class = "btn-outline-primary btn-sm",
+                                                                   title = "Download current plot"),
+                                                    shinyBS::tipify(
+                                                      downloadButton("generateAllDistPlots", NULL,
+                                                                     icon = icon("file-archive"),
+                                                                     class = "btn-outline-warning btn-sm",
+                                                                     title = "Download all plots"),
+                                                      title = "Generate and download distribution plots for all features as a ZIP file"
+                                                    )
                                                 )
                                             ),
                                             shinycssloaders::withSpinner(
@@ -9094,155 +9202,89 @@ ui <- tagList(
                              )
                          )
                      )
-                 ),
-                 
-                 div(class = "mlfs-card",
-                     div(class = "mlfs-card-header",
-                         h4(icon("palette", class = "mlfs-feature-icon"), "Visualization Options"),
-                         shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                         "Customize plot appearance and colors")
-                     ),
-                     # Color selection
-                     h5("Color Scheme", class = "mlfs-section-title"),
-                     fluidRow(
-                       column(4, colourInput("diff_upreg_color", "Upregulated", value = "#FF4C4C", showColour = "both")),
-                       column(4, colourInput("diff_downreg_color", "Downregulated", value = "#4C4CFF", showColour = "both")),
-                       column(4, colourInput("diff_nonsig_color", "Non-significant", value = "#CCCCCC", showColour = "both"))
-                     ),
-                     fluidRow(
-                       column(4, colourInput("diff_sig_no_fc_color", "Sig. (No FC)", value = "#FFFF00", showColour = "both")),
-                       column(4, colourInput("diff_fc_line_color", "FC Cutoff Line", value = "#808080", showColour = "both")),
-                       column(4, colourInput("diff_pval_line_color", "P-value Cutoff Line", value = "#808080", showColour = "both"))
-                     ),
-                     
-                     # Feature name display options
-                     h5("Feature Labels", class = "mlfs-section-title"),
-                     radioButtons("diff_label_type", "Label Type:",
-                                  choices = c("No Labels" = "none",
-                                              "Feature Names" = "features",
-                                              "IDs" = "ids"),
-                                  selected = "none"),
-                     conditionalPanel(
-                       condition = "input.diff_label_type != 'none'",
-                       numericInput("diff_max_labels", "Max Features to Label", value = 10, min = 1, max = 100, step = 1),
-                       selectInput("diff_label_features", "Features to Label",
-                                   choices = c("All Significant Only" = "significant",
-                                               "Top N by Significance" = "top",
-                                               "All Features" = "all"),
-                                   selected = "significant")
-                     ),
-                     
-                     # Font size options
-                     h5("Font Sizes", class = "mlfs-section-title"),
-                     fluidRow(
-                       column(6,
-                              numericInput("diff_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1)
-                       ),
-                       column(6,
-                              numericInput("diff_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1)
-                       )
-                     ),
-                     fluidRow(
-                       column(6,
-                              numericInput("diff_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1)
-                       ),
-                       column(6,
-                              numericInput("diff_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1)
-                       )
-                     ),
-                     fluidRow(
-                       column(6,
-                              numericInput("diff_count_label_size", "Count Label Size", value = 5, min = 3, max = 12, step = 0.5)
-                       ),
-                       column(6,
-                              numericInput("diff_jitter_size", "Jitter Size", value = 2, min = 0.5, max = 10, step = 0.5)
-                       )
-                     ),
-                     
-                     # Plot dimensions
-                     h5("Plot Dimensions", class = "mlfs-section-title"),
-                     fluidRow(
-                       column(6,
-                              numericInput("diff_width", "Width (inches)", value = 8, min = 4, max = 20)
-                       ),
-                       column(6,
-                              numericInput("diff_height", "Height (inches)", value = 6, min = 4, max = 20)
-                       )
-                     )
-                 ),
-                 
-                 div(class = "mlfs-card",
-                     div(class = "mlfs-card-header",
-                         h4(icon("download", class = "mlfs-feature-icon"), "Download Options"),
-                         shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                         "Export plots and analysis results")
-                     ),
-                     div(
-                       style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;",
-                       downloadButton("downloadDiffMAGridBtn", "Download MA Grid", class = "btn-info mlfs-btn", style = "width: 48%;"),
-                       downloadButton("downloadDiffVolcanoGridBtn", "Download Volcano Grid", class = "btn-warning mlfs-btn", style = "width: 48%;")
-                     ),
-                     div(
-                       style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;",
-                       downloadButton("downloadDiffMABtn", "Download MA Plot", class = "btn-primary mlfs-btn", style = "width: 48%;"),
-                       downloadButton("downloadDiffVolcanoBtn", "Download Volcano Plot", class = "btn-success mlfs-btn", style = "width: 48%;")
-                     ),
-                     downloadButton("downloadDiffDataBtn", "Download Analysis Results",
-                                    class = "btn-info mlfs-btn", width = "100%")
-                 )
-          ),        column(9,
+                  )
+           ),
+          column(9,
                            # Dual grouping level toggle for differential analysis
                            uiOutput("diff_grouping_toggle_ui"),
                            tabsetPanel(id = "diffAnalysisTabs",
                                        tabPanel("MA Plot",
                                                 div(class = "mlfs-card",
-                                                    div(class = "mlfs-card-header",
-                                                        h4(icon("chart-area", class = "mlfs-feature-icon"), "MA Plot Grid Controls"),
-                                                        shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                                                        "Adjust grid layout and appearance for MA plots")
+                                                    div(class = "dimred-card-header dimred-card-header-gear-center",
+                                                        div(class = "header-left",
+                                                            h4(icon("chart-area", class = "mlfs-feature-icon"), "MA Plot")
+                                                        ),
+                                                        div(class = "header-center dimred-plot-settings",
+                                                            shinyWidgets::dropdownButton(
+                                                              circle = FALSE,
+                                                              status = "default",
+                                                              size = "sm",
+                                                              icon = icon("cogs"),
+                                                              tooltip = shinyWidgets::tooltipOptions(title = "MA Plot Controls"),
+                                                              right = TRUE,
+                                                              inline = TRUE,
+                                                              width = "760px",
+                                                              h5("Grid Layout", class = "mlfs-section-title"),
+                                                              fluidRow(
+                                                                column(3, numericInput("diffGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "100%")),
+                                                                column(3, numericInput("diffGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "100%")),
+                                                                column(3, numericInput("diffGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "100%")),
+                                                                column(3, checkboxInput("diffGridLegend", "Show Legend", value = FALSE, width = "100%"))
+                                                              ),
+                                                              uiOutput("diff_ma_plot_appearance_controls_ui")
+                                                            )
+                                                        ),
+                                                        div(class = "header-right dimred-plot-download-controls",
+                                                            downloadButton("downloadDiffMABtn", label = NULL,
+                                                                           class = "btn btn-sm btn-primary power-download-icon",
+                                                                           icon = icon("download"),
+                                                                           title = "Download MA plot"),
+                                                            downloadButton("downloadDiffMAGridBtn", label = NULL,
+                                                                           class = "btn btn-sm btn-info power-download-icon",
+                                                                           icon = icon("th"),
+                                                                           title = "Download MA grid")
+                                                        )
                                                     ),
-                                                    fluidRow(
-                                                      column(3,
-                                                             numericInput("diffGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")
-                                                      ),
-                                                      column(3,
-                                                             numericInput("diffGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")
-                                                      ),
-                                                      column(3,
-                                                             numericInput("diffGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px")
-                                                      ),
-                                                      column(3,
-                                                             checkboxInput("diffGridLegend", "Show Legend", value = FALSE, width = "120px")
-                                                      )
-                                                    )
-                                                ),
-                                                div(class = "mlfs-card",
                                                     shinycssloaders::withSpinner(plotOutput("diffMAPlotGrid", height = "auto"))
                                                 )
                                        ),
                                        tabPanel("Volcano Plot",
                                                 div(class = "mlfs-card",
-                                                    div(class = "mlfs-card-header",
-                                                        h4(icon("volcano", class = "mlfs-feature-icon"), "Volcano Plot Grid Controls"),
-                                                        shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                                                        "Adjust grid layout and appearance for volcano plots")
+                                                    div(class = "dimred-card-header dimred-card-header-gear-center",
+                                                        div(class = "header-left",
+                                                            h4(icon("volcano", class = "mlfs-feature-icon"), "Volcano Plot")
+                                                        ),
+                                                        div(class = "header-center dimred-plot-settings",
+                                                            shinyWidgets::dropdownButton(
+                                                              circle = FALSE,
+                                                              status = "default",
+                                                              size = "sm",
+                                                              icon = icon("cogs"),
+                                                              tooltip = shinyWidgets::tooltipOptions(title = "Volcano Plot Controls"),
+                                                              right = TRUE,
+                                                              inline = TRUE,
+                                                              width = "760px",
+                                                              h5("Grid Layout", class = "mlfs-section-title"),
+                                                              fluidRow(
+                                                                column(3, numericInput("diffVolcanoGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "100%")),
+                                                                column(3, numericInput("diffVolcanoGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "100%")),
+                                                                column(3, numericInput("diffVolcanoGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "100%")),
+                                                                column(3, checkboxInput("diffVolcanoGridLegend", "Show Legend", value = FALSE, width = "100%"))
+                                                              ),
+                                                              uiOutput("diff_volcano_plot_appearance_controls_ui")
+                                                            )
+                                                        ),
+                                                        div(class = "header-right dimred-plot-download-controls",
+                                                            downloadButton("downloadDiffVolcanoBtn", label = NULL,
+                                                                           class = "btn btn-sm btn-success power-download-icon",
+                                                                           icon = icon("download"),
+                                                                           title = "Download volcano plot"),
+                                                            downloadButton("downloadDiffVolcanoGridBtn", label = NULL,
+                                                                           class = "btn btn-sm btn-warning power-download-icon",
+                                                                           icon = icon("th"),
+                                                                           title = "Download volcano grid")
+                                                        )
                                                     ),
-                                                    fluidRow(
-                                                      column(3,
-                                                             numericInput("diffVolcanoGridCols", "Grid Columns", value = 2, min = 1, max = 4, width = "120px")
-                                                      ),
-                                                      column(3,
-                                                             numericInput("diffVolcanoGridHeight", "Plot Height (px)", value = 400, min = 200, max = 800, width = "120px")
-                                                      ),
-                                                      column(3,
-                                                             numericInput("diffVolcanoGridWidth", "Plot Width (px)", value = 400, min = 200, max = 800, width = "120px")
-                                                      ),
-                                                      column(3,
-                                                             checkboxInput("diffVolcanoGridLegend", "Show Legend", value = FALSE, width = "120px")
-                                                      )
-                                                    )
-                                                ),
-                                                div(class = "mlfs-card",
                                                     shinycssloaders::withSpinner(plotOutput("diffVolcanoPlotGrid", height = "auto"))
                                                 )
                                        ),
@@ -9250,22 +9292,23 @@ ui <- tagList(
                                                 div(class = "mlfs-card",
                                                     div(class = "mlfs-card-header",
                                                         div(style = "display: flex; align-items: center; justify-content: space-between; width: 100%;",
-                                                            shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                                                            "Detailed results table with statistical values")
+                                                            h4(icon("table", class = "mlfs-feature-icon"), "Results Table"),
+                                                            downloadButton("downloadDiffDataBtn", label = NULL,
+                                                                           class = "btn btn-sm btn-info power-download-icon",
+                                                                           icon = icon("download"),
+                                                                           title = "Download analysis results")
                                                         )
                                                     ),
                                                     DT::dataTableOutput("diffResultsTable")
                                                 )
                                        ),
-                                       tabPanel("Summary",
-                                                div(class = "mlfs-card",
+                                        tabPanel("Summary",
+                                                 div(class = "mlfs-card",
                                                     div(class = "mlfs-card-header",
-                                                        h4(icon("info-circle", class = "mlfs-feature-icon"), "Analysis Summary"),
-                                                        shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                                                        "Overview of differential analysis results")
-                                                    ),
-                                                    verbatimTextOutput("diffSummary")
-                                                )
+                                                         h4("Analysis Summary")
+                                                     ),
+                                                     verbatimTextOutput("diffSummary")
+                                                 )
                                        )
                            )
           )
