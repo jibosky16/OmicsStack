@@ -13,7 +13,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
     CRAN_REPO=https://packagemanager.posit.co/cran/__linux__/jammy/2025-08-31 \
-    GGPLOT2_VERSION=3.5.2
+    GGPLOT2_VERSION=3.5.2 \
+    RETICULATE_PYTHON=/usr/bin/python3
 
 # ============================================================================
 # Stage 1: Install system dependencies
@@ -48,10 +49,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cargo-1.85 \
     rustc-1.85 \
     wget \
+    python3 \
+    python3-pip \
+    python3-dev \
+    python3-venv \
     && ln -sf /usr/bin/cargo-1.85 /usr/local/bin/cargo \
     && ln -sf /usr/bin/rustc-1.85 /usr/local/bin/rustc \
     && cargo --version \
     && rustc --version \
+    && python3 -m pip install --no-cache-dir mofapy2==0.7.2 \
+    && python3 -c "import mofapy2; print('mofapy2 import ok')" \
     && rm -rf /var/lib/apt/lists/*
 
 # ============================================================================
@@ -88,6 +95,16 @@ RUN --mount=type=cache,target=/root/.cache/R \
     options(repos = repos); \
     install.packages(cran_pkgs, Ncpus=1); \
     if (length(missing <- setdiff(cran_pkgs, installed.packages()[,'Package'])) > 0) stop(paste('Failed to install CRAN packages:', paste(missing, collapse=', '))); \
+    "
+
+# Verify reticulate sees the same Python/mofapy2 installation the Shiny app will use.
+RUN R -q -e "\
+    Sys.setenv(RETICULATE_PYTHON='/usr/bin/python3'); \
+    reticulate::use_python('/usr/bin/python3', required=TRUE); \
+    cfg <- reticulate::py_config(); \
+    print(cfg); \
+    reticulate::import('mofapy2'); \
+    cat('reticulate mofapy2 import ok\n'); \
     "
 
 # Install Bioconductor packages in single layer

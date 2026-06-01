@@ -7,6 +7,98 @@
 options(encoding = "UTF-8")
 options(askYesNo = function(...) TRUE)
 
+# In Docker, MOFA2 should use the system Python where mofapy2 is installed at
+# build time. Set a default early, before reticulate has a chance to initialize.
+if (!nzchar(Sys.getenv("RETICULATE_PYTHON", unset = "")) && file.exists("/usr/bin/python3")) {
+  Sys.setenv(RETICULATE_PYTHON = "/usr/bin/python3")
+}
+
+configure_mofa_python <- function(required_module = "mofapy2") {
+  if (!requireNamespace("reticulate", quietly = TRUE)) {
+    return(list(
+      available = FALSE,
+      python = Sys.getenv("RETICULATE_PYTHON", unset = NA_character_),
+      message = "reticulate package not found. Cannot configure Python."
+    ))
+  }
+
+  requested_python <- Sys.getenv("RETICULATE_PYTHON", unset = "")
+  if (!nzchar(requested_python)) {
+    python_candidates <- c("/usr/bin/python3", "/usr/local/bin/python3")
+    requested_python <- python_candidates[file.exists(python_candidates)][1]
+    if (!is.na(requested_python) && nzchar(requested_python)) {
+      Sys.setenv(RETICULATE_PYTHON = requested_python)
+    }
+  }
+
+  use_python_error <- NULL
+  if (!is.na(requested_python) && nzchar(requested_python) && file.exists(requested_python)) {
+    tryCatch(
+      reticulate::use_python(requested_python, required = FALSE),
+      error = function(e) {
+        use_python_error <<- e$message
+      }
+    )
+  }
+
+  cfg <- tryCatch(reticulate::py_config(), error = function(e) e)
+  configured_python <- if (!inherits(cfg, "error") && !is.null(cfg$python)) {
+    cfg$python
+  } else {
+    requested_python
+  }
+
+  module_available <- tryCatch({
+    reticulate::py_module_available(required_module) ||
+      !inherits(reticulate::import(required_module, delay_load = FALSE), "try-error")
+  }, error = function(e) {
+    FALSE
+  })
+
+  direct_import_available <- FALSE
+  direct_import_msg <- NULL
+  if (!module_available && !is.na(configured_python) && nzchar(configured_python) && file.exists(configured_python)) {
+    direct_import <- tryCatch(
+      suppressWarnings(system2(configured_python, c("-c", paste0("import ", required_module)), stdout = TRUE, stderr = TRUE)),
+      error = function(e) {
+        structure(conditionMessage(e), status = 1L)
+      }
+    )
+    direct_import_status <- attr(direct_import, "status")
+    direct_import_available <- is.null(direct_import_status) || identical(direct_import_status, 0L)
+    if (!direct_import_available) {
+      direct_import_msg <- paste(direct_import, collapse = "\n")
+    }
+  }
+
+  available <- isTRUE(module_available)
+  detail <- if (available) {
+    paste0(required_module, " is available in Python: ", configured_python)
+  } else {
+    paste0(required_module, " is not available in Python: ", configured_python)
+  }
+  if (!available && isTRUE(direct_import_available)) {
+    detail <- paste0(
+      detail,
+      "\nDirect Python import works, but reticulate did not see the module. ",
+      "This usually means reticulate was initialized with a different Python session."
+    )
+  }
+  if (!is.null(use_python_error)) {
+    detail <- paste0(detail, "\n", "reticulate::use_python warning: ", use_python_error)
+  }
+  if (!is.null(direct_import_msg) && nzchar(direct_import_msg)) {
+    detail <- paste0(detail, "\nDirect Python import output: ", direct_import_msg)
+  }
+
+  list(
+    available = available,
+    python = configured_python,
+    config = cfg,
+    message = detail
+  )
+}
+
 # Set locale safely (works on both Windows and Linux)
 tryCatch({
   Sys.setlocale("LC_ALL", "en_US.UTF-8")

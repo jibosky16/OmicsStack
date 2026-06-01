@@ -75141,53 +75141,46 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           
           incProgress(0.6, detail = "Training MOFA model...")
           
-          # Before training, ensure mofapy2 is available in Python
+          # Before training, ensure mofapy2 is available in the configured Python.
           incProgress(0.65, detail = "Checking Python dependencies...")
           python_check_msg <- NULL
-          mofapy2_installed <- FALSE
           
-          tryCatch({
-            # Check if reticulate and required packages are available
-            if (!requireNamespace("reticulate", quietly = TRUE)) {
-              python_check_msg <- "reticulate package not found. Cannot configure Python."
+          python_status <- tryCatch({
+            if (exists("configure_mofa_python", mode = "function")) {
+              configure_mofa_python("mofapy2")
             } else {
-              # Try to detect and configure Python
-              tryCatch({
-                reticulate::py_config()  # Get current Python config
-              }, error = function(e) {
-                cat("Python config check: ", e$message, "\n")
-              })
-              
-              # Check if mofapy2 is available - only install if NOT found
-              mofapy2_available <- tryCatch({
-                reticulate::py_module_available("mofapy2")
-              }, error = function(e) {
-                FALSE  # If check fails, assume not available
-              })
-              
-              if (mofapy2_available) {
-                cat("mofapy2 is available in Python, skipping installation.\n")
-                mofapy2_installed <<- TRUE
-              } else {
-                # mofapy2 not found, attempt installation
-                cat("mofapy2 not detected, attempting installation...\n")
-                incProgress(0.67, detail = "Installing Python package mofapy2...")
-                
-                # Try to install mofapy2 using pip
-                tryCatch({
-                  cat("Attempting to install mofapy2==0.7.2 via pip...\n")
-                  reticulate::py_install("mofapy2==0.7.2", pip = TRUE, ignore_installed = FALSE)
-                  cat("mofapy2 installed successfully\n")
-                  mofapy2_installed <<- TRUE
-                }, error = function(e2) {
-                  python_check_msg <<- paste0("Could not install mofapy2: ", e2$message)
-                  cat(python_check_msg, "\n")
-                })
-              }
+              list(
+                available = requireNamespace("reticulate", quietly = TRUE) &&
+                  reticulate::py_module_available("mofapy2"),
+                python = Sys.getenv("RETICULATE_PYTHON", unset = NA_character_),
+                message = "Used fallback Python dependency check."
+              )
             }
           }, error = function(e) {
-            cat("Python dependency check error: ", e$message, "\n")
+            list(
+              available = FALSE,
+              python = Sys.getenv("RETICULATE_PYTHON", unset = NA_character_),
+              message = paste("Python dependency check error:", e$message)
+            )
           })
+
+          if (isTRUE(python_status$available)) {
+            cat("mofapy2 is available; skipping runtime installation.\n")
+            cat(python_status$message, "\n")
+          } else {
+            python_check_msg <- python_status$message
+            cat(python_check_msg, "\n")
+            showNotification(
+              HTML(paste0(
+                "Python package <code>mofapy2</code> was not visible to reticulate.<br/>",
+                "The Docker image should install it at build time; skipping runtime installation.<br/>",
+                "<small>", htmltools::htmlEscape(python_check_msg), "</small>"
+              )),
+              type = "warning",
+              duration = 8,
+              closeButton = TRUE
+            )
+          }
           
           # Prepare output filename for MOFA model
           output_file <- NULL
@@ -75203,33 +75196,41 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           # Capture warnings during run_mofa
           training_warnings <- character(0)
           training_error_msg <- NULL
-          basilisk_failed <- FALSE
+          training_backend <- NULL
+          prefer_system_python <- isTRUE(python_status$available)
+          
+          run_mofa_with_backend <- function(use_basilisk) {
+            backend_name <- if (isTRUE(use_basilisk)) "basilisk" else "system Python"
+            cat("Attempting MOFA training with ", backend_name, "...\n", sep = "")
+            model <- if (!is.null(output_file)) {
+              MOFA2::run_mofa(mofa_object, outfile = output_file, use_basilisk = use_basilisk)
+            } else {
+              MOFA2::run_mofa(mofa_object, use_basilisk = use_basilisk)
+            }
+            training_backend <<- backend_name
+            model
+          }
           
           mofa_model <- withCallingHandlers(
             tryCatch({
-              # First, try with basilisk (isolated Python environment)
-              cat("Attempting MOFA training with basilisk...\n")
-              if (!is.null(output_file)) {
-                MOFA2::run_mofa(mofa_object, outfile = output_file, use_basilisk = TRUE)
+              # Prefer the Docker-provisioned system Python when mofapy2 is visible there.
+              if (prefer_system_python) {
+                run_mofa_with_backend(FALSE)
               } else {
-                MOFA2::run_mofa(mofa_object, use_basilisk = TRUE)
+                run_mofa_with_backend(TRUE)
               }
             }, error = function(e) {
-              # If basilisk fails, try without it (use system Python)
-              cat("Basilisk failed, attempting MOFA training without basilisk...\n")
+              fallback_uses_basilisk <- prefer_system_python
+              fallback_backend <- if (isTRUE(fallback_uses_basilisk)) "basilisk" else "system Python"
+              cat("Primary MOFA backend failed, attempting fallback with ", fallback_backend, "...\n", sep = "")
               training_error_msg <<- e$message
-              basilisk_failed <<- TRUE
               
               tryCatch({
-                if (!is.null(output_file)) {
-                  MOFA2::run_mofa(mofa_object, outfile = output_file, use_basilisk = FALSE)
-                } else {
-                  MOFA2::run_mofa(mofa_object, use_basilisk = FALSE)
-                }
+                run_mofa_with_backend(fallback_uses_basilisk)
               }, error = function(e2) {
                 training_error_msg <<- paste0(
-                  "Failed with basilisk: ", e$message, "\n",
-                  "Failed without basilisk: ", e2$message
+                  "Failed with primary backend: ", e$message, "\n",
+                  "Failed with fallback backend: ", e2$message
                 )
                 message("MOFA training error: ", training_error_msg)
                 return(NULL)
@@ -75251,16 +75252,16 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                              closeButton = TRUE)
           }
           
-          # If basilisk was used successfully, show info message
-          if (!is.null(mofa_model) && !basilisk_failed) {
+          # Report the backend that actually trained the model.
+          if (!is.null(mofa_model) && identical(training_backend, "basilisk")) {
             showNotification(
               "MOFA model trained successfully using isolated Python environment (basilisk).",
               type = "message",
               duration = 5
             )
-          } else if (!is.null(mofa_model) && basilisk_failed) {
+          } else if (!is.null(mofa_model) && identical(training_backend, "system Python")) {
             showNotification(
-              HTML("MOFA model trained successfully using system Python.<br/>Note: Basilisk environment setup failed, but system Python is working fine."),
+              HTML("MOFA model trained successfully using the Docker-provisioned system Python."),
               type = "message",
               duration = 6
             )
@@ -75273,8 +75274,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                 error_detail <- paste0(
                   "Python dependency 'mofapy2' is not available.<br/><br/>",
                   "<strong>To fix this:</strong><br/>",
-                  "1. In R console, run: <code>reticulate::py_install('mofapy2==0.7.2')</code><br/>",
-                  "2. Or install via command line: <code>pip install mofapy2==0.7.2</code><br/>",
+                  "1. Rebuild the Docker image so the build-time <code>mofapy2</code> install and reticulate check run.<br/>",
+                  "2. Confirm the container has <code>RETICULATE_PYTHON=/usr/bin/python3</code>.<br/>",
                   "3. Then try MOFA training again.<br/><br/>",
                   "<strong>Error details:</strong><br/>", training_error_msg
                 )
@@ -84788,14 +84789,35 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         
         incProgress(0.7, detail = "Training MOFA model (this may take ~2 minutes)...")
         
+        tutorial_python_status <- tryCatch({
+          if (exists("configure_mofa_python", mode = "function")) {
+            configure_mofa_python("mofapy2")
+          } else {
+            list(available = FALSE, message = "MOFA Python helper not available.")
+          }
+        }, error = function(e) {
+          list(available = FALSE, message = paste("Python dependency check error:", e$message))
+        })
+        tutorial_prefer_system_python <- isTRUE(tutorial_python_status$available)
+        
+        run_tutorial_mofa <- function(use_basilisk) {
+          backend_name <- if (isTRUE(use_basilisk)) "basilisk" else "system Python"
+          message("Training tutorial MOFA model with ", backend_name, "...")
+          MOFA2::run_mofa(mofa_object, use_basilisk = use_basilisk)
+        }
+        
         # Train the MOFA model
         trained_model <- tryCatch({
-          # Try with basilisk first
-          MOFA2::run_mofa(mofa_object, use_basilisk = TRUE)
+          if (tutorial_prefer_system_python) {
+            run_tutorial_mofa(FALSE)
+          } else {
+            run_tutorial_mofa(TRUE)
+          }
         }, error = function(e) {
-          message("Basilisk failed, trying without basilisk...")
+          fallback_uses_basilisk <- tutorial_prefer_system_python
+          message("Primary tutorial MOFA backend failed, trying fallback...")
           tryCatch({
-            MOFA2::run_mofa(mofa_object, use_basilisk = FALSE)
+            run_tutorial_mofa(fallback_uses_basilisk)
           }, error = function(e2) {
             # If training fails, try to load pre-computed model
             message("Training failed, attempting to load pre-computed model...")
