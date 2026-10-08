@@ -46,8 +46,8 @@ The Feature Correlation tab analyzes pairwise correlations between significant f
 - **Negative Correlation (r < -0.5)**: Inverse relationship, one increases while other decreases
 
 **STATISTICAL SIGNIFICANCE:**
-- P-values are calculated for each correlation using parametric or permutation tests
-- FDR correction recommended when analyzing many features (>100) to control false discoveries
+- P-values come from cor.test per pair; plot stars use BH-adjusted p-values (FDR) at the tab's P-value Cutoff, since hundreds of pairs are tested at once
+- The pairwise table and downloads report both raw P_Value and BH FDR per pair
 - Significant correlation ≠ causation; biological validation required
 
 **NETWORK ANALYSIS INSIGHTS:**

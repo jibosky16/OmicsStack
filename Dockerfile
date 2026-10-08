@@ -83,7 +83,7 @@ RUN --mount=type=cache,target=/root/.cache/R \
       'PMCMRplus', 'caret', 'e1071', 'ranger', 'gbm', 'xgboost', 'iml', 'MLmetrics', \
       'rstatix', 'car', 'emmeans', 'dunn.test', 'mice', 'foreach', 'doParallel', \
       'pROC', 'PRROC', 'data.table', 'httr', 'httr2', 'htmltools', 'jsonlite', 'later', \
-      'moments', 'png', 'future', 'future.apply', 'promises', 'pwrss', 'cli', 'rlang', \
+      'moments', 'png', 'future', 'future.apply', 'promises', 'pwrss', 'cli', 'rlang', 'lme4', 'lmerTest', \
       'umap', 'Rtsne', 'svglite', 'Cairo', 'ggridges', 'ggbeeswarm', 'cowplot', 'fmsb', 'yulab.utils', \
       'zip', 'PubChemR', 'webchem', 'DBI', 'RSQLite', 'RSpectra', 'corrplot', 'commonmark', \
       'dynamicTreeCut', 'flashClust', 'reticulate', 'viridisLite', 'gprofiler2', 'enrichR' \

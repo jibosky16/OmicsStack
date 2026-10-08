@@ -4648,16 +4648,28 @@ calculate_pathway_enrichment <- function(pathway_df,
     N <- background_size                             # Total metabolites in database
     n <- total_measured                              # Total metabolites we measured
     
+    # Universe coherence: with small targeted panels the analyzed universe
+    # can be smaller than the pathway itself (N - M <= 0), which makes
+    # phyper return NaN for every pathway. Fall back to the full KEGG
+    # universe for that pathway (always larger than any single pathway)
+    # and record the effective universe per row.
+    N_eff <- N
+    if (is.na(N_eff) || N_eff <= 0 || (N_eff - M) < 1) {
+      message(sprintf("[PATHWAY] Universe N=%s incoherent for %s (M=%s); falling back to full KEGG universe.",
+                      paste(N, collapse = ","), pid, paste(M, collapse = ",")))
+      N_eff <- 6610
+    }
+    
     # Enrichment ratio = (k/n) / (M/N) = (k*N) / (n*M)
     # Also known as fold enrichment
-    expected <- (n * M) / N
+    expected <- (n * M) / N_eff
     enrichment_ratio <- if (expected > 0) k / expected else NA
     
     # Hypergeometric test (Fisher's exact test equivalent)
     # P(X >= k) where X ~ Hypergeometric(N, M, n)
     # phyper(k-1, M, N-M, n, lower.tail = FALSE) gives P(X >= k)
     p_value <- tryCatch({
-      phyper(k - 1, M, N - M, n, lower.tail = FALSE)
+      phyper(k - 1, M, N_eff - M, n, lower.tail = FALSE)
     }, error = function(e) {
       NA_real_
     })
@@ -4667,6 +4679,7 @@ calculate_pathway_enrichment <- function(pathway_df,
       pathway_name = row$pathway_name,
       hits = k,
       pathway_size = M,
+      background_N = N_eff,
       expected = round(expected, 2),
       enrichment_ratio = round(enrichment_ratio, 2),
       p_value = p_value,
@@ -4711,7 +4724,8 @@ calculate_pathway_enrichment <- function(pathway_df,
   results_df$rank <- seq_len(nrow(results_df))
   
   # Reorder columns for better display
-  col_order <- c("rank", "pathway_id", "pathway_name", "hits", "pathway_size", 
+  col_order <- c("rank", "pathway_id", "pathway_name", "hits", "pathway_size",
+                 "background_N",
                  "expected", "enrichment_ratio", "p_value", "p_value_display",
                  "p_adjusted", "p_adjusted_display", "significant", "metabolites")
   results_df <- results_df[, col_order[col_order %in% names(results_df)]]
@@ -5017,16 +5031,25 @@ calculate_module_enrichment <- function(module_df,
     N <- background_size                             # Total metabolites in database
     n <- total_measured                              # Total metabolites we measured
     
+    # Universe coherence guard (same as pathway enrichment): a universe
+    # smaller than the module itself makes phyper return NaN
+    N_eff <- N
+    if (is.na(N_eff) || N_eff <= 0 || (N_eff - M) < 1) {
+      message(sprintf("[MODULE] Universe N=%s incoherent for %s (M=%s); falling back to full KEGG universe.",
+                      paste(N, collapse = ","), mid, paste(M, collapse = ",")))
+      N_eff <- 6610
+    }
+    
     # Enrichment ratio = (k/n) / (M/N) = (k*N) / (n*M)
     # Also known as fold enrichment
-    expected <- (n * M) / N
+    expected <- (n * M) / N_eff
     enrichment_ratio <- if (expected > 0) k / expected else NA
     
     # Hypergeometric test (Fisher's exact test equivalent)
     # P(X >= k) where X ~ Hypergeometric(N, M, n)
     # phyper(k-1, M, N-M, n, lower.tail = FALSE) gives P(X >= k)
     p_value <- tryCatch({
-      phyper(k - 1, M, N - M, n, lower.tail = FALSE)
+      phyper(k - 1, M, N_eff - M, n, lower.tail = FALSE)
     }, error = function(e) {
       NA_real_
     })
@@ -5036,6 +5059,7 @@ calculate_module_enrichment <- function(module_df,
       module_name = row$module_name,
       hits = k,
       module_size = M,
+      background_N = N_eff,
       expected = round(expected, 2),
       enrichment_ratio = round(enrichment_ratio, 2),
       p_value = p_value,
@@ -5080,7 +5104,8 @@ calculate_module_enrichment <- function(module_df,
   results_df$rank <- seq_len(nrow(results_df))
   
   # Reorder columns for better display
-  col_order <- c("rank", "module_id", "module_name", "hits", "module_size", 
+  col_order <- c("rank", "module_id", "module_name", "hits", "module_size",
+                 "background_N",
                  "expected", "enrichment_ratio", "p_value", "p_value_display",
                  "p_adjusted", "p_adjusted_display", "significant", "metabolites")
   results_df <- results_df[, col_order[col_order %in% names(results_df)]]

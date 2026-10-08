@@ -41,9 +41,9 @@ The system calculates biologically meaningful glycan traits:
 - **Trait Heatmaps**: Derived trait patterns across groups
 
 **STATISTICAL ANALYSIS:**
-- Group-wise comparison of glycan abundances
-- Derived trait comparisons between conditions
-- Multiple testing correction for glycan features
+- Group-wise comparison of glycan abundances and derived-trait percentages
+- Test choice is automatic: t-test when any group has fewer than 5 samples (Wilcoxon has no power that small), otherwise Wilcoxon rank-sum (safer for bounded percentage data)
+- Stars mark BH-adjusted p-values (FDR) across all tested type/group or glycan/group pairs, not raw p-values
 - Effect size calculation for glycan changes
 
 **ANALYSIS OPTIONS:**

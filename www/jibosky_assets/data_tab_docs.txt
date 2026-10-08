@@ -73,10 +73,9 @@ Options: 'none', 'knn', 'mean', 'median', 'zero', 'lod', 'qrilc', 'mindet', 'bpc
 - MinProb scale: Scale factor for distribution (default 1)
 - MNAR assumption: Both assume Missing Not At Random
 
-**NORMALIZATION METHODS:**
-Options: 'sum', 'zscore', 'median', 'quantile', 'pqn', 'vsn', 'cyclic_loess', 'none'
+**SAMPLE NORMALIZATION METHODS (stage 1: between-sample bias):**
+Options: 'sum', 'median', 'quantile', 'pqn', 'vsn', 'cyclic_loess', 'none'
 - sum: Total Sum Normalization - scales to equal total intensity per sample. Best for: compositional data, metabolomics
-- zscore: Z-score standardization - centers at 0, unit variance. Best for: comparing features with different scales
 - median: Median normalization - scales to equal median. Best for: robust to outliers, proteomics
 - quantile: Quantile normalization - equalizes distributions (strong assumption). Best for: microarray data, when distribution matching critical
 - pqn: Probabilistic Quotient Normalization - median quotient vs reference. Best for: dilution correction, metabolomics, NMR
@@ -86,10 +85,16 @@ Options: 'sum', 'zscore', 'median', 'quantile', 'pqn', 'vsn', 'cyclic_loess', 'n
 
 **LOG2 TRANSFORMATION TIMING:**
 - log2: Log2 transformation - stabilizes variance, improves normality. Standard for: fold change calculations, downstream testing
-- \"Apply Log2 before normalization\": Transforms raw data first, then normalizes
-- \"Apply Log2 after normalization\": Normalizes first, then applies log2
-- Choose \"before\": When raw data has wide range, aids normalization
-- Choose \"after\": Standard approach, recommended for most analyses
+- "Apply Log2(x) after normalization": Normalizes first, then applies log2(x). Requires strictly positive data
+- "Apply Log2(x + 1) after normalization": Pseudocount variant for data containing zeros
+- Log2 is always applied after sample normalization and before feature scaling
+
+**FEATURE SCALING (stage 2: per-feature, applied last):**
+Options: 'none', 'meancenter', 'zscore', 'pareto'
+- none: No scaling
+- meancenter: Mean centering - subtract feature mean, no scaling. Best for: PCA precursor, preserving variance structure
+- zscore: Z-score auto-scaling - centers at 0, unit variance. Best for: comparing features with different scales. Constant features become 0
+- pareto: Pareto scaling - center, divide by sqrt(sd). Best for: metabolomics standard, dampens dominant features without inflating noise
 
 **BATCH CORRECTION:**
 Options: 'combat', 'limma', 'sva', 'ruv', 'none'
@@ -151,6 +156,7 @@ Same options as post-hoc tests above. Default: BH (Benjamini-Hochberg) for FDR c
 - When enabled: Uses paired t-test or signed-rank instead of unpaired versions
 - Requirements: Equal samples per group, properly matched pairs
 - Example scenarios: Pre/post treatment, matched case-control, longitudinal measurements
+- Limma mixed effects: Enable \"Account for repeated measures\" and select a blocking column (Patient ID, Subject, Individual) from metadata. Uses limma::duplicateCorrelation to estimate within-subject correlation, then lmFit(..., block, correlation). Recommended for repeated measures with 3+ groups or unbalanced time points (e.g., the same patient at Day 1/3/5 vs controls).
 
 **FEATURE FILTERING & CUTOFF PARAMETERS:**
 - Minimum Detection: Remove features below detection threshold (e.g., all values <10)

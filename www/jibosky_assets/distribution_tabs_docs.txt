@@ -45,7 +45,7 @@ The Distribution Analysis tab visualizes feature value distributions across samp
 - **Generate All Plots**: Creates plots for all features in selected set, packages as ZIP. Use for: batch processing, comprehensive reports (warning: large file if All Features selected)
 
 **STATISTICAL TESTING LOGIC:**
-App automatically selects appropriate tests: ANOVA (normally distributed, >2 groups), Kruskal-Wallis (non-normal, >2 groups), t-test (2 groups). Pairwise comparisons use Tukey or Mann-Whitney. p-values displayed on plots when Show Statistics enabled.
+Brackets reuse the Data tab's precomputed statistics (adjusted p-values, never recomputed per plot). A bracket appears when the adjusted p-value passes the Data tab P-value Cutoff (plus the FDR cutoff for ROTS); stars mark */**/*** at 0.05/0.01/0.001. The Statistics tab names the true precomputed method (t-test, Wilcoxon, ANOVA, limma, DESeq2, edgeR, ROTS, LMM, ...). Pairwise post-hoc values come from the Data tab when available. p-values displayed on plots when Show Statistics enabled.
 
 **DISTRIBUTION INTERPRETATION:**
 - **Boxplot median position**: High/low within box indicates skewness

@@ -52,8 +52,9 @@ Four integration methods available, each suited for different research questions
 - **Purpose**: Identify features across multiple omics that discriminate between biological groups
 - **Best for**: Biomarker discovery, classification, supervised integration when groups are known
 - **How it works**: Extends PLS-DA to multiple datasets, finding components that maximize covariance between datasets while discriminating groups. Selects subset of features per dataset contributing to group separation
-- **Output**: Sample scores per component, selected features per dataset (keepX), classification performance, feature loadings
-- **Strengths**: Directly targets group differences, performs feature selection, provides classification accuracy
+- **In-app fit**: block.splsda on your matched samples (2 components, up to 50 kept features per block per component, auto-scaled). Real group labels required (no demo groupings). Samples with missing values are excluded with a count; zero-variance features dropped per block
+- **Output**: Sample scores per component, selected features per dataset (keepX), feature loadings and diagnostic plots. No cross-validated classification accuracy on user data (perf/tuning tabs cover the built-in tutorial); treat separation as exploratory when n is small
+- **Strengths**: Directly targets group differences, performs feature selection
 - **Limitations**: Requires group labels, can overfit with small sample sizes, assumes linear relationships
 - **Badge**: ⭐ Recommended, Supervised
 

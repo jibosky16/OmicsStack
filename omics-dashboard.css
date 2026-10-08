@@ -214,11 +214,11 @@
 
 .settings-trigger {
   position: absolute;
-  right: -40px; /* This positions the trigger outside the main pane */
+  right: -28px; /* This positions the trigger outside the main pane */
   top: 50%;
   transform: translateY(-50%);
-  width: 40px;
-  height: 60px;
+  width: 28px;
+  height: 44px;
   background: #3498db;
   border: 1px solid #dee2e6;
   border-left: none;
@@ -239,13 +239,7 @@
 
 .settings-trigger i {
   color: white;
-  font-size: 18px;
-  animation: spin 3s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  font-size: 13px;
 }
 
 .settings-content {
@@ -305,8 +299,8 @@
   }
   
   .settings-trigger {
-    right: -40px;
-    width: 40px;
+    right: -28px;
+    width: 28px;
   }
 }
 

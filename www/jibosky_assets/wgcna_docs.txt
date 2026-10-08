@@ -1,0 +1,27 @@
+=== COMPREHENSIVE WGCNA NETWORK ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+
+### WGCNA NETWORK ANALYSIS TAB OVERVIEW
+
+The Network Analysis tab builds a weighted gene co-expression network (WGCNA) from normalized data: soft-threshold power selection, module detection, module-trait association, eigengene networks, and hub-gene tables. Requires at least 6 samples; a variance filter (default top 75% features) reduces noise and compute time.
+
+**DATA SOURCE:**
+- "Normalized Data" uses all (variance-filtered) features; "Significant Features Only" restricts to significant ones
+- Samples with too many missing values are removed via goodSamplesGenes with a warning
+
+**NETWORK CONSTRUCTION:**
+- Network Type Signed (default, preserves up/down direction) / Unsigned / Signed Hybrid; TOM Type Unsigned/Signed
+- Soft Threshold Power 0 = auto-detect via scale-free topology fit; search spans powers 1-30; falls back to 6 if no fit. User value overrides auto
+- Minimum Module Size (default 30), Module Merge Cut Height (default 0.25: modules with eigengene correlation above 1-cutHeight merge), Deep Split 0-4 (default 2)
+
+**TRAIT ASSOCIATION:**
+- Trait Source "Group Labels": one-hot binary columns per group, Pearson (= point-biserial, correct) or Spearman vs module eigengenes with Student asymptotic p-values
+- Trait Source "Metadata Columns": chosen metadata columns become traits by positional alignment (metadata row i = sample i, same convention as batch columns). ONLY numeric columns work; text columns are skipped with a warning (encode categories numerically). Missing values use pairwise-complete observations
+- Trait products reset on every run, so switching sources can never show stale traits from a previous run
+
+**HUB GENES:**
+- Top N per module (default 10) ranked by |module membership| (gene-eigengene correlation); grey (unassigned) module excluded; gene-trait significance attached when traits exist
+
+**OUTPUT TABS:**
+- Soft Threshold (scale-free fit + connectivity), Sample Clustering (outlier check), Module Detection (dendrogram + colors), Module-Trait (correlation heatmap with p-values), Eigengene Network, Hub Genes, Module Genes
+
+When users ask about WGCNA, module detection, trait associations, hub genes, or soft-threshold choice, explain what each parameter controls, how to read the module-trait heatmap (correlation + p-value per cell), and that metadata traits must be numeric and positionally aligned to samples.

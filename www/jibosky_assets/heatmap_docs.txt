@@ -20,8 +20,10 @@ The Heatmap tab generates interactive and static visualizations of expression pa
 
 **CLUSTERING OPTIONS:**
 - **Cluster Rows** (enabled by default): Performs hierarchical clustering on features, groups similar expression patterns together. Creates dendrograms on left margin (readability depends on feature count)
-- **Cluster Columns** (disabled by default): Performs hierarchical clustering on samples, reveals sample relationships. Enable to discover sample groupings not captured by experimental design
-- **Show Row Names**: Displays feature identifiers. Disable when >500 features (causes label crowding). Row/column order shown by dendrogram even when names hidden
+- **Cluster Columns** (enabled by default): Performs hierarchical clustering on samples, reveals sample relationships. A column dendrogram appears above the top annotations
+- **Row clusters (k, default 1 = none)**: K-means splits features into "Cluster 1..k" slices, each with its own row dendrogram (titles on the left). Set above 1 to enable. Seeded, so redraws are stable
+- **Cluster Labels** (default 10): Font size of the "Cluster 1..k" slice titles. Auto-caps downward as the cluster count grows so titles stop overlapping (never exceeds your setting)
+- **Show Row Names** (on by default): Displays feature identifiers on the right side of the static heatmap at every cell size. Disable when >500 features (causes label crowding)
 - **Label Type** (Features vs IDs): \"Features\" shows gene names/metabolite identifiers (interpretable); \"IDs\" shows internal database identifiers (useful when names unclear)
 
 **COLOR CUSTOMIZATION:**
@@ -31,21 +33,29 @@ The Heatmap tab generates interactive and static visualizations of expression pa
 - **Missing Value Color** (default gray): Shows filtered-out or NA values, helps identify data gaps. Make visually distinct from data colors
 
 **DISPLAY OPTIONS:**
-- **Cell Size**: Adjust \"Small\" (dense, many cells visible), \"Compact\" (balanced), \"Medium\" (larger for detail), \"Large\" (single feature focus). Choose based on feature count and output medium (screen vs publication)
+- **Cell Size** (Small/Medium/Large): Adjust \"Small\" (dense, many cells visible), \"Medium\" (balanced detail), \"Large\" (single-feature focus). Choose based on feature count and output medium (screen vs publication). Device width auto-budgets room for right-side feature names and legends at every size
+- **Boxplot** (Top/Bottom/None, default None): \"Top\" stacks the per-sample boxplot strip with the group bar; \"Bottom\" moves it below the heatmap body; \"None\" hides it. See derivation note below
+- **Z-score legend position** (default Right) and **Group legend position** (default Right): Move either legend to Left/Right/Top/Bottom. Legends sharing a side stack vertically. Downloads honor the same choices
+- **Plot Title size** (default 0 = no title): Set to 0 to remove the title completely; any larger value shows it at that font size
+- **Group Colors**: One color picker per sample group arranged in a 3-per-row grid (stable defaults). Recolors the Group annotation bar and its legend together. Changing a color re-renders the static heatmap and applies to downloads
+- **Z-score legend position** (default Left) and **Group legend position** (default Right): Move either legend to Left/Right/Top/Bottom. Downloads honor the same choices
 
 **OUTPUT TABS:**
 - **Interactive Heatmap** (Plotly): Hover over cells to see exact values, sample/feature names, statistical values. Zoom, pan, download as PNG. Useful for exploration and presentations
-- **Static Heatmap** (ggplot2): Publication-ready format, precise reproducibility, smaller file size. Better for papers and reports. Dendrograms shown as line trees
+- **Static Heatmap** (ComplexHeatmap): Publication-ready format. Native layout: sample Group color bar plus per-sample boxplots as top annotations (legends right), column dendrogram on top, k-means row-cluster slices with left dendrograms and titles, feature names on the right, Z-score legend on the left. Colors stretch across the data range symmetrically around 0
 
 **HEATMAP INTERPRETATION:**
 Cells colored by expression intensity (green=low, red=high by default). Horizontal dendrograms group features with similar patterns across samples. Vertical dendrograms group samples with similar expression profiles. Patterns indicate co-regulation, potential functional modules, or batch effects.
+
+**BOXPLOT DERIVATION NOTE:**
+Each box summarizes one sample (one heatmap column) across the displayed row-z-scored features: median, IQR box, 1.5xIQR whiskers, outlier points. Because every feature row is standardized to mean 0 / SD 1 before plotting, all boxes center near 0 with similar spread; a tilted/skewed box or many outliers flags a sample whose feature distribution differs (useful QC signal). Boxes follow the clustered column order.
 
 **BEST PRACTICES:**
 1. Start with \"All Groups\" + \"ML-Selected Features\" for focused biomarker visualization
 2. Use \"PCA Top N Features\" for exploratory analysis with >2000 features
 3. Set Log2FC>1 for biologically meaningful changes; use p<0.05 for statistical stringency
 4. Enable \"Cluster Columns\" to discover unexpected sample relationships
-5. For presentations, use \"Compact\" or \"Medium\" cell size; for papers, use \"Static Heatmap\"
+5. For presentations, use \"Medium\" cell size; for papers, use \"Static Heatmap\"
 6. Validate heatmap patterns against ML results from Feature Selection tab
 7. Use colorblind-friendly schemes if accessibility required (orange-purple diverging)
 8. Download \"Interactive\" for exploratory presentations, \"Static\" for peer review

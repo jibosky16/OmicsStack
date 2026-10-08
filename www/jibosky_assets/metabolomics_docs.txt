@@ -64,6 +64,7 @@ Tests whether identified metabolites are enriched in specific metabolic pathways
 - **P-value**: Statistical significance of enrichment
 - **FDR (q-value)**: Multiple testing corrected p-value
 - **Hits**: Number of query metabolites in pathway
+- **Background universe**: Analyzed metabolites by default, full KEGG compound set, or custom list. With small targeted panels the analyzed universe can be smaller than a pathway itself (mathematically incoherent); those pathways automatically fall back to the full KEGG universe and the effective universe is shown per row (background_N column)
 - **Total**: Total metabolites in pathway
 - **Enrichment Ratio**: Observed/Expected ratio (fold enrichment)
 

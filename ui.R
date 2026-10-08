@@ -513,11 +513,11 @@ ui <- tagList(
 
       .settings-trigger {
         position: absolute;
-        right: -40px; /* This positions the trigger outside the main pane */
+        right: -28px; /* This positions the trigger outside the main pane */
         top: 50%;
         transform: translateY(-50%);
-        width: 40px;
-        height: 60px;
+        width: 28px;
+        height: 44px;
         background: #3498db;
         border: 1px solid #dee2e6;
         border-left: none;
@@ -538,13 +538,7 @@ ui <- tagList(
 
       .settings-trigger i {
         color: white;
-        font-size: 18px;
-        animation: spin 3s linear infinite;
-      }
-
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
+        font-size: 13px;
       }
 
       .settings-content {
@@ -710,8 +704,8 @@ ui <- tagList(
         }
 
         .settings-trigger {
-          right: -40px;
-          width: 40px;
+          right: -28px;
+          width: 28px;
         }
       }
 
@@ -1383,6 +1377,58 @@ ui <- tagList(
         pointer-events: all !important;
       }
 
+      #jibosky-chat-window.wide {
+        width: 900px !important;
+        max-width: calc(100vw - 60px) !important;
+      }
+
+      #jibosky-width-toggle {
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 18px;
+        height: 34px;
+        border-radius: 0 9px 9px 0;
+        background: #667eea;
+        color: white;
+        border: none;
+        cursor: pointer;
+        opacity: 0.45;
+        z-index: 10;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        transition: opacity 0.2s;
+        padding: 0;
+      }
+
+      #jibosky-width-toggle:hover {
+        opacity: 1;
+      }
+
+      .jibosky-tab-ai-btn {
+        display: block;
+        margin: 6px 4px 10px auto;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 999px;
+        padding: 6px 14px;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
+        transition: transform 0.15s, box-shadow 0.15s;
+      }
+
+      .jibosky-tab-ai-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+      }
+
       [data-theme='dark'] #jibosky-chat-window {
         background: var(--bg-secondary);
         box-shadow: 0 10px 40px rgba(0,0,0,0.5);
@@ -1459,6 +1505,59 @@ ui <- tagList(
 
       .jibosky-close-btn:hover {
         opacity: 0.7;
+      }
+
+      .jibosky-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .jibosky-setup-btn {
+        background: rgba(255,255,255,0.18);
+        border: 1px solid rgba(255,255,255,0.35);
+        color: white;
+        font-size: 12px;
+        cursor: pointer;
+        padding: 5px 10px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        transition: background 0.2s;
+        white-space: nowrap;
+      }
+
+      .jibosky-setup-btn:hover {
+        background: rgba(255,255,255,0.32);
+      }
+
+      .ai-setup-card {
+        border-radius: 10px;
+        padding: 8px 10px;
+        margin: 4px 2px 24px;
+        border: 1px solid #e2e5ec;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      }
+
+      .ai-setup-card .form-group {
+        margin-bottom: 0;
+      }
+
+      .ai-setup-card .control-label {
+        margin-bottom: 1px;
+      }
+
+      .ai-setup-card .control-label small {
+        font-size: 11px;
+        color: #6c757d;
+        font-weight: 600;
+      }
+
+      .ai-setup-card .form-control {
+        font-size: 12px;
+        height: 30px;
+        padding: 4px 8px;
       }
 
       .jibosky-chat-messages {
@@ -1558,6 +1657,67 @@ ui <- tagList(
       .jibosky-message.user .jibosky-message-bubble {
         background: #667eea;
         color: white;
+      }
+
+      .jibosky-message-bubble .jibosky-md-h {
+        margin: 10px 0 4px;
+        font-weight: 700;
+        line-height: 1.3;
+      }
+
+      .jibosky-message-bubble h4.jibosky-md-h { font-size: 14px; }
+      .jibosky-message-bubble h5.jibosky-md-h { font-size: 13px; }
+
+      .jibosky-message-bubble hr.jibosky-md-hr {
+        border: none;
+        border-top: 1px solid #e2e5ec;
+        margin: 10px 0;
+      }
+
+      .jibosky-message-bubble pre.jibosky-md-pre {
+        background: #f4f5f9;
+        border: 1px solid #e2e5ec;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 12px;
+        line-height: 1.45;
+        overflow-x: auto;
+        white-space: pre;
+        margin: 8px 0;
+      }
+
+      [data-theme='dark'] .jibosky-message-bubble pre.jibosky-md-pre {
+        background: rgba(255,255,255,0.06);
+        border-color: rgba(255,255,255,0.16);
+      }
+
+      .jibosky-message-bubble table.jibosky-md-table {
+        border-collapse: collapse;
+        margin: 4px 0 8px;
+        font-size: 12.5px;
+        width: 100%;
+      }
+
+      .jibosky-message-bubble table.jibosky-md-table th,
+      .jibosky-message-bubble table.jibosky-md-table td {
+        border: 1px solid #dfe3ea;
+        padding: 5px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .jibosky-message-bubble table.jibosky-md-table thead th {
+        background: #eef1f7;
+        font-weight: 700;
+      }
+
+      [data-theme='dark'] .jibosky-message-bubble table.jibosky-md-table thead th {
+        background: rgba(255,255,255,0.08);
+      }
+
+      [data-theme='dark'] .jibosky-message-bubble table.jibosky-md-table th,
+      [data-theme='dark'] .jibosky-message-bubble table.jibosky-md-table td {
+        border-color: rgba(255,255,255,0.16);
       }
 
       .jibosky-message-time {
@@ -2244,7 +2404,7 @@ ui <- tagList(
         max-width: none !important;
         margin: 0 !important;
         padding: 0 !important;
-        border-radius: 8px 8px 0px 0px !important;
+        border-radius: 0px !important;
         overflow: hidden !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         background: white !important;
@@ -2258,7 +2418,7 @@ ui <- tagList(
 
       /* Handsontable styling within group mapping */
       .group-mapping-table .handsontable {
-        border-radius: 8px 8px 0px 0px !important;
+        border-radius: 0px !important;
         overflow: hidden !important;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         font-size: 14px;
@@ -2268,7 +2428,7 @@ ui <- tagList(
       .group-mapping-table .handsontable table {
         border-collapse: separate !important;
         border-spacing: 0 !important;
-        border-radius: 8px 8px 0px 0px !important;
+        border-radius: 0px !important;
         overflow: hidden !important;
         width: 100% !important;
       }
@@ -2421,7 +2581,7 @@ ui <- tagList(
       /* Responsive adjustments */
       @media (max-width: 768px) {
         .group-mapping-table {
-          border-radius: 8px;
+          border-radius: 0px;
           box-shadow: 0 4px 16px rgba(0,0,0,0.1);
         }
 
@@ -2908,6 +3068,9 @@ ui <- tagList(
             $('#pathview_pathway_control').slideDown(duration);
             $('#pathview_species_control').slideDown(duration);
             $('#pathview_controls_row').slideDown(duration);
+            $('#pathview_omics_row').slideDown(duration);
+            $('#pathview_scale_row').slideDown(duration);
+            $('#pathview_cpd_wrap').slideDown(duration);
 
             // Check if Graphviz is selected and show/hide graphviz options
             if ($('#pathview_engine').val() === 'graphviz') {
@@ -2933,6 +3096,9 @@ ui <- tagList(
             $('#pathview_pathway_control').slideUp(duration);
             $('#pathview_species_control').slideUp(duration);
             $('#pathview_controls_row').slideUp(duration);
+            $('#pathview_omics_row').slideUp(duration);
+            $('#pathview_scale_row').slideUp(duration);
+            $('#pathview_cpd_wrap').slideUp(duration);
 
             // Show standard network plot, hide pathview section
             $('#standard_network_plot').slideDown(duration);
@@ -2951,6 +3117,9 @@ ui <- tagList(
             $('#pathview_pathway_control').slideUp(duration);
             $('#pathview_species_control').slideUp(duration);
             $('#pathview_controls_row').slideUp(duration);
+            $('#pathview_omics_row').slideUp(duration);
+            $('#pathview_scale_row').slideUp(duration);
+            $('#pathview_cpd_wrap').slideUp(duration);
 
             // Show standard network plot, hide pathview section
             $('#standard_network_plot').slideDown(duration);
@@ -3808,10 +3977,35 @@ ui <- tagList(
 
           // PQN normalization info panel
           var normalizationMethod = $('#normalization').val();
+          // Hide all info panels first
+          $('#pqn_info_panel, #sum_info_panel, #zscore_info_panel, #median_info_panel, #quantile_info_panel, #vsn_info_panel, #cyclic_loess_info_panel, #pareto_info_panel, #meancenter_info_panel, #none_info_panel').hide();
+          // Show the relevant panel (scaling panels double as stage-2 info)
+          var scalingMethod = $('#feature_scaling').val();
+          if (scalingMethod === 'zscore') {
+            $('#zscore_info_panel').show();
+          } else if (scalingMethod === 'pareto') {
+            $('#pareto_info_panel').show();
+          } else if (scalingMethod === 'meancenter') {
+            $('#meancenter_info_panel').show();
+          }
           if (normalizationMethod === 'pqn') {
             $('#pqn_info_panel').show();
-          } else {
-            $('#pqn_info_panel').hide();
+          } else if (normalizationMethod === 'sum') {
+            $('#sum_info_panel').show();
+          } else if (normalizationMethod === 'median') {
+            $('#median_info_panel').show();
+          } else if (normalizationMethod === 'quantile') {
+            $('#quantile_info_panel').show();
+          } else if (normalizationMethod === 'vsn') {
+            $('#vsn_info_panel').show();
+          } else if (normalizationMethod === 'cyclic_loess') {
+            $('#cyclic_loess_info_panel').show();
+          } else if (normalizationMethod === 'pareto') {
+            $('#pareto_info_panel').show();
+          } else if (normalizationMethod === 'meancenter') {
+            $('#meancenter_info_panel').show();
+          } else if (normalizationMethod === 'none') {
+            $('#none_info_panel').show();
           }
 
           // External batch correction for visualization
@@ -3842,7 +4036,7 @@ ui <- tagList(
           }
 
           // Statistical method specific options
-          $('#rots_options, #deseq2_options, #limma_options, #limma_voom_options, #edger_options, #fdr_options, #posthoc_options').hide();
+          $('#rots_options, #rots_standard_options, #rots_lmrots_options, #rots_lmerots_options, #deseq2_options, #limma_options, #limma_voom_options, #edger_options, #lmm_options, #ttest_options, #fdr_options, #posthoc_options').hide();
           if (sigMethod === 'rots') {
             $('#rots_options').show();
           } else if (sigMethod === 'deseq2') {
@@ -3853,6 +4047,11 @@ ui <- tagList(
             $('#limma_voom_options').show();
           } else if (sigMethod === 'edger') {
             $('#edger_options').show();
+          } else if (sigMethod === 'lmm') {
+            $('#lmm_options').show();
+          } else if (sigMethod === 't.test') {
+            $('#ttest_options').show();
+            $('#fdr_options').show();
           } else if (['anova', 'kruskal'].includes(sigMethod)) {
             $('#posthoc_options').show();
             // Show/hide covariate options based on checkbox state
@@ -3974,6 +4173,14 @@ ui <- tagList(
             $('#bootstrap_parallel_options').hide();
           }
 
+          // LMM parallel options
+          var lmmParallel = $('#lmm_parallel').is(':checked');
+          if (lmmParallel) {
+            $('#lmm_parallel_options').show();
+          } else {
+            $('#lmm_parallel_options').hide();
+          }
+
           // Batch correction info in Normalized Data tab
           if (batchEnabled === 'yes') {
             $('#batch_correction_info').show();
@@ -4080,7 +4287,7 @@ ui <- tagList(
         }
 
         // Bind event listeners to all relevant inputs
-        $(document).on('change', 'input[name=\\'missing_value_strategy\\'], #imputation_method, #filter_before_impute, #normalization, #sig_method, input[name=\\'batch_correction_enabled\\'], #viz_batch_enable, #rots_parallel, #rots_mode, #lmrots_parallel, #lmerots_parallel, input[name=\\'bootstrap_enabled\\'], #bootstrap_parallel, #viz_plot_type, input[name=\\'qc_drift_enabled\\'], #qc_identification_method, #run_order_source, #qc_drift_method, #qc_correct_per_batch', updateDataTabVisibility);
+        $(document).on('change', 'input[name=\\'missing_value_strategy\\'], #imputation_method, #filter_before_impute, #normalization, #feature_scaling, #sig_method, input[name=\\'batch_correction_enabled\\'], #viz_batch_enable, #rots_parallel, #rots_mode, #lmrots_parallel, #lmerots_parallel, input[name=\\'bootstrap_enabled\\'], #bootstrap_parallel, #lmm_parallel, #viz_plot_type, input[name=\\'qc_drift_enabled\\'], #qc_identification_method, #run_order_source, #qc_drift_method, #qc_correct_per_batch', updateDataTabVisibility);
         
         // Handle ANOVA covariate checkbox change
         $(document).on('change', '#anova_include_covariates', function() {
@@ -4693,37 +4900,50 @@ ui <- tagList(
                  # Normalization Card - only show when DESeq2/edgeR/limma-voom are NOT selected
                  div(id = "normalization_card", class = "mlfs-card", style = "display: none;",
                      div(class = "mlfs-card-header",
-                         h4(icon("chart-area", class = "mlfs-feature-icon"), "Normalization"),
-                         shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                         "Select normalization method for your data")
+                          h4(icon("chart-area", class = "mlfs-feature-icon"), "Normalization"),
+                          shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
+                                          "Two stages: sample normalization (between-sample bias), then optional feature scaling (per-feature, applied after Log2)")
                      ),
-                     div(class = "mlfs-card-body",
-                         selectInput("normalization", NULL,
-                                     choices = c("Sum Normalization" = "sum",
-                                                 "Z-score" = "zscore",
-                                                 "Median" = "median",
-                                                 "Quantile" = "quantile",
-                                                 "PQN (Probabilistic Quotient)" = "pqn",
-                                                 "VSN" = "vsn",
-                                                 "Cyclic Loess" = "cyclic_loess",
-                                                 "None" = "none"),
-                                     selected = "sum",
-                                     width = "100%"),
-                         
-                         conditionalPanel(
-                           condition = "input.normalization != 'vsn'",
-                           radioButtons(
-                             "log2_norm_timing",
-                             "Log2 Transformation",
-                             choices = c(
-                               "None" = "none",
-                               "Apply Log2 before normalization" = "before",
-                               "Apply Log2 after normalization" = "after"
-                             ),
-                             selected = "none",
-                             inline = FALSE
-                           )
-                         ),
+                      div(class = "mlfs-card-body",
+                          tags$div(style = "font-weight: 600; margin-bottom: 4px;", "Sample Normalization"),
+                          tags$div(style = "font-size: 12px; color: #6c757d; margin-bottom: 6px;",
+                                   "Corrects between-sample bias. Applied first."),
+                          selectInput("normalization", NULL,
+                                      choices = c("Sum Normalization" = "sum",
+                                                  "Median" = "median",
+                                                  "Quantile" = "quantile",
+                                                  "PQN (Probabilistic Quotient)" = "pqn",
+                                                  "VSN" = "vsn",
+                                                  "Cyclic Loess" = "cyclic_loess",
+                                                  "None" = "none"),
+                                      selected = "sum",
+                                      width = "100%"),
+
+conditionalPanel(
+                            condition = "input.normalization != 'vsn'",
+                            radioButtons(
+                              "log2_norm_timing",
+                              "Log2 Transformation",
+                              choices = c(
+                                "None" = "none",
+                                "Apply Log2(x) after normalization" = "after",
+                                "Apply Log2(x + 1) after normalization" = "after_pseudo"
+                              ),
+                              selected = "none",
+                              inline = FALSE
+                            )
+                          ),
+
+                          tags$div(style = "font-weight: 600; margin: 10px 0 4px;", "Feature Scaling (optional)"),
+                          tags$div(style = "font-size: 12px; color: #6c757d; margin-bottom: 6px;",
+                                   "Per-feature adjustment for multivariate methods. Applied last, after Log2."),
+                          selectInput("feature_scaling", NULL,
+                                      choices = c("None" = "none",
+                                                  "Mean Centering" = "meancenter",
+                                                  "Z-score (auto-scaling)" = "zscore",
+                                                  "Pareto Scaling" = "pareto"),
+                                      selected = "none",
+                                      width = "100%"),
                          
                          conditionalPanel(
                            condition = "input.normalization == 'sum'",
@@ -4743,18 +4963,126 @@ ui <- tagList(
                            )
                          ),
                          
-                         # PQN Information Panel (JavaScript controlled)
-                         div(id = "pqn_info_panel", style = "display: none;",
-                             div(
-                               style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
-                               tags$strong("PQN (Probabilistic Quotient Normalization)", style = "color: #495057;"),
-                               tags$br(),
-                               tags$p(
-                                 style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
-                                 "PQN normalizes samples by calculating quotients relative to a reference spectrum (median of all samples) and uses the median of these quotients as the normalization factor. This method is particularly effective for metabolomics and other omics data where systematic dilution effects need to be corrected. Note: PQN requires complete data - please handle missing values first using the Missing Value Handling options."
-                               )
-                             )
-                         )
+# PQN Information Panel (JavaScript controlled)
+                          div(id = "pqn_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("PQN (Probabilistic Quotient Normalization)", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "PQN normalizes samples by calculating quotients relative to a reference spectrum (median of all samples) and uses the median of these quotients as the normalization factor. This method is particularly effective for metabolomics and other omics data where systematic dilution effects need to be corrected. Note: PQN requires complete data - please handle missing values first using the Missing Value Handling options."
+                                )
+                              )
+                          ),
+                          # Sum Normalization Information Panel
+                          div(id = "sum_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("Sum Normalization (Total Count Scaling)", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Each sample is divided by its total sum (column sum), scaling all samples to the same total count. This is commonly used for count data (e.g., RNA-seq, metagenomics). Enable 'Use percentage values' to multiply by 100 for percentage representation."
+                                )
+                              )
+                          ),
+                          # Z-score Normalization Information Panel
+                          div(id = "zscore_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("Z-score Normalization (Standardization)", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Each feature (row) is centered to mean 0 and scaled to standard deviation 1 across samples. This makes features comparable regardless of their original scale. Useful for PCA, clustering, and visualization."
+                                )
+                              )
+                          ),
+                          # Median Normalization Information Panel
+                          div(id = "median_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("Median Normalization", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Each sample is divided by its median value, scaling all samples to have median = 1. Robust to outliers compared to mean-based scaling. Commonly used for metabolomics and proteomics data."
+                                )
+                              )
+                          ),
+                          # Quantile Normalization Information Panel
+                          div(id = "quantile_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("Quantile Normalization", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Forces all samples to have identical empirical distributions by matching their quantiles. Requires complete data (no missing values). Standard for microarray and some sequencing data. Use imputation for missing values first."
+                                )
+                              )
+                          ),
+                          # VSN Information Panel
+                          div(id = "vsn_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("VSN (Variance Stabilizing Normalization)", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Applies a variance-stabilizing transformation that makes variance approximately constant across the intensity range. Includes built-in log-like transformation. No additional log2 transformation needed. Requires complete data."
+                                )
+                              )
+                          ),
+                          # Cyclic Loess Information Panel
+                          div(id = "cyclic_loess_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("Cyclic Loess Normalization", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Performs pairwise loess normalization between all sample pairs in a round-robin fashion. Good for microarray and proteomics data with intensity-dependent biases. Can handle some missing values. Consider log2 transformation after normalization for downstream analysis."
+                                )
+                              )
+                          ),
+                          # Pareto Scaling Information Panel
+                          div(id = "pareto_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("Pareto Scaling", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Centers each feature and divides by the square root of its standard deviation. The metabolomics standard: dampens dominant high-abundance features without inflating baseline noise the way Z-score does. Ideal before PCA and clustering."
+                                )
+                              )
+                          ),
+                          # Mean Centering Information Panel
+                          div(id = "meancenter_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("Mean Centering", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Subtracts each feature's mean without scaling. Preserves the original variance structure while centering data on zero. Standard precursor to PCA when relative feature scales are meaningful."
+                                )
+                              )
+                          ),
+                          # None Normalization Information Panel
+                          div(id = "none_info_panel", style = "display: none;",
+                              div(
+                                style = "margin-top: 15px; padding: 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;",
+                                tags$strong("No Normalization", style = "color: #495057;"),
+                                tags$br(),
+                                tags$p(
+                                  style = "margin: 8px 0 0 0; font-size: 90%; color: #6c757d;",
+                                  "Data is used as-is without any normalization. Only log2 transformation (if selected) will be applied. Use when data is already normalized or for specific workflows requiring raw values."
+                                )
+                              )
+                          )
                      )
                  ), # Close normalization_card div
                  
@@ -4862,11 +5190,11 @@ ui <- tagList(
                                      
                                      # Manual pattern input
                                      div(id = "qc_pattern_options", style = "display: none;",
-                                         textInput("qc_sample_pattern", "QC Sample Name Pattern (regex)",
-                                                   value = "QC|[Pp]ool|NIST",
-                                                   placeholder = "e.g., QC|Pooled|Pool",
-                                                   width = "100%"),
-                                         helpText("Regular expression to match QC sample names")
+                                          textInput("qc_sample_pattern", "QC Sample Name Pattern (regex)",
+                                                    value = "(^|[^A-Za-z0-9])(qc|pool|pooled|blank|nist)([^A-Za-z]|$)",
+                                                    placeholder = "e.g., QC|Pooled|Pool",
+                                                    width = "100%"),
+                                          helpText("Regular expression to match QC sample names. Tokens must start the name or follow a delimiter, so ordinary names merely containing those letters (e.g., 'acquire_1') are not flagged.")
                                      )
                                  ),
                                  
@@ -4991,18 +5319,19 @@ ui <- tagList(
                                          "Choose statistical test method for significance testing")
                      ),
                      div(class = "mlfs-card-body",
-                        selectInput("sig_method", "Test Method",
-                                    choices = c("Wilcoxon rank-sum test" = "wilcox",
-                                                "Welch T-test" = "t.test",
-                                                "One-way ANOVA" = "anova",
-                                                "Kruskal-Wallis" = "kruskal",
-                                                "Limma" = "limma",
-                                                "Limma-voom" = "limma_voom",
-                                                "ROTS" = "rots",
-                                                "DESeq2" = "deseq2",
-                                                "edgeR" = "edger"),
-                                    selected = "wilcox",
-                                    width = "100%"),
+                         selectInput("sig_method", "Test Method",
+                                     choices = c("Wilcoxon rank-sum test" = "wilcox",
+                                                 "T-test" = "t.test",
+                                                 "One-way ANOVA" = "anova",
+                                                 "Kruskal-Wallis" = "kruskal",
+                                                 "Linear Mixed-Effects (lme4)" = "lmm",
+                                                 "Limma" = "limma",
+                                                 "Limma-voom" = "limma_voom",
+                                                 "ROTS" = "rots",
+                                                 "DESeq2" = "deseq2",
+                                                 "edgeR" = "edger"),
+                                     selected = "wilcox",
+                                     width = "100%"),
                          div(id = "rots_options", style = "display: none;",
                              selectInput("rots_mode", "ROTS Analysis Mode",
                                          choices = c("Standard ROTS (two-group)" = "standard",
@@ -5098,7 +5427,12 @@ ui <- tagList(
                                condition = "input.limma_contrast_type == 'all_vs_reference'",
                                uiOutput("limma_reference_ui")
                              ),
-                             helpText(HTML("<b>Limma</b> fits linear models to microarray or RNA-seq data. <b>Robust</b> estimation helps with outliers. <b>Trend</b> accounts for mean-variance relationship in the data. <b>All pairwise</b> tests every pair of groups; <b>All vs reference</b> tests each non-reference group against a chosen reference."))
+                             checkboxInput("limma_use_dupcor", "Account for repeated measures (mixed effects)", value = FALSE),
+                             conditionalPanel(
+                               condition = "input.limma_use_dupcor == true",
+                               uiOutput("limma_block_column_ui")
+                             ),
+                             helpText(HTML("<b>Limma</b> fits linear models to microarray or RNA-seq data. <b>Robust</b> estimation helps with outliers. <b>Trend</b> accounts for mean-variance relationship in the data. <b>All pairwise</b> tests every pair of groups; <b>All vs reference</b> tests each non-reference group against a chosen reference.<br><b>Repeated measures:</b> Enable mixed effects to block on a metadata column (e.g., Patient ID) via <code>duplicateCorrelation</code>. Use this when the same subject is sampled more than once (time points, paired tissues)."))
                          ),
                          div(id = "limma_voom_options", style = "display: none;",
                              selectInput("limma_voom_norm_method", "Normalization Method",
@@ -5124,7 +5458,12 @@ ui <- tagList(
                                condition = "input.limma_voom_contrast_type == 'all_vs_reference'",
                                uiOutput("limma_voom_reference_ui")
                              ),
-                             helpText(HTML("<b>Limma-voom</b> uses voom transformation to model mean-variance relationship in RNA-seq data, then applies limma's linear modeling. <b>TMM normalization</b> is recommended. <b>Robust</b> estimation helps with outliers. <b>Sample weights</b> can improve results when sample quality varies significantly. <b>All pairwise</b> tests every pair of groups; <b>All vs reference</b> tests each non-reference group against a chosen reference."))
+                             checkboxInput("limma_voom_use_dupcor", "Account for repeated measures (mixed effects)", value = FALSE),
+                             conditionalPanel(
+                               condition = "input.limma_voom_use_dupcor == true",
+                               uiOutput("limma_voom_block_column_ui")
+                             ),
+                             helpText(HTML("<b>Limma-voom</b> uses voom transformation to model mean-variance relationship in RNA-seq data, then applies limma's linear modeling. <b>TMM normalization</b> is recommended. <b>Robust</b> estimation helps with outliers. <b>Sample weights</b> can improve results when sample quality varies significantly. <b>All pairwise</b> tests every pair of groups; <b>All vs reference</b> tests each non-reference group against a chosen reference.<br><b>Repeated measures:</b> Enable mixed effects to block on a metadata column (e.g., Patient ID) via <code>duplicateCorrelation</code>."))
                          ),
                          div(id = "edger_options", style = "display: none;",
                              selectInput("edger_test", "edgeR Test Type",
@@ -5142,9 +5481,38 @@ ui <- tagList(
                              checkboxInput("edger_robust", "Robust dispersion estimation", value = TRUE),
                              numericInput("edger_prior_count", "Prior count for logCPM (display)", value = 1, min = 0, step = 0.5, width = "100%"),
                              helpText(HTML("<b>edgeR</b> uses negative binomial GLMs for differential expression. <b>QLF</b> is recommended for most analyses; use <b>LRT</b> as an alternative. <b>Exact test</b> is for simple two-group comparisons without batch covariates. The selected normalization is applied internally; display data will use log<sub>2</sub>CPM with the chosen prior count.")),
-                             helpText(HTML("Non-finite or negative counts are set to 0 prior to modeling. The displayed matrix is log<sub>2</sub>CPM with your chosen prior count and is used by PCA, heatmaps, ROC, and other downstream plots."))
-                         ),
-                         div(id = "fdr_options", style = "display: none;",
+                              helpText(HTML("Non-finite or negative counts are set to 0 prior to modeling. The displayed matrix is log<sub>2</sub>CPM with your chosen prior count and is used by PCA, heatmaps, ROC, and other downstream plots."))
+                          ),
+                          div(id = "lmm_options", style = "display: none;",
+                              helpText(HTML("<small>Primary factor is always the biological <b>Group</b> (pairwise outputs key off it). Add covariates and random terms below using Wilkinson-Rogers notation.</small>")),
+                              selectizeInput("lmm_fixed_extra", "Additional Fixed Effects (covariates)",
+                                             choices = NULL, selected = NULL, multiple = TRUE, width = "100%",
+                                             options = list(placeholder = "e.g., Batch, Period, Age — optional",
+                                                            plugins = list("remove_button", "drag_drop"))),
+                              selectInput("lmm_random_var", "Random-Effects Grouping Variable",
+                                          choices = c("Select a metadata column..." = ""),
+                                          selected = "", width = "100%"),
+                              textInput("lmm_random_text", "Random Effects (e.g., (1|Patient), (1|Site/Patient))",
+                                        value = "", placeholder = "(1|PatientID)", width = "100%"),
+                              checkboxInput("lmm_parallel", "Use parallel processing", value = FALSE),
+                              div(id = "lmm_parallel_options", style = "display: none;",
+                                  numericInput("lmm_cores", "Number of CPU cores to use",
+                                               value = min(4, parallel::detectCores()),
+                                               min = 1, max = parallel::detectCores(),
+                                               step = 1, width = "100%")
+                              ),
+                              uiOutput("lmm_formula_preview"),
+                              helpText(HTML("<b>Linear Mixed-Effects (lme4)</b> fits one model per feature across <b>all groups jointly</b> (REML, Satterthwaite df via lmerTest): Type-III F for Group, pairwise t-contrasts from the same fit.<br><b>Repeated measures:</b> random unit (Patient/Individual). <b>Nested:</b> <code>(1|Site/Patient)</code>. <b>Multiple:</b> <code>(1|A) + (1|B)</code>. <b>Crossover:</b> add the period column as a fixed effect (first-order carryover assumed; add a sequence column too if available).<br><b>Requires:</b> metadata (second Excel sheet); at least one unit sampled more than once overall.<br><b>Not for:</b> crossover without period info, raw counts (use DESeq2/edgeR/limma-voom), deeper hierarchies than nested pairs."))
+                          ),
+                          div(id = "ttest_options", style = "display: none;",
+                              selectInput("ttest_variant", "Variant",
+                                          choices = c("Welch (unequal variances)" = "welch",
+                                                      "Student's (equal variances)" = "student",
+                                                      "Paired" = "paired"),
+                                          selected = "welch", width = "100%"),
+                              helpText(HTML("<b>Welch</b> (default) does not assume equal variances and is the safest choice. <b>Student's</b> assumes equal variances in both groups. <b>Paired</b> pairs samples by position within each group (both groups need equal size); use only for matched designs such as pre/post measurements on the same subjects."))
+                          ),
+                          div(id = "fdr_options", style = "display: none;",
                              selectInput("fdr_method", "FDR Correction Method",
                                          choices = c("Benjamini-Hochberg" = "BH",
                                                      "Benjamini-Yekutieli" = "BY",
@@ -5221,7 +5589,7 @@ ui <- tagList(
                                  div(id = "bootstrap_parallel_options", style = "display: none;",
                                      numericInput("bootstrap_cores", "Number of Cores", value = 3, min = 1, max = parallel::detectCores(), step = 1, width = "100%")
                                  ),
-                                 helpText(HTML("<b>Bootstrap Replicates</b> is the number of bootstrap samples to generate. 1000 is recommended for most analyses. <b>Confidence Level</b> sets the confidence level for the bootstrap confidence intervals. <b>Random Seed</b> sets a seed for reproducible results. Leave blank for automatic selection. <b>Bootstrap Strategy</b>: Standard uses simple random sampling, Stratified maintains proportional representation, and Balanced ensures equal probability for unique samples.<br><br><em>Note: Bootstrap is particularly useful for t-tests, Wilcoxon tests, ANOVA, and Kruskal-Wallis. ROTS already includes permutation-based resampling.</em>"))
+                                  helpText(HTML("<b>Bootstrap Replicates</b> is the number of bootstrap samples to generate. 1000 is recommended for most analyses. <b>Confidence Level</b> sets the confidence level for the bootstrap confidence intervals. <b>Random Seed</b> sets a seed for reproducible results. Leave blank for automatic selection. <b>Bootstrap Strategy</b>: Standard resamples with replacement within each group. Stratified resamples within each group &times; batch cell (requires batch info, otherwise same as Standard). Balanced (Davison-Hinkley) gives every sample exactly equal total representation across all replicates.<br><br><em>Note: Bootstrap is particularly useful for t-tests, Wilcoxon tests, ANOVA, and Kruskal-Wallis. ROTS already includes permutation-based resampling.</em>"))
                              )
                          )
                      )
@@ -5516,22 +5884,6 @@ ui <- tagList(
                                                                              "Manhattan" = "manhattan",
                                                                              "Maximum" = "maximum"),
                                                                  selected = "euclidean")
-                                                 ),
-                                                 
-                                                 div(id = "viz_feature_select_options", style = "display: none;",
-                                                     selectizeInput("viz_selected_feature", "Select Feature",
-                                                                    choices = NULL,
-                                                                    selected = NULL,
-                                                                    multiple = FALSE,
-                                                                    options = list(
-                                                                      placeholder = "Type to search for features...",
-                                                                      searchField = "value",
-                                                                      render = I('{
-                                                                        option: function(item, escape) {
-                                                                          return "<div>" + escape(item.value) + "</div>";
-                                                                        }
-                                                                      }')
-                                                                    ))
                                                  ),
                                                  
                                                  actionButton("generate_viz_btn", "Generate Plot",
@@ -6425,7 +6777,9 @@ ui <- tagList(
                                              value = 0.1, min = 0.0, max = 0.99, step = 0.01, width = "100%"),
                                 numericInput("umap_spread", "Spread",
                                              value = 1.0, min = 0.1, max = 5.0, step = 0.1, width = "100%"),
-                                
+                                numericInput("umap_seed", "Random Seed",
+                                             value = 123, min = 1, step = 1, width = "100%"),
+
                                  # Display options
                                  checkboxInput("umap_scale", "Scale Data", value = TRUE),
                                  checkboxInput("umap_add_ellipses", "Add Confidence Ellipses", value = TRUE),
@@ -8576,8 +8930,14 @@ ui <- tagList(
                                           div(class = "heatmap-row-column-options",
                                               fluidRow(
                                                 column(4, checkboxInput("cluster_rows", "Cluster Rows", value = TRUE)),
-                                                column(4, checkboxInput("cluster_cols", "Cluster Columns", value = FALSE)),
+                                                column(4, checkboxInput("cluster_cols", "Cluster Columns", value = TRUE)),
                                                 column(4, checkboxInput("show_row_names", "Show Row Names", value = TRUE))
+                                              ),
+                                              fluidRow(
+                                                column(6, numericInput("heatmap_row_clusters", "Row clusters (k, 1 = none)",
+                                                                        value = 1, min = 1, max = 12, step = 1, width = "100%")),
+                                                column(6, numericInput("heatmap_cluster_label_size", "Cluster Labels",
+                                                                        value = 10, min = 6, max = 18, step = 1, width = "100%"))
                                               )
                                           ),
                                           conditionalPanel(
@@ -8598,28 +8958,42 @@ ui <- tagList(
                                             column(4, colourInput("midColor", "Mid Value Color", value = "black", showColour = "both")),
                                             column(4, colourInput("highColor", "High Value Color", value = "red", showColour = "both"))
                                           ),
-                                          fluidRow(
-                                            column(6, colourInput("naColor", "Missing Value Color", value = "gray", showColour = "both")),
-                                            column(6,
-                                                   div(style = "margin-top: 25px;",
-                                                       shinyBS::tipify(
-                                                         icon("info-circle", style = "color: #3498db; font-size: 16px;"),
-                                                         "Color used for cells with missing or NA values in the heatmap"
-                                                       )
-                                                   )
-                                            )
-                                          ),
+                                           fluidRow(
+                                             column(6, colourInput("naColor", "Missing Value Color", value = "gray", showColour = "both"))
+                                           ),
                                           
-                                          selectInput("heatmap_cell_size", "Cell Size:",
-                                                      choices = c("Small", "Compact", "Medium", "Large"),
-                                                      selected = "Medium",
-                                                      width = "100%"),
+                                           selectInput("heatmap_cell_size", "Cell Size:",
+                                                       choices = c("Small", "Medium", "Large"),
+                                                       selected = "Small",
+                                                       width = "100%"),
                                           
-                                          h5("Font Sizes", class = "mlfs-section-title", style = "margin-top: 10px;"),
+                                           h5("Annotations & Legends", class = "mlfs-section-title", style = "margin-top: 10px;"),
+                                           selectInput("heatmap_boxplot_position", "Boxplot:",
+                                                       choices = c("Top" = "top",
+                                                                   "Bottom" = "bottom",
+                                                                   "None" = "none"),
+                                                       selected = "none", width = "100%"),
+                                           fluidRow(
+                                             column(6,
+                                                     selectInput("heatmap_legend_side", "Z-score legend:",
+                                                                 choices = c("Left" = "left", "Right" = "right",
+                                                                             "Top" = "top", "Bottom" = "bottom"),
+                                                                 selected = "right", width = "100%")
+                                             ),
+                                             column(6,
+                                                    selectInput("heatmap_ann_legend_side", "Group legend:",
+                                                                choices = c("Left" = "left", "Right" = "right",
+                                                                            "Top" = "top", "Bottom" = "bottom"),
+                                                                selected = "right", width = "100%")
+                                             )
+                                           ),
+                                           h5("Group Colors", class = "mlfs-section-title", style = "margin-top: 10px;"),
+                                           uiOutput("heatmap_group_colors_ui"),
+                                           h5("Font Sizes", class = "mlfs-section-title", style = "margin-top: 10px;"),
                                           fluidRow(
-                                            column(6,
-                                                   numericInput("heatmap_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")
-                                            ),
+                                             column(6,
+                                                    numericInput("heatmap_title_size", "Plot Title (0 = none)", value = 0, min = 0, max = 24, step = 1, width = "100%")
+                                             ),
                                             column(6,
                                                    numericInput("heatmap_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%")
                                             )
@@ -8732,8 +9106,8 @@ ui <- tagList(
                            shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
                                            "Configure filtering thresholds for features")
                        ),
-                       div(class = "mlfs-card-body",
-                           div(id = "dist_cutoff_row", class = "cutoff-row-without-fdr",
+                        div(class = "mlfs-card-body",
+                            div(id = "dist_cutoff_row", class = "cutoff-row-without-fdr",
                                div(class = "col-sm-4 fdr-cutoff-column",
                                    conditionalPanel(
                                      condition = "input.sig_method == 'rots'",
@@ -8765,8 +9139,9 @@ ui <- tagList(
                        ),
                        checkboxInput("showPoints", "Show Individual Points", value = TRUE),
                        checkboxInput("showErrorBars", "Show Error Bars", value = TRUE),
-                       checkboxInput("showStats", "Show Statistics", value = TRUE),
-                       uiOutput("dist_stat_comparisons_ui"),
+                        checkboxInput("showStats", "Show Statistics", value = TRUE),
+                        helpText(HTML("<small>Significance brackets follow the Data tab P-value cutoff on the adjusted p-values (plus the FDR cutoff when ROTS is used).</small>")),
+                        uiOutput("dist_stat_comparisons_ui"),
                        
                        h5("Y-Axis Scaling", class = "mlfs-section-title"),
                        selectInput("dist_y_scale", "Y-Axis Scale",
@@ -10347,12 +10722,14 @@ ui <- tagList(
                          shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
                                          "Select groups for ROC analysis comparison")
                      ),
-                     div(class = "mlfs-card-body",
-                         fluidRow(
-                           column(6, selectizeInput("rocGroup1", "Group 1", choices = NULL, width = "100%")),
-                           column(6, selectizeInput("rocGroup2", "Group 2", choices = NULL, width = "100%"))
-                         )
-                     )
+                      div(class = "mlfs-card-body",
+                          fluidRow(
+                            column(6, selectizeInput("rocGroup1", "Group 1", choices = NULL, width = "100%")),
+                            column(6, selectizeInput("rocGroup2", "Group 2", choices = NULL, width = "100%"))
+                          ),
+                          helpText("Biomarker direction is relative to Group 2 (cases): 'Upregulated' = higher in Group 2. AUC is orientation-adjusted so it never drops below 0.5.",
+                                   style = "font-size: 0.85em; color: #666;")
+                      )
                  ),
                  
                  # Feature Selection Card
@@ -10689,8 +11066,10 @@ ui <- tagList(
                                             choices = NULL, width = "100%"),
                                 selectInput("proteomics_manual_foldchange_column", "Fold Change Column (optional):",
                                             choices = NULL, width = "100%"),
+                                selectInput("proteomics_manual_stat_column", "t-statistic / Stat Column (optional):",
+                                            choices = NULL, width = "100%"),
                                 tags$small(class = "text-muted",
-                                           "Note: P-value and fold change columns are required for GSEA analysis, optional for ORA.")
+                                           "Note: P-value and fold change columns are required for GSEA analysis, optional for ORA. Select a stat column (e.g. DESeq2 'stat') to enable t-statistic ranking.")
                             ),
                             
                             # Filter controls for GSEA (CSV files only)
@@ -11519,9 +11898,75 @@ ui <- tagList(
                              )
                          )
                      )
-                 ),
-                 tabsetPanel(
-                   id = "proteomics_tabs",
+                  ),
+                  # Right-side overlay drawer for the Visualization / Network View tabs.
+                  # Control cards below become overlay panels purely via CSS
+                  # (.enrich-drawer-card): no inputs move, so every binding,
+                  # conditionalPanel and JS toggle keeps working. Grid columns go
+                  # full-width inside the drawer for readability.
+                  tags$style(HTML("
+                    #enrich_drawer_toggle { position: fixed; right: 0; top: 50%; transform: translateY(-50%); width: 28px; height: 44px; background: #3498db; border: 1px solid #dee2e6; border-right: none; border-radius: 8px 0 0 8px; display: none; text-align: center; line-height: 40px; cursor: pointer; z-index: 1060; box-shadow: -2px 0 8px rgba(0,0,0,0.1); transition: right 0.3s cubic-bezier(0.4,0,0.2,1), background 0.3s ease, transform 0.3s ease; color: white; padding: 0; }
+                    #enrich_drawer_toggle:hover { background: #2980b9; transform: translateY(-50%) scale(1.05); }
+                    #enrich_drawer_toggle i { color: white; font-size: 13px; }
+                    body.enrich-drawer-open #enrich_drawer_toggle { right: min(412px, 94vw); }
+                    #enrich_drawer_catcher { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: transparent; z-index: 1040; display: none; }
+                    .tab-pane.active .enrich-drawer-card { position: fixed; right: 0; top: 0; height: 100vh; width: 412px; max-width: 94vw; z-index: 1050; margin: 0 !important; border-radius: 0; box-shadow: -3px 0 14px rgba(0,0,0,0.25); overflow-y: auto; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); }
+                    .tab-pane.active .enrich-drawer-card.open { transform: none; }
+                    .tab-pane.active .enrich-drawer-card div[class*='col-'] { width: 100%; float: none; }
+                  ")),
+                  tags$button(id = "enrich_drawer_toggle", type = "button", class = "btn btn-primary",
+                              title = "Show plot controls", icon("sliders")),
+                  div(id = "enrich_drawer_catcher"),
+                  span(style = "display: none;", textOutput("enrich_drawer_ready", inline = TRUE)),
+                  tags$script(HTML("
+                    var enrichDrawerTab = null;
+                    function enrichDrawerSync() {
+                      var anyOpen = $('.enrich-drawer-card.open').length > 0;
+                      $('body').toggleClass('enrich-drawer-open', anyOpen);
+                      $('#enrich_drawer_catcher').toggle(anyOpen);
+                    }
+                    function enrichDrawerEval() {
+                      var ready = $('#enrich_drawer_ready').text() === 'ready';
+                      var isTarget = (enrichDrawerTab === 'Visualization' || enrichDrawerTab === 'Network View') && ready;
+                      $('#enrich_drawer_toggle').toggle(isTarget);
+                      if (isTarget) {
+                        $('.enrich-drawer-card').addClass('open');
+                      } else {
+                        $('.enrich-drawer-card').removeClass('open');
+                      }
+                      enrichDrawerSync();
+                    }
+                    $(document).on('shiny:inputchanged', function(e) {
+                      if (e.name !== 'proteomics_tabs') return;
+                      enrichDrawerTab = e.value;
+                      enrichDrawerEval();
+                    });
+                    if (window.MutationObserver && $('#enrich_drawer_ready').length) {
+                      new MutationObserver(enrichDrawerEval).observe(
+                        $('#enrich_drawer_ready')[0],
+                        {childList: true, characterData: true, subtree: true});
+                    }
+                    $(document).on('click', '#enrich_drawer_toggle', function() {
+                      $('.enrich-drawer-card').toggleClass('open');
+                      enrichDrawerSync();
+                    });
+                    $(document).on('mouseenter', '#enrich_drawer_toggle', function() {
+                      $('.enrich-drawer-card').addClass('open');
+                      enrichDrawerSync();
+                    });
+                    $(document).on('click', '#enrich_drawer_catcher', function() {
+                      $('.enrich-drawer-card').removeClass('open');
+                      enrichDrawerSync();
+                    });
+                    $(document).on('keydown', function(e) {
+                      if (e.key === 'Escape') {
+                        $('.enrich-drawer-card').removeClass('open');
+                        enrichDrawerSync();
+                      }
+                    });
+                  ")),
+                  tabsetPanel(
+                    id = "proteomics_tabs",
                    
                    tabPanel(
                      "Input Summary",
@@ -11570,9 +12015,9 @@ ui <- tagList(
                    
                    tabPanel(
                      "Visualization",
-                     div(class = "mlfs-card",
-                         div(style = "display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;",
-                             h4(icon("chart-bar", class = "mlfs-feature-icon"), "Visualization Controls")
+                      div(class = "mlfs-card enrich-drawer-card drawer-main",
+                          div(style = "display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;",
+                              h4(icon("chart-bar", class = "mlfs-feature-icon"), "Visualization Controls")
                          ),
 
                          # Progress bar for ReactomePA analysis
@@ -11583,33 +12028,114 @@ ui <- tagList(
                            column(4,
                                   selectInput("proteomics_plot_type", "Plot Type", choices = NULL)
                            ),
+                            column(4,
+                                   conditionalPanel(
+                                     condition = "input.proteomics_plot_type == 'barplot' || input.proteomics_plot_type == 'dotplot' || input.proteomics_plot_type == 'chord'",
+                                     numericInput("proteomics_top_terms", "Number of terms to display", value = 15, min = 5, max = 50)
+                                   ),
+                                   conditionalPanel(
+                                     condition = "input.proteomics_plot_type == 'chord'",
+                                     numericInput("proteomics_chord_max_genes", "Max genes per term", value = 10, min = 1, max = 50)
+                                   ),
+                                   conditionalPanel(
+                                     condition = "input.proteomics_tool == 'enrichr'",
+                                     uiOutput("proteomics_enrichr_db_ui")
+                                   )
+                            ),
                            column(4,
+                                  # Color Theme does not apply to the chord diagram
+                                  # (it has its own color controls), so hide it there.
                                   conditionalPanel(
-                                    condition = "input.proteomics_plot_type == 'barplot' || input.proteomics_plot_type == 'dotplot'",
-                                    numericInput("proteomics_top_terms", "Number of terms to display", value = 15, min = 5, max = 50)
-                                  ),
-                                  conditionalPanel(
-                                    condition = "input.proteomics_tool == 'enrichr'",
-                                    uiOutput("proteomics_enrichr_db_ui")
-                                  )
-                           ),
-                           column(4,
-                                  selectInput("proteomics_plot_color", "Color Theme",
+                                    condition = "input.proteomics_plot_type != 'chord'",
+                                    selectInput("proteomics_plot_color", "Color Theme",
                                               choices = c("Default" = "default",
                                                           "Viridis" = "viridis",
                                                           "Plasma" = "plasma",
                                                           "Blues" = "Blues",
                                                           "Reds" = "Reds",
-                                                          "Greens" = "Greens",
-                                                          "Purple-Orange" = "PuOr",                                                   "Blue-Red" = "RdBu"))
-                           )
-                         ),
-                         
-                         # gseaplot2 specific controls
+                                                           "Greens" = "Greens",
+                                                           "Purple-Orange" = "PuOr",
+                                                           "Blue-Red" = "RdBu"))
+                             )
+                           )),
+                           conditionalPanel(
+                             condition = "input.proteomics_plot_type == 'chord'",
+                            fluidRow(
+                              column(4,
+                                     selectInput("proteomics_chord_colors", "Term colors",
+                                                 choices = c("Single color" = "single",
+                                                             "Distinct color per term" = "rainbow"),
+                                                 selected = "single", width = "100%")
+                              ),
+                              column(4,
+                                     selectInput("proteomics_chord_labels", "Sector label orientation",
+                                                 choices = c("Tangential (along circle, default)" = "tangential",
+                                                             "Radial" = "radial"),
+                                                 selected = "tangential", width = "100%")
+                              ),
+                               column(4,
+                                      numericInput("proteomics_chord_rotation", "Rotation (degrees)",
+                                                   value = 90, min = 0, max = 360, step = 5, width = "100%")
+                               )
+                             )
+                           ),
+                           conditionalPanel(
+                             condition = "input.proteomics_plot_type == 'chord'",
+                             fluidRow(
+                               column(4,
+                                      numericInput("proteomics_chord_term_cex", "Term name size",
+                                                   value = 0.9, min = 0.3, max = 2, step = 0.05, width = "100%")
+                               ),
+                               column(4,
+                                      numericInput("proteomics_chord_gene_cex", "Gene name size",
+                                                   value = 0.7, min = 0.3, max = 2, step = 0.05, width = "100%")
+                               ),
+                               column(4,
+                                      selectInput("proteomics_chord_gene_labels", "Gene labels",
+                                                  choices = c("All genes" = "all",
+                                                              "Top 10 genes" = "10",
+                                                              "Top 5 genes" = "5",
+                                                              "Top 3 genes" = "3",
+                                                              "Hide gene labels" = "0"),
+                                                  selected = "5", width = "100%")
+                               )
+                             )
+                           ),
+                          conditionalPanel(
+                            condition = "input.proteomics_plot_type == 'chord' && input.proteomics_chord_colors == 'single'",
+                            fluidRow(
+                              column(6,
+                                     colourpicker::colourInput("proteomics_chord_term_color", "Term color",
+                                                               value = "#4DAF4A", width = "100%")
+                              ),
+                              column(6,
+                                     tags$small(class = "text-muted",
+                                                 "Genes are shaded by fold change (red = up, blue = down, deeper = stronger, grey = unknown).")
+                                )
+                              )
+                            ),
+                            conditionalPanel(
+                              condition = "input.proteomics_plot_type == 'chord' && input.proteomics_chord_colors == 'rainbow'",
+                            fluidRow(
+                              column(6,
+                                     selectInput("proteomics_chord_palette", "Term palette",
+                                                 choices = c("Rainbow" = "rainbow",
+                                                             "Set3 (colorblind-friendly)" = "Set3",
+                                                             "Paired" = "Paired"),
+                                                 selected = "rainbow", width = "100%")
+                              ),
+                              column(6,
+                                     tags$small(class = "text-muted",
+                                                 "Each gene takes the color of its most significant term.")
+                                )
+                              )
+                            ),
+                           
+                           # gseaplot2 specific controls
                          div(
                            id = "gseaplot2_controls",
                            style = "border: 2px solid #007cba; padding: 15px; margin: 10px 0; background-color: #f0f8ff; border-radius: 12px;",
-                           tags$h4("?? GSEA Plot 2 Settings", style = "color: #007cba; margin-bottom: 15px;"),
+                            tags$h4("GSEA Plot 2 Settings", style = "color: #007cba; margin-bottom: 15px;"),
                            fluidRow(
                              column(4,
                                     tags$label(
@@ -11671,11 +12197,11 @@ ui <- tagList(
                          div(
                            id = "manhattan_plot_controls",
                            style = "border: 2px solid #007cba; padding: 15px; margin: 10px 0; background-color: #f0f8ff; border-radius: 12px; display: none;",
-                           tags$h4("??? Manhattan Plot Highlighting", style = "color: #007cba; margin-bottom: 15px;"),
-                           fluidRow(
-                             column(6,
-                                    tags$label(
-                                      "for" = "proteomics_gprofiler_highlight_terms",
+                            tags$h4("Manhattan Plot Highlighting", style = "color: #007cba; margin-bottom: 15px;"),
+                            fluidRow(
+                              column(12,
+                                     tags$label(
+                                       "for" = "proteomics_gprofiler_highlight_terms",
                                       class = "control-label",
                                       style = "cursor: help;",
                                       `data-toggle` = "tooltip",
@@ -11683,32 +12209,21 @@ ui <- tagList(
                                       title = "Select terms to highlight in the Manhattan plot. Hold Ctrl (Windows) or Cmd (Mac) to select multiple terms.",
                                       "Terms to Highlight"
                                     ),
-                                    selectInput("proteomics_gprofiler_highlight_terms", NULL,
-                                                choices = NULL,
-                                                multiple = TRUE,
-                                                selected = NULL,
-                                                selectize = FALSE,
-                                                size = 6, width = "100%")
-                             ),
-                             column(6,
-                                    tags$div(
-                                      class = "alert alert-info",
-                                      style = "margin-top: 0px;",
-                                      icon("lightbulb"),
-                                      tags$strong("Highlighting in static plots:"), br(),
-                                      "  Selected terms will be highlighted in the plot", br(),
-                                      "  Switch to interactive mode for exploration", br(),
-                                      "  Download button available for static plots"
-                                    )
-                             )
-                           )
-                         ),
+                                     selectInput("proteomics_gprofiler_highlight_terms", NULL,
+                                                 choices = NULL,
+                                                 multiple = TRUE,
+                                                 selected = NULL,
+                                                 selectize = FALSE,
+                                                 size = 6, width = "100%")
+                              )
+                            )
+                          ),
                          
                          # topGO GOGraph specific controls
                          div(
                            id = "topgo_gograph_controls",
                            style = "border: 2px solid #28a745; padding: 15px; margin: 10px 0; background-color: #f8fff8; border-radius: 12px; display: none;",
-                           tags$h4("??? GO Graph Settings", style = "color: #28a745; margin-bottom: 15px;"),
+                            tags$h4("GO Graph Settings", style = "color: #28a745; margin-bottom: 15px;"),
                            fluidRow(
                              column(6,
                                     tags$label(
@@ -11752,30 +12267,26 @@ ui <- tagList(
                                       "  Significant nodes as rectangles", br(),
                                       "  Displays upper induced graph", br(),
                                       "  Hover for term details"
-                                    )
-                             )
-                           )
-                         )
-                     ),
-                     
-                     # Font size controls
-                     div(class = "mlfs-card",
-                         div(class = "mlfs-card-header",
+                                     )
+                              )
+                            )
+                          ),
+                           # Font sizes section (inside the drawer card; hidden for chord,
+                           # which has its own term/gene size fields)
+                           conditionalPanel(
+                             condition = "input.proteomics_plot_type != 'chord'",
+                             tags$hr(style = "margin: 14px 0;"),
                              h4(icon("font", class = "mlfs-feature-icon"), "Font Sizes"),
-                             shinyBS::tipify(icon("question-circle", class = "mlfs-tooltip"),
-                                             "Adjust font sizes for enrichment plots")
-                         ),
-                         div(class = "mlfs-card-body",
                              fluidRow(
                                column(3, numericInput("enrichment_title_size", "Plot Title", value = 14, min = 8, max = 24, step = 1, width = "100%")),
                                column(3, numericInput("enrichment_axis_title_size", "Axis Titles", value = 12, min = 8, max = 20, step = 1, width = "100%")),
                                column(3, numericInput("enrichment_axis_text_size", "Axis Text", value = 10, min = 6, max = 18, step = 1, width = "100%")),
                                column(3, numericInput("enrichment_legend_text_size", "Legend Text", value = 12, min = 6, max = 18, step = 1, width = "100%"))
                              )
-                         )
-                     ),
+                           )
+                      ),
                      
-                     div(class = "mlfs-card",
+                      div(class = "mlfs-card",
                          div(style = "display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;",
                              h4(icon("chart-area", class = "mlfs-feature-icon"), "Enrichment Plot"),
                              # Right side container for controls and download
@@ -11839,8 +12350,8 @@ ui <- tagList(
                    
                    tabPanel(
                      "Network View",
-                     div(class = "mlfs-card",
-                         h4(icon("project-diagram", class = "mlfs-feature-icon"), "Network Controls"),
+                      div(class = "mlfs-card enrich-drawer-card drawer-full",
+                          h4(icon("project-diagram", class = "mlfs-feature-icon"), "Network Controls"),
                          fluidRow(
                            column(4,
                                   selectInput("proteomics_network_type", "Network Type",
@@ -11904,13 +12415,137 @@ ui <- tagList(
                                   numericInput("pathview_limit", "Color Scale Limit:",
                                                value = 1, min = 0.1, max = 10, step = 0.1)
                            ),
-                           column(3,
-                                  br(), # Space for alignment
-                                  actionButton("generate_pathview", "View Pathway",
-                                               class = "btn-primary mlfs-btn", icon = icon("play"),
-                                               style = "margin-top: 5px; width: 100%;")
-                           )
-                         ),
+                            column(3,
+                                   br(), # Space for alignment
+                                   actionButton("generate_pathview", "View Pathway",
+                                                class = "btn-primary mlfs-btn", icon = icon("play"),
+                                                style = "margin-top: 5px; width: 100%;")
+                            )
+                          ),
+                          # Pathview gene-layer row (hidden by default)
+                          fluidRow(
+                            id = "pathview_omics_row",
+                            style = "display: none;",
+                            column(3,
+                                   selectInput("pathview_gene_source", "Gene layer:",
+                                               choices = c("Current enrichment data" = "current"),
+                                               width = "100%")
+                            ),
+                            column(3,
+                                   selectInput("pathview_gene_idtype", "Gene ID type:",
+                                               choices = c("Auto (to Entrez)" = "auto",
+                                                           "Entrez" = "entrez",
+                                                           "Symbol" = "symbol",
+                                                           "Ensembl" = "ensembl"),
+                                               selected = "auto",
+                                               width = "100%")
+                            ),
+                            column(3,
+                                   div(style = "padding-top: 26px;",
+                                       checkboxInput("pathview_multi_state", "Multi-sample slices",
+                                                     value = FALSE, width = "100%"))
+                            ),
+                            column(3,
+                                   div(style = "padding-top: 26px;",
+                                       checkboxInput("pathview_enable_cpd", "Overlay compound data",
+                                                     value = FALSE, width = "100%"))
+                            )
+                          ),
+                          # Pathview gene scale row (hidden by default; knobs tucked
+                          # behind a collapsed Advanced element)
+                          fluidRow(
+                            id = "pathview_scale_row",
+                            style = "display: none;",
+                            column(12,
+                                   tags$details(
+                                     tags$summary("Advanced gene options",
+                                                  style = "cursor: pointer; color: #007bff; font-weight: 600; margin: 4px 0;"),
+                                     fluidRow(
+                                       column(4,
+                                              selectInput("pathview_node_sum", "Node summary:",
+                                                          choices = c("Sum" = "sum",
+                                                                      "Mean" = "mean",
+                                                                      "Median" = "median",
+                                                                      "Max" = "max",
+                                                                      "Max abs" = "max.abs"),
+                                                          selected = "sum",
+                                                          width = "100%")
+                                       ),
+                                       column(4,
+                                              numericInput("pathview_bins_gene", "Gene color bins:",
+                                                           value = 10, min = 2, max = 50, step = 1,
+                                                           width = "100%")
+                                       ),
+                                       column(4,
+                                              selectInput("pathview_trans_gene", "Gene transform:",
+                                                          choices = c("None" = "none",
+                                                                      "Absolute value" = "abs"),
+                                                          selected = "none",
+                                                          width = "100%")
+                                       )
+                                     )
+                                   )
+                            )
+                          ),
+                          # Compound overlay controls: the wrapper is hidden outside
+                          # pathview mode (JS, like the rows above) and the inner
+                          # panels stay hidden unless the overlay is enabled, so
+                          # gene-only users never see these controls.
+                          div(id = "pathview_cpd_wrap", style = "display: none;",
+                              conditionalPanel(
+                                condition = "input.pathview_enable_cpd",
+                                fluidRow(
+                                  column(4,
+                                         selectInput("pathview_cpd_source", "Compound layer:",
+                                                     choices = c("None (genes only)" = "none"),
+                                                     width = "100%")
+                                  ),
+                                  column(4,
+                                         selectInput("pathview_cpd_idtype", "Compound ID type:",
+                                                     choices = c("Auto-detect" = "auto",
+                                                                 "KEGG" = "kegg",
+                                                                 "HMDB" = "hmdb accession",
+                                                                 "CAS" = "cas registry number",
+                                                                 "DrugBank" = "drugbank accession",
+                                                                 "LipidMaps" = "lipid maps instance accession"),
+                                                     selected = "auto",
+                                                     width = "100%")
+                                  ),
+                                  column(4,
+                                         div(style = "padding-top: 26px;",
+                                             checkboxInput("pathview_same_layer", "Same-layer overlay",
+                                                           value = FALSE, width = "100%"))
+                                  )
+                                ),
+                                fluidRow(
+                                  column(12,
+                                         tags$details(
+                                           tags$summary("Advanced compound options",
+                                                        style = "cursor: pointer; color: #007bff; font-weight: 600; margin: 4px 0;"),
+                                           fluidRow(
+                                             column(4,
+                                                    numericInput("pathview_cpd_limit", "Compound color limit:",
+                                                                 value = 1, min = 0.1, max = 10, step = 0.1,
+                                                                 width = "100%")
+                                             ),
+                                             column(4,
+                                                    numericInput("pathview_bins_cpd", "Compound color bins:",
+                                                                 value = 10, min = 2, max = 50, step = 1,
+                                                                 width = "100%")
+                                             ),
+                                             column(4,
+                                                    selectInput("pathview_trans_cpd", "Compound transform:",
+                                                                choices = c("None" = "none",
+                                                                            "Absolute value" = "abs"),
+                                                                selected = "none",
+                                                                width = "100%")
+                                             )
+                                           )
+                                         )
+                                  )
+                                )
+                              )
+                          ),
                          # Graphviz-specific options row (hidden by default)
                          fluidRow(
                            id = "graphviz_options_row",
@@ -14099,7 +14734,7 @@ ui <- tagList(
                                                                accept = c(".rds", ".hdf5"),
                                                                width = "100%"),
                                                      br(),
-                                                     actionButton("load_model_btn", "Load Model",
+                                                     actionButton("load_mofa_model_btn", "Load Model",
                                                                   class = "btn-primary", width = "100%",
                                                                   style = "padding: 10px; font-weight: bold;"),
                                                      br(), br(),
@@ -14540,36 +15175,19 @@ ui <- tagList(
                                           verbatimTextOutput("diablo_design_matrix")
                                       ),
                                       div(class = "glyco-card", style = "padding: 15px; margin-bottom: 15px;",
-                                          h6("Initial Model Performance (perf.diablo)", style = "margin-top: 0;"),
-                                          p("Evaluate the performance of the initial DIABLO model with the current design matrix.",
-                                            style = "color: var(--text-secondary); margin-bottom: 10px; font-size: 0.9em;"),
-                                          fluidRow(
-                                            column(3,
-                                                   selectInput("diablo_perf_validation",
-                                                               "Validation Method",
-                                                               choices = c("Mfold" = "Mfold", "LOO" = "loo"),
-                                                               selected = "Mfold",
-                                                               width = "100%")
-                                            ),
-                                            column(3,
-                                                   sliderInput("diablo_perf_folds",
-                                                               "Number of Folds",
-                                                               min = 3, max = 10, value = 10, step = 1,
-                                                               width = "100%")
-                                            ),
-                                            column(3,
-                                                   sliderInput("diablo_perf_ncomp",
-                                                               "Number of Components",
-                                                               min = 2, max = 10, value = 5, step = 1,
-                                                               width = "100%")
-                                            ),
-                                            column(3,
-                                                   sliderInput("diablo_perf_nrepeat",
-                                                               "Number of Repeats",
-                                                               min = 1, max = 50, value = 10, step = 1,
-                                                               width = "100%")
-                                            )
-                                          ),
+                                           h6("Initial Model Performance (perf.diablo)", style = "margin-top: 0;"),
+                                           p("Evaluate the performance of the initial DIABLO model with the current design matrix.",
+                                             style = "color: var(--text-secondary); margin-bottom: 10px; font-size: 0.9em;"),
+                                           p("Validation settings (method, folds, repeats) live in the Performance Metrics tab and apply here.",
+                                             style = "color: var(--text-secondary); margin-bottom: 10px; font-size: 0.9em; font-style: italic;"),
+                                           fluidRow(
+                                             column(12,
+                                                    sliderInput("diablo_perf_ncomp",
+                                                                "Number of Components",
+                                                                min = 2, max = 10, value = 5, step = 1,
+                                                                width = "100%")
+                                             )
+                                           ),
                                           fluidRow(
                                             column(12,
                                                    actionButton("run_diablo_perf", "Run Performance Evaluation",
@@ -15825,16 +16443,19 @@ ui <- tagList(
                                  step = 0.01,
                                  width = "100%"),
                      
-                     selectInput("power_effect_sizes",
-                                 "Effect Sizes to Test:",
-                                 choices = c("Small (0.2)" = 0.2,
-                                             "Small-Medium (0.5)" = 0.5,
-                                             "Medium (0.8)" = 0.8,
-                                             "Large (1.2)" = 1.2,
-                                             "Custom" = "custom"),
-                                 selected = c(0.5, 0.8, 1.2),
-                                 multiple = TRUE,
-                                 width = "100%"),
+                      selectInput("power_effect_sizes",
+                                  "Effect Size Scale (× observed difference):",
+                                  choices = c("0.2× observed" = 0.2,
+                                              "0.5× observed" = 0.5,
+                                              "0.8× observed" = 0.8,
+                                              "1.0× observed" = 1.0,
+                                              "1.2× observed" = 1.2,
+                                              "Custom" = "custom"),
+                                  selected = c(0.5, 1.0, 1.2),
+                                  multiple = TRUE,
+                                  width = "100%"),
+                      helpText("Scales each feature's observed group difference (1.0 = power to detect what you saw). Not Cohen's d.",
+                               style = "font-size: 0.85em; color: #666;"),
                      
                      conditionalPanel(
                        condition = "input.power_effect_sizes.includes('custom')",
@@ -16547,9 +17168,8 @@ ui <- tagList(
                                             div(style = "background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border-radius: 12px; padding: 25px; box-shadow: 0 8px 20px rgba(245, 87, 108, 0.3); transition: transform 0.3s ease, box-shadow 0.3s ease;",
                                                 h4(style = "color: white; border-bottom: 2px solid rgba(255,255,255,0.3); padding-bottom: 10px; margin-bottom: 15px; font-weight: 600;", icon("sitemap"), " Clustering Analysis"),
                                                 tags$ul(style = "list-style: none; padding-left: 0; margin: 0;",
-                                                  tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "K-means clustering with optimal k selection"),
-                                                  tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Hierarchical clustering dendrograms"),
-                                                  tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Silhouette analysis and cluster validation"),
+                                                  tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "K-means clustering with elbow analysis for optimal k"),
+                                                  tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Per-cluster expression profiles with BSS/TSS quality metrics"),
                                                   tags$li(style = "margin-bottom: 0; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Cluster-based feature profiling")
                                                 )
                                             ),
@@ -16560,8 +17180,8 @@ ui <- tagList(
                                                 tags$ul(style = "list-style: none; padding-left: 0; margin: 0;",
                                                   tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Correlation matrix heatmaps"),
                                                   tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Pearson, Spearman, Kendall correlation methods"),
-                                                  tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Hierarchical clustering of correlated features"),
-                                                  tags$li(style = "margin-bottom: 0; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Interactive correlation network visualization")
+                                                  tags$li(style = "margin-bottom: 8px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Pairwise tables with BH-adjusted significance, top correlations, distribution histogram"),
+                                                  tags$li(style = "margin-bottom: 0; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Thresholded display with value and significance overlays")
                                                 )
                                             ),
                                             
@@ -16596,7 +17216,7 @@ ui <- tagList(
                                                 ),
                                                 h5(style = "color: white; font-weight: 600; margin-bottom: 10px;", "Classification Models"),
                                                 tags$ul(style = "list-style: none; padding-left: 0; margin: 0;",
-                                                  tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Random Forest, SVM, Neural Networks, Gradient Boosting"),
+                                                   tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Random Forest, Gradient Boosting (GBM/XGBoost) as ensemble base learners"),
                                                   tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Cross-validation and hyperparameter tuning"),
                                                   tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Performance metrics (accuracy, AUC, F1-score)"),
                                                   tags$li(style = "margin-bottom: 0; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Confusion matrices and ROC curves")
@@ -16698,10 +17318,10 @@ ui <- tagList(
                                                 ),
                                                 h5(style = "color: white; font-weight: 600; margin-bottom: 10px;", "DIABLO (Supervised Integration)"),
                                                 tags$ul(style = "list-style: none; padding-left: 0; margin: 0;",
-                                                  tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Supervised multi-omics data integration"),
-                                                  tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Cross-omics feature selection"),
-                                                  tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Sample classification and prediction"),
-                                                  tags$li(style = "margin-bottom: 0; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Circos plots and network visualization")
+                                                   tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Supervised multi-omics data integration"),
+                                                   tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Cross-omics feature selection"),
+                                                   tags$li(style = "margin-bottom: 6px; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Sample classification (cross-validated prediction workflows in tutorial)"),
+                                                   tags$li(style = "margin-bottom: 0; padding-left: 18px; position: relative;", tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"), "Circos plots and network visualization")
                                                 )
                                             ),
                                             
@@ -16827,16 +17447,10 @@ ui <- tagList(
                                               tags$ul(style = "list-style: none; padding-left: 0;",
                                                 tags$li(style = "margin-bottom: 10px; padding-left: 20px; position: relative;",
                                                   tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"),
-                                                  tags$span(style = "font-weight: 600;", "Random Forest:"), " Ensemble of decision trees"),
+                                                  tags$span(style = "font-weight: 600;", "Random Forest:"), " Ensemble of decision trees (ranger/randomForest)"),
                                                 tags$li(style = "margin-bottom: 10px; padding-left: 20px; position: relative;",
                                                   tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"),
-                                                  tags$span(style = "font-weight: 600;", "SVM:"), " Support Vector Machines with kernel tricks"),
-                                                tags$li(style = "margin-bottom: 10px; padding-left: 20px; position: relative;",
-                                                  tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"),
-                                                  tags$span(style = "font-weight: 600;", "Neural Networks:"), " Deep learning models"),
-                                                tags$li(style = "margin-bottom: 10px; padding-left: 20px; position: relative;",
-                                                  tags$span(style = "position: absolute; left: 0; color: #ffd700;", "▸"),
-                                                  tags$span(style = "font-weight: 600;", "Gradient Boosting:"), " XGBoost, LightGBM implementations")
+                                                  tags$span(style = "font-weight: 600;", "Gradient Boosting:"), " GBM and XGBoost as ensemble base learners")
                                               ),
                                               h5(style = "color: white; font-weight: 600; margin-top: 15px; margin-bottom: 10px;", "Feature Selection:"),
                                               tags$ul(style = "list-style: none; padding-left: 0;",
@@ -17059,9 +17673,9 @@ ui <- tagList(
                                a(href = "mailto:mfowowe@ttu.edu", "mfowowe@ttu.edu")
                              ),
                              p(style = "font-size: 1.05em; margin-top: 15px;",
-                               strong("Version:"), " 1.0 | ",
-                               strong("Last Updated:"), " 2025 | ",
-                               strong("License:"), " Open Source"
+                                strong("Version:"), " 1.0 | ",
+                                strong("Last Updated:"), " 2026 | ",
+                                strong("License:"), " Open Source"
                              )
                          ),
                      )
@@ -17209,6 +17823,12 @@ tags$div(
   ),
   tags$div(
     id = "jibosky-chat-window",
+    tags$button(
+      id = "jibosky-width-toggle",
+      title = "Toggle wide view",
+      onclick = "var w=document.getElementById('jibosky-chat-window');w.classList.toggle('wide');this.innerHTML=w.classList.contains('wide')?'&#xab;':'&#xbb;';",
+      HTML("&#xbb;")
+    ),
     tags$div(
       class = "jibosky-chat-header",
       tags$div(
@@ -17223,10 +17843,19 @@ tags$div(
           tags$small("AI Research Assistant")
         )
       ),
-      tags$button(
-        class = "jibosky-close-btn",
-        onclick = "Shiny.setInputValue('jibosky_toggle', Math.random());",
-        HTML("&times;")
+      tags$div(
+        class = "jibosky-header-actions",
+        tags$button(
+          class = "jibosky-setup-btn",
+          onclick = "Shiny.setInputValue('jibosky_open_setup', Math.random());",
+          title = "Set up AI keys - no terminal needed",
+          HTML("&#x2699; AI Setup")
+        ),
+        tags$button(
+          class = "jibosky-close-btn",
+          onclick = "Shiny.setInputValue('jibosky_toggle', Math.random());",
+          HTML("&times;")
+        )
       )
     ),
     tags$div(
@@ -17391,6 +18020,38 @@ tags$script(HTML("
         chatWindow.removeClass('show');
       }
     });
+
+    // Global opener (used by per-tab Ask Jibosky buttons via runjs)
+    window.jiboskyOpenChat = function() {
+      isOpen = true;
+      chatWindow.addClass('show');
+    };
+
+    // Per-tab Ask Jibosky buttons: one at the top of every top-level tab pane
+    function jiboskyInjectTabButtons() {
+      $('.navbar-nav a[data-toggle=\"tab\"]').each(function() {
+        var tabName = $(this).clone().children().remove().end().text().trim();
+        var href = $(this).attr('href');
+        if (!tabName || !href) return;
+        var pane = $(href);
+        if (pane.length && pane.find('> .jibosky-tab-ai-btn').length === 0) {
+          var btn = $('<button>', {
+            'class': 'jibosky-tab-ai-btn',
+            title: 'Ask Jibosky to summarize and interpret this tab',
+            html: '&#x2728; Ask Jibosky about this tab'
+          });
+          btn.attr('data-tab', tabName);
+          btn.on('click', function(e) {
+            e.preventDefault();
+            Shiny.setInputValue('jibosky_tab_ask', $(this).attr('data-tab'), {priority: 'event'});
+          });
+          pane.prepend(btn);
+        }
+      });
+    }
+    jiboskyInjectTabButtons();
+    setTimeout(jiboskyInjectTabButtons, 1500);
+    setTimeout(jiboskyInjectTabButtons, 4000);
 
     // Auto-scroll to bottom when new messages arrive
     var messagesContainer = $('#jibosky-messages');

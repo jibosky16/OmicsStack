@@ -467,7 +467,9 @@ server <- function(input, output, session) {
   # OPTIMIZATION #8: Initialize session-persistent metabolite cache
   # ============================================================================
   # Cache is stored in SQLite (metabolites.db) and automatically persists across app restarts
-  # On startup, ensure database schema is created and indexed
+  # On startup, ensure database schema is created and indexed.
+  # Runs once per R process (indexes persist in the .db file), not on every session.
+  if (!isTRUE(get0(".omics_metabolite_cache_init_done", envir = .GlobalEnv, ifnotfound = FALSE))) {
   tryCatch({
     if (file.exists("metabolites.db")) {
       con <- DBI::dbConnect(RSQLite::SQLite(), "metabolites.db")
@@ -489,17 +491,21 @@ server <- function(input, output, session) {
       create_metabolite_indexes()
       
       DBI::dbDisconnect(con)
+      assign(".omics_metabolite_cache_init_done", TRUE, envir = .GlobalEnv)
+    } else {
+      assign(".omics_metabolite_cache_init_done", TRUE, envir = .GlobalEnv)
     }
   }, error = function(e) {
     message(sprintf("[CACHE-INIT] Warning: Could not initialize cache on startup: %s", e$message))
   })
+  }
   
   # ============================================================================
   # LOAD MODEL FUNCTIONALITY
   # ============================================================================
   
-  # Load MOFA Model
-  observeEvent(input$load_model_btn, {
+  # Load MOFA Model (dedicated ID: the ML tab has its own load_model_btn)
+  observeEvent(input$load_mofa_model_btn, {
     req(input$load_model_file)
     
     # Get the file path
@@ -1828,9 +1834,21 @@ server <- function(input, output, session) {
     selectInput("limma_voom_reference_group", "Reference group",
                 choices = grps, selected = sel, width = "100%")
   })
+
+  output$limma_block_column_ui <- renderUI({
+    if ((input$sig_method %||% "") != "limma") return(NULL)
+    render_limma_block_column_ui("limma_block_column", input$limma_block_column)
+  })
+
+  output$limma_voom_block_column_ui <- renderUI({
+    if ((input$sig_method %||% "") != "limma_voom") return(NULL)
+    render_limma_block_column_ui("limma_voom_block_column", input$limma_voom_block_column)
+  })
   
   outputOptions(output, "limma_reference_ui", suspendWhenHidden = FALSE)
   outputOptions(output, "limma_voom_reference_ui", suspendWhenHidden = FALSE)
+  outputOptions(output, "limma_block_column_ui", suspendWhenHidden = FALSE)
+  outputOptions(output, "limma_voom_block_column_ui", suspendWhenHidden = FALSE)
   
   # ============================================================================
   # DUAL GROUPING TOGGLE UI RENDERERS
@@ -1859,6 +1877,29 @@ server <- function(input, output, session) {
   # Heatmap grouping toggle
   output$heatmap_grouping_toggle_ui <- renderUI({
     generate_grouping_level_toggle_ui("heatmap")
+  })
+
+  # Per-group color pickers for the heatmap Group annotation + legend.
+  # Defaults cycle a fixed palette so colors are stable across sessions.
+  # Rendered 3-per-row like the expression color scheme above it.
+  output$heatmap_group_colors_ui <- renderUI({
+    req(values$unique_groups)
+    groups <- preserve_group_names(values$unique_groups)
+    default_pal <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+                     "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
+                     "#999999", "#E7298A", "#66A61E", "#E6AB02")
+    row_idx <- split(seq_along(groups), ceiling(seq_along(groups) / 3))
+    tagList(lapply(row_idx, function(idx) {
+      fluidRow(lapply(idx, function(i) {
+        column(4, colourInput(
+          inputId = paste0("heatmap_group_color_", i),
+          label = groups[i],
+          value = default_pal[((i - 1) %% length(default_pal)) + 1],
+          showColour = "both",
+          width = "100%"
+        ))
+      }))
+    }))
   })
   
   # Differential analysis grouping toggle
@@ -2837,9 +2878,18 @@ server <- function(input, output, session) {
                   tryCatch({
                     wilcox.test(group1_data, group2_data)$p.value
                   }, error = function(e) { NA })
-                } else if (input$sig_method == "t.test" || input$sig_method == "anova") {
+                } else if (input$sig_method == "t.test") {
                   tryCatch({
-                    t.test(group1_data, group2_data)$p.value
+                    run_ttest_pair(group1_data, group2_data, input$ttest_variant)
+                  }, error = function(e) { NA })
+                } else if (input$sig_method == "anova") {
+                  # Two-group ANOVA is the F-test, not Welch's t
+                  tryCatch({
+                    dat <- c(group1_data, group2_data)
+                    grp <- factor(rep(c("G1", "G2"), c(length(group1_data), length(group2_data))))
+                    aov_tab <- anova(lm(dat ~ grp))
+                    prow <- which(rownames(aov_tab) == "grp")
+                    if (length(prow) > 0) aov_tab[prow, "Pr(>F)"] else NA
                   }, error = function(e) { NA })
                 } else {
                   NA
@@ -2849,16 +2899,22 @@ server <- function(input, output, session) {
               }
             })
             
-            # Calculate fold change as Group2/Group1
-            fold_changes <- apply(values$normalized_data, 1, function(row) {
-              group1_mean <- mean(row[group1_columns], na.rm = TRUE)
-              group2_mean <- mean(row[group2_columns], na.rm = TRUE)
-              return(group2_mean / group1_mean)
+            # Log-scale-aware fold change (difference of means for log data, ratio otherwise)
+            fc_is_log <- is_data_log_scale()
+            fc_res <- lapply(seq_len(nrow(values$normalized_data)), function(rr) {
+              row <- values$normalized_data[rr, ]
+              compute_fc_pair(suppressWarnings(mean(row[group1_columns], na.rm = TRUE)),
+                              suppressWarnings(mean(row[group2_columns], na.rm = TRUE)),
+                              fc_is_log)
             })
-            
-            # Calculate log2 fold change
-            log2_fold_changes <- log2(fold_changes)
-            log2_fold_changes[is.infinite(log2_fold_changes)] <- NA
+            fold_changes <- vapply(fc_res, function(z) z$fc, numeric(1))
+            log2_fold_changes <- vapply(fc_res, function(z) z$log2fc, numeric(1))
+
+            # Welch t-statistic (Group2 - Group1 orientation, matches Log2FC sign).
+            # Stored for GSEA tstat ranking; valid even when p comes from wilcox/anova.
+            t_stats <- apply(values$normalized_data, 1, function(row) {
+              compute_welch_t_pair(row[group1_columns], row[group2_columns], input$ttest_variant)
+            })
             
             # Adjust p-values
             adjusted_p_values <- p.adjust(p_values, method = get_correction_method())
@@ -2868,6 +2924,7 @@ server <- function(input, output, session) {
             stat_results[[paste0(comparison_name, "_AdjPValue")]] <- adjusted_p_values
             stat_results[[paste0(comparison_name, "_FoldChange")]] <- fold_changes
             stat_results[[paste0(comparison_name, "_Log2FC")]] <- log2_fold_changes
+            stat_results[[paste0(comparison_name, "_Tstat")]] <- t_stats
             
             setProgress(0.3 + (idx / nrow(values$current_pairwise_combinations)) * 0.6)
           }
@@ -4716,7 +4773,7 @@ server <- function(input, output, session) {
   create_proper_group_labels <- function(unique_groups, group_column_indices) {
     all_columns <- unlist(group_column_indices)
     group_labels <- character(length(all_columns))
-    
+
     for (i in seq_along(unique_groups)) {
       group_name <- unique_groups[i]
       group_cols <- group_column_indices[[i]]
@@ -4724,8 +4781,27 @@ server <- function(input, output, session) {
       group_positions <- which(all_columns %in% group_cols)
       group_labels[group_positions] <- group_name
     }
-    
+
     return(group_labels)
+  }
+
+  # Labels in SAMPLE-COLUMN order: position i holds the group of sample column i.
+  # MUST be used for model design matrices / colData paired with column-ordered
+  # data. (create_proper_group_labels returns grouped order, which only matches
+  # column order when samples are pre-grouped — otherwise designs silently pair
+  # group labels with the wrong samples.)
+  create_sample_ordered_labels <- function(unique_groups, group_column_indices, n_samples = NULL) {
+    all_idx <- suppressWarnings(as.integer(unlist(group_column_indices)))
+    all_idx <- all_idx[!is.na(all_idx)]
+    n <- if (!is.null(n_samples)) as.integer(n_samples) else if (length(all_idx) > 0) max(all_idx) else 0L
+    if (is.na(n) || n <= 0) return(character(0))
+    group_labels <- rep(NA_character_, n)
+    for (i in seq_along(unique_groups)) {
+      idx <- suppressWarnings(as.integer(group_column_indices[[i]]))
+      idx <- idx[!is.na(idx) & idx >= 1 & idx <= n]
+      group_labels[idx] <- unique_groups[i]
+    }
+    group_labels
   }
 
   # Helper to preserve group order from mapping modal (not alphabetical)
@@ -4892,6 +4968,123 @@ server <- function(input, output, session) {
     }
 
     return(NA_integer_)  # No match found
+  }
+
+  # Align a metadata blocking factor to expression sample columns for limma::duplicateCorrelation
+  get_limma_block_factor <- function(sample_names, metadata, block_column) {
+    if (is.null(metadata) || ncol(metadata) == 0 || nrow(metadata) == 0) {
+      return(list(ok = FALSE, message = "Metadata not found. Upload an Excel file with a second sheet that includes a patient/subject ID column."))
+    }
+    if (is.null(block_column) || !nzchar(as.character(block_column)[1]) ||
+        !(block_column %in% colnames(metadata))) {
+      return(list(ok = FALSE, message = "Please select a valid blocking column (e.g., Patient ID) for mixed-effects limma."))
+    }
+
+    meta_sample_col <- NULL
+    for (col in colnames(metadata)) {
+      if (tolower(col) %in% c("sampleid", "sample_id", "sample", "id")) {
+        meta_sample_col <- col
+        break
+      }
+    }
+    if (is.null(meta_sample_col)) {
+      if (!is.null(rownames(metadata)) &&
+          all(as.character(rownames(metadata)) != as.character(seq_len(nrow(metadata))))) {
+        meta_samples <- as.character(rownames(metadata))
+      } else {
+        meta_samples <- as.character(metadata[[1]])
+      }
+    } else {
+      meta_samples <- as.character(metadata[[meta_sample_col]])
+    }
+
+    sample_names <- as.character(sample_names)
+    meta_samples <- trimws(meta_samples)
+
+    matched_idx <- match(sample_names, meta_samples)
+    if (anyNA(matched_idx)) {
+      matched_idx <- match(gsub(" ", "", sample_names), gsub(" ", "", meta_samples))
+    }
+    if (anyNA(matched_idx)) {
+      matched_idx <- match(tolower(gsub(" ", "", sample_names)),
+                           tolower(gsub(" ", "", meta_samples)))
+    }
+    if (anyNA(matched_idx) && length(sample_names) == nrow(metadata)) {
+      matched_idx <- seq_along(sample_names)
+      message("limma duplicateCorrelation: falling back to positional metadata alignment")
+    }
+    if (anyNA(matched_idx)) {
+      unmatched <- sample_names[is.na(matched_idx)]
+      return(list(ok = FALSE, message = paste0(
+        "Could not match samples to metadata for mixed-effects limma. Unmatched: ",
+        paste(utils::head(unmatched, 8), collapse = ", "),
+        if (length(unmatched) > 8) " ..." else "",
+        ". Check that the metadata Sample column matches the data column names."
+      )))
+    }
+
+    block_vals <- trimws(as.character(metadata[[block_column]][matched_idx]))
+    empty <- is.na(block_vals) | !nzchar(block_vals)
+    n_empty <- sum(empty)
+    if (any(empty)) {
+      # Keep unmatched/empty IDs as independent samples rather than one fake block
+      block_vals[empty] <- paste0(".singleton.", which(empty))
+    }
+    block <- factor(block_vals)
+    tab <- table(block)
+    n_repeated <- sum(tab >= 2L)
+    if (n_repeated < 1L) {
+      return(list(ok = FALSE, message = paste0(
+        "Blocking column '", block_column,
+        "' has no repeated IDs. duplicateCorrelation requires at least one subject with two or more samples."
+      )))
+    }
+
+    list(ok = TRUE, block = block, n_blocks = nlevels(block),
+         n_repeated = as.integer(n_repeated), n_empty = n_empty, column = block_column)
+  }
+
+  get_limma_block_column_choices <- function() {
+    if (is.null(values$metadata) || ncol(values$metadata) == 0) return(NULL)
+    meta_cols <- colnames(values$metadata)
+    sample_id_patterns <- c("^sampleid$", "^sample_id$", "^sample$", "^id$", "^rowname")
+    exclude_mask <- vapply(tolower(meta_cols), function(col) {
+      any(vapply(sample_id_patterns, function(pattern) grepl(pattern, col), logical(1)))
+    }, logical(1))
+    available_cols <- meta_cols[!exclude_mask]
+    if (length(available_cols) == 0) available_cols <- meta_cols
+    preselected <- available_cols[grepl(
+      "patient|subject|individual|donor|animal|participant|replicate",
+      available_cols, ignore.case = TRUE
+    )]
+    selected <- if (length(preselected) > 0) preselected[1] else available_cols[1]
+    # Mapping-modal design role wins when the user declared one
+    declared <- tryCatch(values$design_roles$subject, error = function(e) NULL)
+    if (!is.null(declared) && nzchar(as.character(declared)[1]) &&
+        as.character(declared)[1] %in% available_cols) {
+      selected <- as.character(declared)[1]
+    }
+    list(choices = available_cols, selected = selected)
+  }
+
+  render_limma_block_column_ui <- function(input_id, current_value = NULL) {
+    cols <- get_limma_block_column_choices()
+    if (is.null(cols)) {
+      return(
+        div(class = "alert alert-warning", style = "margin-top: 10px; padding: 10px;",
+            icon("exclamation-triangle"),
+            " Metadata not found. Please ensure your Excel file has a second sheet with a patient/subject ID column.")
+      )
+    }
+    sel <- current_value
+    if (is.null(sel) || !nzchar(as.character(sel)[1]) || !(sel %in% cols$choices)) {
+      sel <- cols$selected
+    }
+    tagList(
+      selectInput(input_id, "Blocking column (patient / subject ID)",
+                  choices = cols$choices, selected = sel, width = "100%"),
+      helpText(HTML("<small>Estimates a consensus within-subject correlation via <code>duplicateCorrelation</code>, then fits limma with that block. Use this when the same subject is sampled more than once (e.g., Day 1/3/5 from the same patient).</small>"))
+    )
   }
   
   # Enhanced hierarchical grouping detection from sample names
@@ -5475,6 +5668,82 @@ server <- function(input, output, session) {
                       choices = c("None" = "none"),
                       selected = "none")
   })
+
+  # Prevent double scaling: global feature scaling + dimred Scale toggles must
+  # never combine (scaling twice distorts distances). Follows the same
+  # force-off pattern as the bootstrap/method incompatibility guard above.
+  # sPCA Center is left alone: re-centering centered data is a harmless no-op.
+  observeEvent(input$feature_scaling, {
+    scaling <- input$feature_scaling %||% "none"
+    if (!is.null(scaling) && scaling != "none") {
+      updateCheckboxInput(session, "pcaScale", value = FALSE)
+      updateCheckboxInput(session, "umap_scale", value = FALSE)
+      updateCheckboxInput(session, "tsne_scale", value = FALSE)
+      updateCheckboxInput(session, "spcaScale", value = FALSE)
+      shinyjs::disable("pcaScale")
+      shinyjs::disable("umap_scale")
+      shinyjs::disable("tsne_scale")
+      shinyjs::disable("spcaScale")
+      showNotification(paste0("Feature Scaling (", scaling, ") is applied globally — ",
+                              "PCA/UMAP/t-SNE/sPCA Scale toggles were switched off to avoid ",
+                              "double-scaling. Set Feature Scaling back to None to re-enable them."),
+                       type = "message", duration = 8)
+    } else {
+      shinyjs::enable("pcaScale")
+      shinyjs::enable("umap_scale")
+      shinyjs::enable("tsne_scale")
+      shinyjs::enable("spcaScale")
+    }
+  }, ignoreInit = TRUE)
+
+  # Keep LMM random-effects choices in sync with metadata (reuses limma blocking logic)
+  observe({
+    cols <- get_limma_block_column_choices()
+    if (is.null(cols)) {
+      updateSelectInput(session, "lmm_random_var",
+                        choices = c("Select a metadata column..." = ""),
+                        selected = "")
+    } else {
+      sel <- input$lmm_random_var
+      if (is.null(sel) || !nzchar(as.character(sel)[1]) || !(sel %in% cols$choices)) {
+        sel <- cols$selected
+      }
+      updateSelectInput(session, "lmm_random_var",
+                        choices = cols$choices, selected = sel)
+      # Suggest a default random term from the chosen grouping variable
+      if (!is.null(sel) && nzchar(sel)) {
+        cur_txt <- trimws(input$lmm_random_text %||% "")
+        if (!nzchar(cur_txt)) {
+          updateTextInput(session, "lmm_random_text",
+                          value = sprintf("(1|%s)", sel))
+        }
+      }
+    }
+    # Fixed-effect covariates: all metadata columns (chosen grouping excluded later)
+    if (!is.null(values$metadata) && ncol(values$metadata) > 0) {
+      meta_cols <- colnames(values$metadata)
+      sel_cov <- intersect(input$lmm_fixed_extra %||% character(0), meta_cols)
+      updateSelectizeInput(session, "lmm_fixed_extra",
+                           choices = meta_cols, selected = sel_cov)
+    }
+  })
+
+  # Wilkinson-Rogers formula preview for LMM
+  output$lmm_formula_preview <- renderUI({
+    fixed_extra <- input$lmm_fixed_extra %||% character(0)
+    random_text <- trimws(input$lmm_random_text %||% "")
+    parts <- c("Group", fixed_extra, random_text[nzchar(random_text)])
+    div(style = "margin-top: 5px; padding: 8px; background-color: #f8f9fa; border-radius: 4px; border-left: 3px solid #6f42c1;",
+        tags$small(
+          HTML(paste0(
+            "<b>Formula Preview:</b> ",
+            "<code>value ~ ", paste(parts, collapse = " + "), "</code><br>",
+            "<span style='color:#6c757d;'>Primary comparisons key off Group; extra terms adjust (fixed) or structure (random) the model.</span>"
+          ))
+        )
+    )
+  })
+  outputOptions(output, "lmm_formula_preview", suspendWhenHidden = FALSE)
   
   # Update batch correction method choices based on test method
   observe({
@@ -5871,23 +6140,13 @@ server <- function(input, output, session) {
   
   get_correction_method <- function() {
     if(input$sig_method %in% c("anova", "kruskal")) {
-      # For ANOVA or Kruskal-Wallis tests, return a valid p.adjust method
-      # based on the selected posthoc method    +
-      posthoc_to_adjust <- list(
-        "tukey" = "none",     # Tukey already adjusts p-values
-        "dunn" = "none",      # Dunn's test can include adjustment
-        "bonferroni" = "bonferroni",
-        "holm" = "holm",
-        "BH" = "BH",
-        "BY" = "BY",
-        "none" = "none",
-        "dunnett" = "none",   # Dunnett already adjusts p-values
-        "scheffe" = "none",   # Scheff  already adjusts p-values
-        "games_howell" = "none" # Games-Howell already adjusts p-values
-      )
-      
-      # Return the mapped adjustment method or default to "none" if not found
-      return(posthoc_to_adjust[[input$posthoc_method]] %||% "none")
+      # Across-feature FDR is always required. Post-hoc procedures only adjust
+      # for pairwise comparisons WITHIN a feature, so they must never disable
+      # the across-feature correction (the old mapping returned "none", which
+      # silently left AdjPValue unadjusted). Dunn's `method` argument — the
+      # only within-feature consumer of this function — equally needs a real
+      # method, so the FDR setting serves both purposes correctly.
+      return(input$fdr_method %||% "BH")
     } else if (identical(input$sig_method, "limma")) {
       # Limma handles its own p-value adjustment with topTable
       return("BH")  # Limma uses BH correction by default
@@ -6148,15 +6407,10 @@ server <- function(input, output, session) {
   
   # Cache helper functions for Data tab operations
   create_cache_key <- function(...) {
-    # Create a unique key based on input parameters
-    params <- list(...)
-    # Convert to character and create hash
-    key_string <- paste(sapply(params, function(x) {
-      if (is.null(x)) return("NULL")
-      if (is.data.frame(x) || is.matrix(x)) return(digest::digest(x))
-      return(as.character(x))
-    }), collapse = "_")
-    return(digest::digest(key_string))
+    # Hash the full argument structure (names included). Flattening with
+    # as.character drops list names/structure and invites delimiter collisions
+    # between distinct parameter sets, which could return wrong cached results.
+    return(digest::digest(list(...)))
   }
   
   # Dynamic UI for plot types based on statistical method
@@ -6364,7 +6618,7 @@ server <- function(input, output, session) {
   # =========================================================================
   
   # Proteomics cache helper functions
-  create_proteomics_plot_cache_key <- function(tool, plot_type, enrichment_results, num_terms, fold_change_data, color_theme, highlight_terms = NULL) {
+  create_proteomics_plot_cache_key <- function(tool, plot_type, enrichment_results, num_terms, fold_change_data, color_theme, highlight_terms = NULL, extra = NULL) {
     # Create a cache key based on plot parameters
     enrichment_hash <- if (!is.null(enrichment_results)) {
       # Handle topGO objects differently since they can't be converted to data.frame
@@ -6402,8 +6656,17 @@ server <- function(input, output, session) {
     } else {
       "NULL"
     }
-    
-    key_string <- paste(tool, plot_type, enrichment_hash, num_terms, is_gsea, fold_change_hash, color_theme, highlight_hash, sep = "_")
+
+    # gseaplot2 is parameterized by user-selected gene sets + display options, all of
+    # which must participate in the key; otherwise a cached plot for a previous
+    # selection is replayed/copied (stale download bug).
+    extra_hash <- if (!is.null(extra)) {
+      digest::digest(extra, algo = "xxhash64")
+    } else {
+      "NULL"
+    }
+
+    key_string <- paste(tool, plot_type, enrichment_hash, num_terms, is_gsea, fold_change_hash, color_theme, highlight_hash, extra_hash, sep = "_")
     return(digest::digest(key_string, algo = "xxhash64"))
   }
   
@@ -6422,6 +6685,266 @@ server <- function(input, output, session) {
     update_cache_status()
     cat("Proteomics caches cleared\n")
   }
+
+  # Extra cache-key material for enrichment plots. Every user-facing input that
+  # changes the rendered/downloaded image must join the key, otherwise a cached
+  # plot/file for a previous setting is replayed (stale-plot bug, first seen
+  # with gseaplot2 gene sets). Unused entries stay at stable defaults so keys
+  # for unaffected plot types are unchanged in practice (cache just misses once).
+  get_enrichment_plot_cache_extra <- function(plot_type, for_download = FALSE) {
+    extra <- list(
+      # Font sizes affect both display and download rendering.
+      title_size = input$enrichment_title_size %||% 14,
+      axis_title_size = input$enrichment_axis_title_size %||% 12,
+      axis_text_size = input$enrichment_axis_text_size %||% 10,
+      legend_text_size = input$enrichment_legend_text_size %||% 12,
+      # g:Profiler Manhattan capped/uncapped rendering.
+      manhattan_capped = if (!is.null(input$proteomics_manhattan_capped)) input$proteomics_manhattan_capped else TRUE,
+      # Enrichr renders the selected database only.
+      enrichr_db = input$proteomics_enrichr_db_to_plot %||% "",
+      # topGO selections (download gograph renders with these; display gograph skips cache).
+      topgo_ontology = input$proteomics_topgo_ontology %||% "",
+      topgo_algorithm = input$proteomics_topgo_algorithm %||% "",
+      topgo_graph_terms = sort(input$proteomics_topgo_graph_terms %||% character(0)),
+      topgo_first_sig_nodes = input$proteomics_topgo_first_sig_nodes %||% 5,
+      topgo_use_info = input$proteomics_topgo_use_info %||% "all"
+    )
+    if (identical(plot_type, "gseaplot2")) {
+      extra$gsea_gene_sets <- sort(input$proteomics_gseaplot2_gene_sets %||% character(0))
+      extra$gsea_subplots <- sort(input$proteomics_gseaplot2_subplots %||% character(0))
+      extra$gsea_base_size <- input$proteomics_gseaplot2_base_size %||% 11
+      extra$gsea_pvalue_table <- isTRUE(input$proteomics_gseaplot2_pvalue_table)
+      extra$gsea_rel_heights <- input$proteomics_gseaplot2_rel_heights %||% 1.5
+    }
+    if (identical(plot_type, "chord")) {
+      # New controls must join the key or changing them re-serves the cached plot.
+      extra$chord_max_genes <- suppressWarnings(as.integer(
+        input$proteomics_chord_max_genes %||% 10))
+      extra$chord_colors <- input$proteomics_chord_colors %||% "single"
+      extra$chord_term_color <- input$proteomics_chord_term_color %||% "#4DAF4A"
+      extra$chord_palette <- input$proteomics_chord_palette %||% "rainbow"
+      extra$chord_labels <- input$proteomics_chord_labels %||% "radial"
+      extra$chord_rotation <- suppressWarnings(as.numeric(
+        input$proteomics_chord_rotation %||% 90))
+      extra$chord_term_cex <- suppressWarnings(as.numeric(
+        input$proteomics_chord_term_cex %||% 0.9))
+      extra$chord_gene_cex <- suppressWarnings(as.numeric(
+        input$proteomics_chord_gene_cex %||% 0.7))
+      extra$chord_gene_labels <- input$proteomics_chord_gene_labels %||% "5"
+    }
+    if (isTRUE(for_download)) {
+      # Download image format/DPI change the file bytes.
+      extra$dl_format <- tryCatch(get_safe_global_image_format(), error = function(e) "png")
+      extra$dl_dpi <- if (!is.null(input$global_dpi)) input$global_dpi else 300
+    }
+    extra
+  }
+
+  # Back-compat wrapper (gseaplot2-only callers).
+  get_gseaplot2_cache_extra <- function() {
+    ex <- get_enrichment_plot_cache_extra("gseaplot2", for_download = FALSE)
+    ex[c("gsea_gene_sets", "gsea_subplots", "gsea_base_size", "gsea_pvalue_table", "gsea_rel_heights")]
+  }
+
+  # Wrap long enrichment term names onto multiple lines (e.g. "oxidoreductase
+  # activity, acting on the CH-OH group of donors, NAD or NADP as acceptor").
+  # Use on the discrete axis of horizontal bar charts:
+  #   + scale_y_discrete(labels = wrap_enrichment_labels)
+  # or, when coord_flip() is used (discrete axis is x):
+  #   + scale_x_discrete(labels = wrap_enrichment_labels)
+  wrap_enrichment_labels <- function(x, width = 50) {
+    vapply(x, function(label) {
+      if (is.na(label)) return(NA_character_)
+      paste(strwrap(label, width = width), collapse = "\n")
+    }, character(1))
+  }
+
+  # Build term-gene links for the chord diagram: top `n` terms by adjusted
+  # p-value (ORA uses geneID, GSEA uses core_enrichment), at most `max_genes`
+  # genes per term ranked by |fold change| when available (strongest responders
+  # first; term order otherwise). Capping genes is visualization-only filtering
+  # for readability -- the enrichment statistics themselves are untouched.
+  # Genes are colored by fold change (red = up, blue = down, grey = unknown);
+  # terms are single-color by default or rainbow with color_mode = "rainbow".
+  build_chord_pairs <- function(enrichment_results, n, max_genes = 10, color_mode = "single",
+                                term_color = "#4DAF4A", palette = "rainbow",
+                                label_top_genes = 5) {
+    df <- tryCatch(as.data.frame(enrichment_results), error = function(e) NULL)
+    if (is.null(df) || nrow(df) == 0) return(NULL)
+    gene_col <- if ("core_enrichment" %in% colnames(df)) {
+      "core_enrichment"
+    } else if ("geneID" %in% colnames(df)) {
+      "geneID"
+    } else {
+      return(NULL)
+    }
+    if ("p.adjust" %in% colnames(df)) df <- df[order(df$p.adjust), , drop = FALSE]
+    df <- head(df, max(1, min(n, 20)))
+    term_labels <- if ("Description" %in% colnames(df)) df$Description else df$ID
+    term_labels <- wrap_enrichment_labels(as.character(term_labels), width = 40)
+    max_genes <- suppressWarnings(as.integer(max_genes %||% 10))
+    if (is.na(max_genes) || max_genes < 1) max_genes <- 10
+    fc <- proteomics_values$fold_change_data
+    has_fc <- !is.null(fc) && length(fc) > 0 && !is.null(names(fc))
+    pairs <- do.call(rbind, lapply(seq_len(nrow(df)), function(i) {
+      genes <- strsplit(as.character(df[[gene_col]][i]), "/")[[1]]
+      genes <- trimws(genes)
+      genes <- genes[!is.na(genes) & nzchar(genes)]
+      genes <- unique(genes)
+      if (length(genes) == 0) return(NULL)
+      if (has_fc) {
+        # Strongest responders first; genes without FC values go last.
+        ord <- order(abs(fc[genes]), decreasing = TRUE, na.last = TRUE)
+        genes <- genes[ord]
+      }
+      genes <- head(genes, max_genes)
+      if (length(genes) == 0) return(NULL)
+      data.frame(from = rep(term_labels[i], length(genes)), to = genes,
+                 stringsAsFactors = FALSE)
+    }))
+    if (is.null(pairs) || nrow(pairs) == 0) return(NULL)
+    all_genes <- unique(pairs$to)
+    gene_colors <- rep("#999999", length(all_genes))
+    names(gene_colors) <- all_genes
+    fc <- proteomics_values$fold_change_data
+    if (!is.null(fc) && length(fc) > 0 && !is.null(names(fc))) {
+      # Gradient fold-change coloring: intense red/blue for strong changes,
+      # fading to near-white at zero; grey stays for unknown (NA) values.
+      vals <- suppressWarnings(as.numeric(fc[names(gene_colors)]))
+      mapped <- !is.na(vals)
+      if (any(mapped)) {
+        mx <- max(abs(vals[mapped]), na.rm = TRUE)
+        if (!is.finite(mx) || mx <= 0) mx <- 1
+        grad <- tryCatch(
+          circlize::colorRamp2(c(-mx, 0, mx), c("#377EB8", "#F5F5F5", "#E41A1C")),
+          error = function(e) NULL
+        )
+        if (!is.null(grad)) {
+          gene_colors[mapped] <- substr(grad(vals[mapped]), 1, 7)
+        } else {
+          gene_colors[mapped & vals > 0] <- "#E41A1C"
+          gene_colors[mapped & vals < 0] <- "#377EB8"
+        }
+      }
+    }
+    term_colors <- rep("#4DAF4A", length(unique(pairs$from)))
+    names(term_colors) <- unique(pairs$from)
+    if (!identical(color_mode, "rainbow")) {
+      # Single custom color from the colourInput field.
+      if (is.null(term_color) || !grepl("^#[0-9A-Fa-f]{6}$", term_color)) term_color <- "#4DAF4A"
+      term_colors[] <- term_color
+    } else if (length(term_colors) > 1) {
+      # Named-brewer-palette-aware rainbow: brewer pals cap at 12 colors.
+      pal_colors <- tryCatch({
+        if (identical(palette, "rainbow")) {
+          grDevices::rainbow(length(term_colors), alpha = 0.85)
+        } else if (requireNamespace("RColorBrewer", quietly = TRUE)) {
+          max_n <- RColorBrewer::brewer.pal.info[palette, "maxcolors"]
+          k <- min(max(3, length(term_colors)), max_n)
+          base <- RColorBrewer::brewer.pal(k, palette)
+          if (length(term_colors) <= max_n) {
+            base[seq_len(length(term_colors))]
+          } else {
+            grDevices::colorRampPalette(base)(length(term_colors))
+          }
+        } else {
+          grDevices::rainbow(length(term_colors), alpha = 0.85)
+        }
+      }, error = function(e) grDevices::rainbow(length(term_colors), alpha = 0.85))
+      term_colors[] <- pal_colors
+    }
+    # Gene label thinning: label only the top-N genes by |fold change| so dense
+    # diagrams stay readable. Unlabeled genes still draw their colored sectors.
+    n_lab <- suppressWarnings(as.numeric(label_top_genes))
+    if (is.na(n_lab)) n_lab <- 5
+    if (isTRUE(n_lab <= 0)) {
+      labeled_genes <- character(0)
+    } else {
+      gscore <- rep(-Inf, length(all_genes))
+      if (!is.null(fc) && length(fc) > 0 && !is.null(names(fc))) {
+        hit <- suppressWarnings(abs(fc[all_genes]))
+        gscore[!is.na(hit)] <- hit[!is.na(hit)]
+      }
+      labeled_genes <- all_genes[order(gscore, decreasing = TRUE)]
+      if (is.finite(n_lab)) labeled_genes <- head(labeled_genes, max(0, n_lab))
+    }
+    list(pairs = pairs, gene_colors = c(term_colors, gene_colors), terms = df,
+         labeled_genes = labeled_genes)
+  }
+
+  # Render the chord diagram on the active graphics device (base graphics).
+  # Both orientations use a manual label track (rather than circlize's built-in
+  # sector names) so the dedicated term/gene size fields control label size via
+  # term_cex / gene_cex in both modes -- the built-in track ignores par(cex).
+  # label_facing = "radial" (default) draws labels perpendicular to the circle
+  # on an outer track so crowded labels don't overlap; "tangential" draws them
+  # along the arc. rotation sets circos start.degree (90 = circlize default);
+  # it is applied explicitly on every draw because circos.par() persists across
+  # circos.clear() calls. labeled_genes thins gene labels (terms always label;
+  # NULL labels every gene sector). The canvas is padded proportionally to the
+  # sector count so long labels fit inside the device instead of clipping.
+  # No plot title is drawn: it collides with the top sector labels.
+  draw_chord_diagram <- function(pairs, grid_colors,
+                                 label_facing = "radial", term_cex = 0.9, gene_cex = 0.7,
+                                 rotation = 90, labeled_genes = NULL) {
+    rotation <- suppressWarnings(as.numeric(rotation %||% 90))
+    if (is.na(rotation)) rotation <- 90
+    term_cex <- suppressWarnings(as.numeric(term_cex %||% 0.9))
+    if (is.na(term_cex)) term_cex <- 0.9
+    gene_cex <- suppressWarnings(as.numeric(gene_cex %||% 0.7))
+    if (is.na(gene_cex)) gene_cex <- 0.7
+    # Term sectors are the link sources (pairs$from); everything else is a gene.
+    term_names <- unique(as.character(pairs[[1]]))
+    sector_cex <- function(sector) if (sector %in% term_names) term_cex else gene_cex
+    sector_label <- function(sector) {
+      if (sector %in% term_names) return(sector)
+      if (is.null(labeled_genes) || sector %in% labeled_genes) sector else ""
+    }
+    nsectors <- length(unique(c(as.character(pairs[[1]]), as.character(pairs[[2]]))))
+    pad <- min(0.5, 0.15 + 0.002 * nsectors)
+    # Wider gaps after the large term sectors separate neighboring long labels;
+    # gene sectors stay tight to preserve arc space for the data. (Per-sector
+    # gaps ride on circos.par gap.degree; chordDiagram() itself has no gap.after.)
+    sect_ord <- unique(c(as.character(pairs[[1]]), as.character(pairs[[2]])))
+    gap_vec <- ifelse(sect_ord %in% term_names, 4, 1)
+    circlize::circos.par(start.degree = rotation %% 360,
+                         canvas.xlim = c(-1 - pad, 1 + pad),
+                         canvas.ylim = c(-1 - pad, 1 + pad),
+                         gap.degree = gap_vec)
+    if (identical(label_facing, "tangential")) {
+      circlize::chordDiagram(pairs, grid.col = grid_colors, transparency = 0.25,
+                             annotationTrack = "grid")
+      # Taller label track: labels sit further out where the circumference is
+      # larger, so neighboring tangential labels collide less.
+      circlize::circos.trackPlotRegion(ylim = c(0, 1), track.height = 0.15,
+                                       bg.border = NA,
+                                       panel.fun = function(x, y) {
+        sector <- circlize::get.cell.meta.data("sector.index")
+        xlim <- circlize::get.cell.meta.data("xlim")
+        circlize::circos.text(mean(xlim), 0.5, sector_label(sector), facing = "clockwise",
+                              niceFacing = TRUE, adj = c(0, 0.5), cex = sector_cex(sector))
+      })
+    } else {
+      circlize::chordDiagram(pairs, grid.col = grid_colors, transparency = 0.25,
+                             annotationTrack = "grid")
+      circlize::circos.trackPlotRegion(ylim = c(0, 1), track.height = 0.12,
+                                       bg.border = NA,
+                                       panel.fun = function(x, y) {
+        sector <- circlize::get.cell.meta.data("sector.index")
+        xlim <- circlize::get.cell.meta.data("xlim")
+        circlize::circos.text(mean(xlim), 0.6, sector_label(sector), facing = "outside",
+                              niceFacing = TRUE, adj = c(0, 0.5), cex = sector_cex(sector))
+      })
+    }
+  }
+
+  # Map the "Gene labels" UI value to a count for build_chord_pairs.
+  chord_label_top_n <- function(x) {
+    if (identical(x, "all")) return(Inf)
+    n <- suppressWarnings(as.numeric(x %||% 5))
+    if (is.na(n) || n < 0) n <- 5
+    n
+  }
   
   # Enrichment results cache helper functions
   create_enrichment_cache_key <- function(tool, gene_list, organism, analysis_params, tool_specific_params) {
@@ -6438,32 +6961,47 @@ server <- function(input, output, session) {
     return(get_from_cache(proteomics_values$enrichment_cache, cache_key))
   }
   
-  store_enrichment_in_cache <- function(cache_key, enrichment_results, fold_change_data = NULL, original_fold_change_data = NULL) {
+  store_enrichment_in_cache <- function(cache_key, enrichment_results, fold_change_data = NULL, original_fold_change_data = NULL, enrichment_results_original = NULL) {
     cache_object <- list(
       enrichment_results = enrichment_results,
       fold_change_data = fold_change_data,
       original_fold_change_data = original_fold_change_data,
+      enrichment_results_original = enrichment_results_original,
       pathview_gene_data = proteomics_values$pathview_gene_data,  # Use the properly formatted pathview data
       timestamp = Sys.time()
     )
     proteomics_values$enrichment_cache <- store_in_cache(proteomics_values$enrichment_cache, cache_key, cache_object)
   }
   
+  # Safe `$result` access on enrichment results. On S4 enrich/gseaResult objects
+  # `$` dispatches to a column lookup that THROWS (instead of returning NULL)
+  # when the name is not a column -- e.g. a stale gseaResult lingering after a
+  # tool switch. Never let that escape: data.frame or NULL.
+  safe_gprofiler_result_df <- function(enrichment_results) {
+    if (is.null(enrichment_results)) return(NULL)
+    out <- tryCatch(enrichment_results$result, error = function(e) NULL)
+    if (is.data.frame(out)) out else NULL
+  }
+
   # Helper function to get number of rows from different enrichment result types
+  # Never throws: stale objects (e.g. previous tool's results still stored
+  # while inputs already switched) yield 0 and callers skip rendering.
   get_enrichment_results_nrow <- function(enrichment_results, tool) {
     if (is.null(enrichment_results)) {
       return(0)
     }
-    
+
     if (tool == "topgo") {
       # topGO results have a table component
-      if (!is.null(enrichment_results$table)) {
-        return(nrow(enrichment_results$table))
+      tbl <- tryCatch(enrichment_results$table, error = function(e) NULL)
+      if (is.data.frame(tbl)) {
+        return(nrow(tbl))
       }
     } else if (tool == "gprofiler") {
       # g:Profiler results have a result component
-      if (!is.null(enrichment_results$result)) {
-        return(nrow(enrichment_results$result))
+      res <- safe_gprofiler_result_df(enrichment_results)
+      if (!is.null(res)) {
+        return(nrow(res))
       }
     } else {
       # For other tools, try to coerce to data.frame
@@ -6473,21 +7011,90 @@ server <- function(input, output, session) {
         return(0)
       })
     }
-    
+
     return(0)
   }
   
-  # Internal normalization function that performs the actual normalization
-  perform_normalization_internal <- function(data, method, log2_before = FALSE, log2_after = FALSE, sum_as_percent = FALSE) {
-    cat("Computing normalization (cache miss) - method:", method, "\n")
-    
-    # Apply log2 transformation before normalization if requested
-    if (log2_before) {
-      data <- data %>%
-        mutate(across(everything(), ~ log2(. + 1)))
+  # Feature scaling (stage 2): per-feature adjustments applied AFTER normalization
+  # and log2. Kept separate because scaling answers a different question than
+  # sample normalization (feature comparability vs between-sample bias).
+  apply_feature_scaling <- function(data, method) {
+    if (is.null(method) || method == "none") return(data)
+
+    if (method == "zscore") {
+      # Z-score / autoscaling (per-feature rows) with error handling
+      return(tryCatch({
+        scaled_matrix <- suppressWarnings(t(scale(t(data))))
+
+        # Constant features have sd = 0 -> NaN; they carry no signal, set to 0
+        if (any(is.nan(scaled_matrix))) {
+          scaled_matrix[is.nan(scaled_matrix)] <- 0
+          if (!is.null(session)) showNotification(
+            paste0("Z-score: ", sum(apply(scaled_matrix, 1, function(r) all(r == 0))),
+                   " constant feature(s) set to 0 (zero variance)."),
+            type = "message")
+        }
+
+        result <- as.data.frame(scaled_matrix)
+        rownames(result) <- rownames(data)
+        colnames(result) <- colnames(data)
+        result
+      }, error = function(e) {
+        if (!is.null(session)) showNotification(paste("Error in Z-score scaling:", e$message), type = "error")
+        data
+      }))
     }
-    
-    # Perform normalization based on method
+
+    if (method == "pareto") {
+      # Pareto scaling (per-feature rows): center, divide by sqrt(sd).
+      # Metabolomics standard: dampens large features without inflating noise.
+      return(tryCatch({
+        mat <- as.matrix(data)
+        row_means <- rowMeans(mat, na.rm = TRUE)
+        row_sds <- apply(mat, 1, function(x) stats::sd(x, na.rm = TRUE))
+        centered <- sweep(mat, 1, row_means, "-")
+        denom <- sqrt(row_sds)
+        denom[!is.finite(denom) | denom == 0] <- 1
+        scaled_matrix <- sweep(centered, 1, denom, "/")
+        scaled_matrix[!is.finite(scaled_matrix)] <- NA
+        result <- as.data.frame(scaled_matrix)
+        rownames(result) <- rownames(data)
+        colnames(result) <- colnames(data)
+        result
+      }, error = function(e) {
+        if (!is.null(session)) showNotification(paste("Error in Pareto scaling:", e$message), type = "error")
+        data
+      }))
+    }
+
+    if (method == "meancenter") {
+      # Mean centering (per-feature rows): subtract the mean, no scaling.
+      return(tryCatch({
+        mat <- as.matrix(data)
+        scaled_matrix <- sweep(mat, 1, rowMeans(mat, na.rm = TRUE), "-")
+        result <- as.data.frame(scaled_matrix)
+        rownames(result) <- rownames(data)
+        colnames(result) <- colnames(data)
+        result
+      }, error = function(e) {
+        if (!is.null(session)) showNotification(paste("Error in mean centering:", e$message), type = "error")
+        data
+      }))
+    }
+
+    data
+  }
+
+  # Internal normalization function that performs the actual normalization
+  # Pipeline order: sample normalization -> log2 -> feature scaling.
+  perform_normalization_internal <- function(data, method, scale_method = "none",
+                                            log2_after = "none", sum_as_percent = FALSE) {
+    cat("Computing normalization (cache miss) - method:", method, "scale:", scale_method, "\n")
+
+    orig_rownames <- rownames(data)
+    orig_colnames <- colnames(data)
+
+    # Stage 1: sample normalization (between-sample bias correction)
     if (method == "sum") {
       normalized_data <- data %>%
         mutate(across(everything(), ~ if(sum(., na.rm = TRUE) == 0) NA else . / sum(., na.rm = TRUE)))
@@ -6495,49 +7102,11 @@ server <- function(input, output, session) {
         normalized_data <- normalized_data %>%
           mutate(across(everything(), ~ . * 100))
       }
-    } else if (method == "log2") {
-      normalized_data <- data %>%
-        mutate(across(everything(), ~ log2(. + 1)))
-    } else if (method == "zscore") {
-      # Z-score normalization with error handling
-      normalized_data <- tryCatch({
-        cat("Debug Z-score: Starting Z-score normalization\n")
-        cat("Debug Z-score: Input data class:", class(data), "\n")
-        cat("Debug Z-score: Input data dimensions:", dim(data), "\n")
-        
-        # Perform Z-score normalization (scale each row/sample)
-        normalized_matrix <- t(scale(t(data)))
-        
-        cat("Debug Z-score: Normalized matrix class:", class(normalized_matrix), "\n")
-        cat("Debug Z-score: Normalized matrix dimensions:", dim(normalized_matrix), "\n")
-        
-        # Convert back to data frame to maintain consistency with other methods
-        result <- as.data.frame(normalized_matrix)
-        
-        # Preserve row and column names
-        rownames(result) <- rownames(data)
-        colnames(result) <- colnames(data)
-        
-        # Ensure the result is a proper data frame
-        if (!is.data.frame(result)) {
-          result <- as.data.frame(result)
-          cat("Debug Z-score: Additional conversion to data frame performed\n")
-        }
-        
-        cat("Debug Z-score: Final data class:", class(result), "\n")
-        cat("Debug Z-score: Final data dimensions:", dim(result), "\n")
-        cat("Debug Z-score: Z-score normalization completed successfully\n")
-        
-        result
-      }, error = function(e) {
-        if (!is.null(session)) showNotification(paste("Error in Z-score normalization:", e$message), type = "error")
-        cat("Error in Z-score normalization:", e$message, "\n")
-        data
-      })
     } else if (method == "median") {
       # Median normalization with better error handling
       normalized_data <- tryCatch({
         result <- data
+        skipped <- c()
         for (col in 1:ncol(data)) {
           col_data <- data[, col]
           # Ensure data is numeric and handle any conversion issues
@@ -6546,9 +7115,18 @@ server <- function(input, output, session) {
             col_median <- median(col_data, na.rm = TRUE)
             if (!is.na(col_median) && col_median > 0) {
               result[, col] <- col_data / col_median
+            } else {
+              skipped <- c(skipped, colnames(data)[col])
             }
           }
         }
+        if (length(skipped) > 0 && !is.null(session)) showNotification(
+          paste0("Median normalization skipped ", length(skipped),
+                 " sample(s) with non-positive median (division would flip signs): ",
+                 paste(head(skipped, 5), collapse = ", "),
+                 if (length(skipped) > 5) ", ..." else "",
+                 ". Consider mean-centering or Pareto scaling for log-scale data."),
+          type = "warning", duration = 8)
         result
       }, error = function(e) {
         if (!is.null(session)) showNotification(paste("Error in median normalization:", e$message), type = "error")
@@ -6624,8 +7202,16 @@ server <- function(input, output, session) {
         normalization_factors <- apply(quotients_matrix, 2, function(x) median(x, na.rm = TRUE))
         
         # Handle cases where normalization factor is invalid
-        normalization_factors[is.na(normalization_factors) | normalization_factors <= 0] <- 1
-        
+        bad_factors <- is.na(normalization_factors) | normalization_factors <= 0
+        if (any(bad_factors)) {
+          if (!is.null(session)) showNotification(
+            paste0("PQN: ", sum(bad_factors), " sample(s) had invalid quotients and were left unscaled: ",
+                   paste(head(colnames(data)[bad_factors], 5), collapse = ", "),
+                   if (sum(bad_factors) > 5) ", ..." else "."),
+            type = "warning", duration = 8)
+          normalization_factors[bad_factors] <- 1
+        }
+
         # Step 4: Normalize each sample by its normalization factor
         normalized_matrix <- sweep(data_for_pqn, 2, normalization_factors, "/")
         
@@ -6709,7 +7295,7 @@ server <- function(input, output, session) {
         if(any(has_na)) {
           normalized_matrix[has_na] <- NA
         }
-        
+
         as.data.frame(normalized_matrix)
       }, error = function(e) {
         if (!is.null(session)) showNotification(paste("Error in cyclic loess normalization:", e$message), type = "error")
@@ -6720,7 +7306,8 @@ server <- function(input, output, session) {
     }
     
     # Apply log2 transformation after normalization if requested
-    if (log2_after) {
+    # log2_after can be: "none", "after" (log2(x)), "after_pseudo" (log2(x + 1))
+    if (log2_after != "none") {
       tryCatch({
         # Ensure dplyr is loaded for mutate function
         if (!requireNamespace("dplyr", quietly = TRUE)) {
@@ -6731,6 +7318,7 @@ server <- function(input, output, session) {
         cat("Debug log2: Applying log2 transformation after normalization\n")
         cat("Debug log2: Class of normalized_data before conversion:", class(normalized_data), "\n")
         cat("Debug log2: Dimensions:", dim(normalized_data), "\n")
+        cat("Debug log2: Transformation type:", log2_after, "\n")
         
         # Ensure normalized_data is a data frame before using mutate
         if (!is.data.frame(normalized_data)) {
@@ -6738,10 +7326,26 @@ server <- function(input, output, session) {
           cat("Debug log2: Converted to data frame, new class:", class(normalized_data), "\n")
         }
         
+        # log2(x) is only valid for strictly positive data: count offenders first
+        if (log2_after == "after") {
+          n_bad <- sum(suppressWarnings(as.matrix(normalized_data)) <= 0, na.rm = TRUE)
+          if (n_bad > 0 && !is.null(session)) showNotification(
+            paste0("Log2(x): ", n_bad, " zero/negative value(s) became -Inf/NaN. ",
+                   "Use log2(x + 1) instead unless the data are strictly positive."),
+            type = "warning", duration = 8)
+        }
+
         # Apply log2 transformation using dplyr::mutate to avoid namespace conflicts
-        normalized_data <- normalized_data %>%
-          dplyr::mutate(dplyr::across(dplyr::everything(), ~ log2(. + 1)))
-        
+        if (log2_after == "after") {
+          # log2(x) - for data that is already positive (e.g., after sum/median normalization)
+          normalized_data <- normalized_data %>%
+            dplyr::mutate(dplyr::across(dplyr::everything(), ~ log2(.)))
+        } else if (log2_after == "after_pseudo") {
+          # log2(x + 1) - pseudocount for data that may have zeros
+          normalized_data <- normalized_data %>%
+            dplyr::mutate(dplyr::across(dplyr::everything(), ~ log2(. + 1)))
+        }
+
         cat("Debug log2: Log2 transformation completed successfully\n")
         
       }, error = function(e) {
@@ -6755,7 +7359,11 @@ server <- function(input, output, session) {
           cat("Debug log2: Attempting fallback method without dplyr\n")
           # Convert to matrix, apply log2, then back to data frame
           data_matrix <- as.matrix(normalized_data)
-          data_matrix <- log2(data_matrix + 1)
+          if (log2_after == "after") {
+            data_matrix <- log2(data_matrix)
+          } else if (log2_after == "after_pseudo") {
+            data_matrix <- log2(data_matrix + 1)
+          }
           normalized_data <- as.data.frame(data_matrix)
           cat("Debug log2: Fallback method successful\n")
           
@@ -6765,26 +7373,30 @@ server <- function(input, output, session) {
         })
       })
     }
-    
+
+    # Stage 2: feature scaling (after normalization AND log2 — scaling first
+    # would be undone or distorted by the log, e.g. centered negatives)
+    normalized_data <- apply_feature_scaling(normalized_data, scale_method)
+
     return(normalized_data)
   }
-  
+
   # Cache-aware wrapper functions for data processing operations
-  perform_cached_normalization <- function(data, method, log2_before = FALSE, log2_after = FALSE, sum_as_percent = FALSE) {
-    cache_key <- create_cache_key(data, method, log2_before, log2_after, sum_as_percent)
-    
+  perform_cached_normalization <- function(data, method, scale_method = "none", log2_after = "none", sum_as_percent = FALSE) {
+    cache_key <- create_cache_key(data, method, scale_method, log2_after, sum_as_percent)
+
     cached_result <- get_from_cache(values$normalization_cache, cache_key)
     if (!is.null(cached_result)) {
       cat("Using cached normalization result\n")
       return(cached_result)
     }
-    
+
     # Perform actual normalization
-    result <- perform_normalization_internal(data, method, log2_before, log2_after, sum_as_percent)
-    
+    result <- perform_normalization_internal(data, method, scale_method, log2_after, sum_as_percent)
+
     # Store in cache
     values$normalization_cache <- store_in_cache(values$normalization_cache, cache_key, result)
-    
+
     return(result)
   }
   
@@ -6822,23 +7434,10 @@ server <- function(input, output, session) {
     return(result)
   }
   
-  perform_cached_statistical_analysis <- function(data, method, group_info, ...) {
-    cache_key <- create_cache_key(data, method, group_info, ...)
-    
-    cached_result <- get_from_cache(values$statistical_cache, cache_key)
-    if (!is.null(cached_result)) {
-      return(cached_result)
-    }
-    
-    # Perform actual statistical analysis
-    result <- perform_statistical_analysis_internal(data, method, group_info, ...)
-    
-    # Store in cache
-    values$statistical_cache <- store_in_cache(values$statistical_cache, cache_key, result)
-    
-    return(result)
-  }
-  
+  # NOTE: a cached statistical-analysis wrapper lived here but called a
+  # never-defined perform_statistical_analysis_internal and had no callers,
+  # so it was removed to avoid a crash landmine.
+
   # Add JavaScript to track navbar tab changes and handle Boruta classifier logic
   observe({
     runjs("
@@ -7602,6 +8201,26 @@ server <- function(input, output, session) {
     }
   }
   
+  # Fail fast with install instructions instead of installing packages mid-session
+  # (in-session installs stall analyses and fail without internet/toolchain).
+  require_pkg_or_fail <- function(pkg, bioc = FALSE, feature = NULL) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      what <- if (!is.null(feature) && nzchar(as.character(feature)[1])) {
+        paste0(" for ", as.character(feature)[1])
+      } else {
+        ""
+      }
+      how <- if (isTRUE(bioc)) {
+        sprintf("BiocManager::install('%s')", pkg)
+      } else {
+        sprintf("install.packages('%s')", pkg)
+      }
+      stop(sprintf("Package '%s' is required%s. Please install it with %s, then retry.",
+                   pkg, what, how))
+    }
+    invisible(TRUE)
+  }
+
   # Function to perform batch correction using various methods
   perform_batch_correction <- function(data, batch_info, method = "combat",
                                        group_info = NULL, covariates = NULL,
@@ -7661,9 +8280,7 @@ server <- function(input, output, session) {
       
       # ComBat method from sva package (parametric)
       "combat" = {
-        if(!requireNamespace("sva", quietly = TRUE)) {
-          install.packages("sva", quiet = TRUE)
-        }
+        require_pkg_or_fail("sva", bioc = TRUE, "ComBat batch correction")
         
         tryCatch({
           # Create model matrix for ComBat
@@ -7734,9 +8351,7 @@ server <- function(input, output, session) {
       
       # ComBat non-parametric method from sva package
       "combat_nonpar" = {
-        if(!requireNamespace("sva", quietly = TRUE)) {
-          install.packages("sva", quiet = TRUE)
-        }
+        require_pkg_or_fail("sva", bioc = TRUE, "ComBat batch correction")
         
         tryCatch({
           # Create model matrix for ComBat
@@ -7800,18 +8415,8 @@ server <- function(input, output, session) {
       # limma's removeBatchEffect
       "limma" = {
         # First check if limma is available
-        if(!requireNamespace("limma", quietly = TRUE)) {
-          message("Installing limma package from Bioconductor...")
-          if(!requireNamespace("BiocManager", quietly = TRUE)) {
-            install.packages("BiocManager", quiet = TRUE)
-          }
-          BiocManager::install("limma", update = FALSE, ask = FALSE)
-          if(!requireNamespace("limma", quietly = TRUE)) {
-            warning("Failed to install limma package. Returning original data.")
-            return(data)
-          }
-        }
-        
+        require_pkg_or_fail("limma", bioc = TRUE, "limma batch correction")
+
         # Load the limma package explicitly
         library(limma)
         
@@ -7943,22 +8548,9 @@ server <- function(input, output, session) {
       
       # SVA (Surrogate Variable Analysis)
       "sva" = {
-        # Install and load required packages
-        if(!requireNamespace("sva", quietly = TRUE)) {
-          message("Installing sva package...")
-          if(!requireNamespace("BiocManager", quietly = TRUE)) {
-            install.packages("BiocManager", quiet = TRUE)
-          }
-          BiocManager::install("sva", update = FALSE, ask = FALSE)
-        }
-        
-        if(!requireNamespace("limma", quietly = TRUE)) {
-          message("Installing limma package...")
-          if(!requireNamespace("BiocManager", quietly = TRUE)) {
-            install.packages("BiocManager", quiet = TRUE)
-          }
-          BiocManager::install("limma", update = FALSE, ask = FALSE)
-        }
+        # Require packages (fail fast with install instructions instead)
+        require_pkg_or_fail("sva", bioc = TRUE, "SVA batch correction")
+        require_pkg_or_fail("limma", bioc = TRUE, "SVA batch correction")
         
         message("Starting SVA batch correction...")
         
@@ -8130,15 +8722,16 @@ server <- function(input, output, session) {
   # ==================== QC-BASED SIGNAL DRIFT CORRECTION FUNCTIONS ====================
   
  # Function to identify QC samples from sample names or metadata
-  identify_qc_samples <- function(sample_names, method = "auto", 
-                                  pattern = "QC|[Pp]ool|[Pp]ooled|NIST|[Bb]lank",
+  identify_qc_samples <- function(sample_names, method = "auto",
+                                  pattern = "(^|[^A-Za-z0-9])(qc|pool|pooled|blank|nist)([^A-Za-z]|$)",
                                   metadata_column = NULL) {
-    
+
     n_samples <- length(sample_names)
     qc_indices <- integer(0)
-    
+
     if (method == "auto" || method == "pattern") {
-      # Use regex pattern matching
+      # Anchored matching: QC tokens must start the name or follow a delimiter
+      # (so "acquire_1" is NOT flagged) and may be followed by digits ("QC1").
       qc_matches <- grepl(pattern, sample_names, ignore.case = TRUE)
       qc_indices <- which(qc_matches)
     } else if (method == "metadata" && !is.null(metadata_column)) {
@@ -9323,15 +9916,14 @@ server <- function(input, output, session) {
   # Helper function to check if data is log-scale
   is_data_log_scale <- function() {
     # Data is log-scale if any of these are true:
-    # 1. Log2 before normalization is applied
-    # 2. Log2 after normalization is applied
-    # 3. VSN (variance stabilizing normalization - log-like) is selected
+    # 1. Log2 after normalization is applied (either log2(x) or log2(x+1))
+    # 2. VSN (variance stabilizing normalization - log-like) is selected
     # NOTE: Cyclic LOESS does NOT inherently apply log transformation - it depends on log2 timing
-    is_log2_before <- identical(input$log2_norm_timing, "before")
-    is_log2_after <- identical(input$log2_norm_timing, "after")
+    log2_timing <- input$log2_norm_timing %||% "none"
+    is_log2_after <- (log2_timing == "after" || log2_timing == "after_pseudo")
     is_vsn_method <- (input$normalization == "vsn")
     
-    return(is_log2_before || is_log2_after || is_vsn_method)
+    return(is_log2_after || is_vsn_method)
   }
   
   add_posthoc_fold_changes <- function(stat_results) {
@@ -9486,6 +10078,79 @@ server <- function(input, output, session) {
     # Return NULL if no fold change column is found (do NOT calculate on the fly)
     message("No existing fold change column found for ", comparison_name)
     return(NULL)
+  }
+
+  # T-statistic column lookup (mirrors get_foldchange_column, supports REVERSED marker).
+  # Upstream DE stores native stats as <comparison>_Tstat (t.test Welch t,
+  # limma moderated t, DESeq2 Wald stat). Falls back to <comparison>_Stat.
+  get_tstat_column <- function(comparison_name) {
+    if (!grepl(" vs ", comparison_name, fixed = TRUE)) {
+      return(NULL)
+    }
+    groups <- unlist(strsplit(comparison_name, " vs "))
+    if (length(groups) != 2) {
+      return(NULL)
+    }
+    comparison_alt <- paste(groups[2], "vs", groups[1])
+    direct_patterns <- c(
+      paste0(comparison_name, "_Tstat"),
+      paste0(comparison_alt, "_Tstat"),
+      paste0(comparison_name, "_Stat"),
+      paste0(comparison_alt, "_Stat"),
+      paste0(comparison_name, "_t"),
+      paste0(comparison_alt, "_t")
+    )
+    for (pattern in direct_patterns) {
+      if (!is.null(values$stat_results) && pattern %in% colnames(values$stat_results)) {
+        if (grepl(comparison_alt, pattern, fixed = TRUE)) {
+          return(paste0("REVERSED:", pattern))
+        } else {
+          return(pattern)
+        }
+      }
+    }
+    return(NULL)
+  }
+
+  # Signed Welch t-statistic oriented Group2 - Group1 (positive = up in Group2,
+  # matching Log2FC sign). Welch = no equal-variance assumption, same default as
+  # run_ttest_pair(). Returns NA on insufficient data.
+  compute_welch_t_pair <- function(group1_data, group2_data, variant = "welch") {
+    g1 <- suppressWarnings(as.numeric(group1_data)); g2 <- suppressWarnings(as.numeric(group2_data))
+    g1 <- g1[is.finite(g1)]; g2 <- g2[is.finite(g2)]
+    variant <- variant %||% "welch"
+    if (variant == "paired") {
+      if (length(g1) != length(g2) || length(g1) < 2) return(NA_real_)
+      # Paired t on (Group2 - Group1) so sign matches Log2FC orientation.
+      tt <- tryCatch(suppressWarnings(stats::t.test(g2, g1, paired = TRUE)),
+                     error = function(e) NULL)
+    } else {
+      if (length(g1) < 2 || length(g2) < 2) return(NA_real_)
+      tt <- tryCatch(suppressWarnings(stats::t.test(g2, g1,
+        paired = FALSE, var.equal = identical(variant, "student"))),
+        error = function(e) NULL)
+    }
+    if (is.null(tt) || is.null(tt$statistic) || !is.finite(tt$statistic)) return(NA_real_)
+    as.numeric(tt$statistic)
+  }
+
+  # Remove NAs and collapse duplicated IDs by keeping the entry with max |value|.
+  # Required because clusterProfiler::GSEA errors on "Duplicate values in names(stats)":
+  # ENSEMBL->ENTREZ is 1:many, so two input rows can map to one Entrez ID.
+  deduplicate_ranked_vector <- function(v) {
+    if (is.null(v) || length(v) == 0) return(v)
+    v <- v[!is.na(v)]
+    if (length(v) == 0) return(v)
+    if (is.null(names(v))) return(sort(v, decreasing = TRUE))
+    dup <- duplicated(names(v))
+    if (!any(dup)) return(sort(v, decreasing = TRUE))
+    uniq <- unique(names(v))
+    keep <- vapply(uniq, function(nm) {
+      idx <- which(names(v) == nm)
+      idx[which.max(abs(v[idx]))]
+    }, numeric(1))
+    v <- v[keep]
+    sort(v, decreasing = TRUE)
   }
   
   # Post-hoc test functions
@@ -10569,15 +11234,19 @@ server <- function(input, output, session) {
         imputation_params$scale <- input$minprob_scale
       }
       
-      # Get group information for group-wise imputation
+      # Group information for group-wise imputation: confirmed mapping only.
+      # (Header name-guessing was removed: it silently mis-grouped custom sample
+      # names. Without confirmed groups we impute globally instead.)
       group_info <- NULL
-      if (input$impute_by_group) {
-        # Extract group information from column names
-        if (length(values$unique_groups) > 0) {
-          cleaned_sample_cols <- str_replace(colnames(data_filtered), "\\.\\.\\..*$", "")
-          # Extract group names by removing delimiter + number pattern (for grouping logic only)
-          group_names_for_grouping <- str_replace(cleaned_sample_cols, "([_\\.\\-])\\d+$", "")
-          group_info <- group_names_for_grouping
+      do_by_group <- isTRUE(input$impute_by_group)
+      if (do_by_group) {
+        if (!is.null(values$final_biological_groups) &&
+            length(values$final_biological_groups) == ncol(data_filtered)) {
+          group_info <- values$final_biological_groups
+        } else {
+          do_by_group <- FALSE
+          showNotification("Group-wise imputation needs confirmed sample groups; imputing globally instead.",
+                           type = "warning", duration = 6)
         }
       }
       
@@ -10591,7 +11260,7 @@ server <- function(input, output, session) {
         data = data_filtered,
         method = input$imputation_method,
         params = imputation_params,
-        by_group = input$impute_by_group,
+        by_group = do_by_group,
         group_info = group_info
       )
       
@@ -10616,7 +11285,7 @@ server <- function(input, output, session) {
       # Log imputation info
       values$imputation_applied <- TRUE
       values$imputation_method <- input$imputation_method
-      values$imputation_by_group <- input$impute_by_group
+      values$imputation_by_group <- do_by_group
       values$filter_before_impute <- input$filter_before_impute
       if (input$filter_before_impute) {
         values$impute_na_threshold <- input$impute_na_threshold
@@ -10810,11 +11479,11 @@ server <- function(input, output, session) {
     cat("Debug: Storing raw data with dimensions:", dim(data_filtered), "\n")
     cat("Debug: Raw data missing values:", sum(is.na(data_filtered)), "\n")
     
-    # Use cache-aware normalization function for other methods
-    log2_before <- identical(input$log2_norm_timing, "before")
-    log2_after <- identical(input$log2_norm_timing, "after")
+    # Use cache-aware normalization function (sample norm -> log2 -> feature scaling)
+    log2_after <- input$log2_norm_timing %||% "none"
     sum_as_percent <- isTRUE(input$sum_norm_percentage)
-    normalized_data <- perform_cached_normalization(data_filtered, input$normalization, log2_before, log2_after, sum_as_percent)
+    scale_method <- input$feature_scaling %||% "none"
+    normalized_data <- perform_cached_normalization(data_filtered, input$normalization, scale_method, log2_after, sum_as_percent)
     
     # Check if batch correction is enabled
     if (identical(input$batch_correction_enabled, "yes")) {
@@ -10911,7 +11580,7 @@ server <- function(input, output, session) {
           
           # Identify QC samples
           qc_method <- input$qc_identification_method %||% "auto"
-          qc_pattern <- input$qc_sample_pattern %||% "QC|[Pp]ool|[Pp]ooled|NIST|[Bb]lank"
+          qc_pattern <- input$qc_sample_pattern %||% "(^|[^A-Za-z0-9])(qc|pool|pooled|blank|nist)([^A-Za-z]|$)"
           
           if (qc_method == "metadata" && !is.null(values$metadata) && !is.null(input$qc_sample_column)) {
             metadata_col <- values$metadata[[input$qc_sample_column]]
@@ -11838,9 +12507,9 @@ server <- function(input, output, session) {
     if (identical(input$bootstrap_enabled, "yes")) {
       
       # Exclude methods that are incompatible with bootstrap (these methods hide bootstrap settings in UI)
-      incompatible_methods <- c("rots", "limma", "deseq2", "edger", "limma_voom")
+      incompatible_methods <- c("rots", "limma", "deseq2", "edger", "limma_voom", "lmm")
       if (input$sig_method %in% incompatible_methods) {
-        method_names <- c("rots" = "ROTS", "limma" = "Limma", "deseq2" = "DESeq2", "edger" = "edgeR")
+        method_names <- c("rots" = "ROTS", "limma" = "Limma", "deseq2" = "DESeq2", "edger" = "edgeR", "lmm" = "Linear Mixed-Effects")
         method_name <- method_names[input$sig_method]
         showNotification(paste0(method_name, " is not compatible with bootstrap analysis. Bootstrap has been skipped."),
                          type = "warning", duration = 8)
@@ -11862,11 +12531,21 @@ server <- function(input, output, session) {
           return(NULL)
         }
         
-        # Convert confidence level to numeric
-        conf_level <- as.numeric(input$bootstrap_ci)
-        
-        # Number of bootstrap replicates
-        n_replicates <- input$bootstrap_replicates
+        # Convert confidence level to numeric (clamped server-side; UI limits can be bypassed)
+        conf_level <- suppressWarnings(as.numeric(input$bootstrap_ci))
+        if (is.na(conf_level)) {
+          showNotification("Invalid confidence level; using 0.95.", type = "warning", duration = 5)
+          conf_level <- 0.95
+        }
+        conf_level <- min(max(conf_level, 0.8), 0.999)
+
+        # Number of bootstrap replicates (clamped server-side to 100–10000)
+        n_replicates <- suppressWarnings(as.integer(input$bootstrap_replicates))
+        if (is.na(n_replicates) || n_replicates < 100) {
+          showNotification("Bootstrap replicates adjusted to the 100–10000 range.", type = "warning", duration = 5)
+          n_replicates <- 100
+        }
+        n_replicates <- min(n_replicates, 10000)
         
         # Set seed for reproducibility if specified by user
         if (!is.null(input$bootstrap_seed) && !is.na(input$bootstrap_seed)) {
@@ -11880,16 +12559,63 @@ server <- function(input, output, session) {
         
         if (use_parallel) {
           message("Using parallel processing with ", n_cores, " cores")
-          if (!requireNamespace("BiocParallel", quietly = TRUE)) {
-            message("Installing BiocParallel package...")
-            if(!requireNamespace("BiocManager", quietly = TRUE)) {
-              install.packages("BiocManager")
-            }
-            BiocManager::install("BiocParallel", update = FALSE)
-          }
+          require_pkg_or_fail("BiocParallel", bioc = TRUE, "parallel bootstrap")
           library(BiocParallel)
-          bp_param <- MulticoreParam(workers = n_cores)
+          # MulticoreParam forks (Unix-only); Windows needs SnowParam
+          if (.Platform$OS.type == "windows") {
+            bp_param <- BiocParallel::SnowParam(workers = n_cores)
+          } else {
+            bp_param <- BiocParallel::MulticoreParam(workers = n_cores)
+          }
         }
+
+        # Snapshot plain (non-reactive) data: parallel workers have no Shiny
+        # reactive context, so replicates must run on these locals, never values/input
+        boot_groups_idx <- lapply(values$group_column_indices, as.integer)
+        boot_data_mat <- as.matrix(values$normalized_data)
+        boot_molecules <- values$cleaned_molecules
+        boot_method <- input$sig_method
+        boot_is_log <- is_data_log_scale()
+        boot_batch_vec <- if (!is.null(values$batch_info) && length(values$batch_info) == ncol(values$normalized_data)) {
+          as.character(values$batch_info)
+        } else {
+          NULL
+        }
+        bootstrap_strategy <- input$bootstrap_strategy
+        if (is.null(bootstrap_strategy)) bootstrap_strategy <- "standard"
+
+        if (identical(bootstrap_strategy, "stratified")) {
+          if (is.null(boot_batch_vec)) {
+            showNotification("Stratified bootstrap needs batch info; using within-group resampling instead.",
+                             type = "message", duration = 5)
+          } else {
+            showNotification("Stratified bootstrap: resampling within group x batch cells.",
+                             type = "message", duration = 5)
+          }
+        }
+
+        # Davison-Hinkley balanced bootstrap: each observation appears exactly
+        # n_replicates times across all replicates (precomputed once, so every
+        # backend stays reproducible regardless of parallelization)
+        boot_balanced_idx <- NULL
+        if (identical(bootstrap_strategy, "balanced")) {
+          boot_balanced_idx <- lapply(boot_groups_idx, function(gc) {
+            if (length(gc) == 0) return(list())
+            pool <- sample(rep(gc, times = n_replicates), length(gc) * n_replicates, replace = FALSE)
+            split(pool, rep(seq_len(n_replicates), each = length(gc)))
+          })
+          message("Balanced bootstrap: each sample appears exactly ", n_replicates, " times across replicates")
+        }
+
+        boot_payload <- list(groups_idx = boot_groups_idx,
+                             data_mat = boot_data_mat,
+                             molecules = boot_molecules,
+                             method = boot_method,
+                             is_log = boot_is_log,
+                             strategy = bootstrap_strategy,
+                             balanced_idx = boot_balanced_idx,
+                             batch_vec = boot_batch_vec,
+                             ttest_variant = input$ttest_variant %||% "welch")
         # Create matrices to store bootstrap results
         bootstrap_pvals <- matrix(NA, nrow = length(values$cleaned_molecules), ncol = n_replicates)
         bootstrap_fcs <- matrix(NA, nrow = length(values$cleaned_molecules), ncol = n_replicates)
@@ -11980,70 +12706,80 @@ server <- function(input, output, session) {
             return(NULL)
           }
         }
-        # Function to perform a single bootstrap iteration
-        perform_bootstrap <- function(b) {
+        # Function to perform a single bootstrap iteration.
+        # Fully parameterized via `boot` (plain data only): parallel workers have
+        # no Shiny reactive context, so this must never touch values/input/session.
+        perform_bootstrap <- function(b, boot) {
+          boot_groups_idx <- boot$groups_idx
+          boot_data_mat <- boot$data_mat
+          boot_molecules <- boot$molecules
+          boot_method <- boot$method
+          boot_is_log <- boot$is_log
+          bootstrap_strategy <- boot$strategy
           # Create bootstrap indices for resampling
           bootstrap_indices <- list()
-          
+
           # Ensure we have valid group information
-          if (is.null(values$group_column_indices) || length(values$group_column_indices) < 2) {
-            return(list(p_vals = rep(NA, length(values$cleaned_molecules)),
-                        fcs = rep(NA, length(values$cleaned_molecules))))
+          if (is.null(boot_groups_idx) || length(boot_groups_idx) < 2) {
+            return(list(p_vals = rep(NA, length(boot_molecules)),
+                        fcs = rep(NA, length(boot_molecules))))
           }
-          
-          # Different resampling strategies
-          bootstrap_strategy <- input$bootstrap_strategy
-          if (is.null(bootstrap_strategy)) bootstrap_strategy <- "standard"
-          
+
           if (bootstrap_strategy == "standard") {
-            # Standard approach: Simple random sampling with replacement within each group
-            for (g in seq_along(values$group_column_indices)) {
-              group_columns <- values$group_column_indices[[g]]
+            # Standard: simple random sampling with replacement within each group
+            # (resampling within groups already stratifies by group)
+            for (g in seq_along(boot_groups_idx)) {
+              group_columns <- boot_groups_idx[[g]]
               if (length(group_columns) > 0) {
                 bootstrap_indices[[g]] <- sample(group_columns, length(group_columns), replace = TRUE)
               }
             }
           }
           else if (bootstrap_strategy == "stratified") {
-            # Stratified approach: Maintain proportional representation within each group
-            for (g in seq_along(values$group_column_indices)) {
-              group_columns <- values$group_column_indices[[g]]
+            # Stratified: resample within each group x batch cell, preserving
+            # batch composition; falls back to within-group resampling without batch info
+            for (g in seq_along(boot_groups_idx)) {
+              group_columns <- boot_groups_idx[[g]]
               if (length(group_columns) > 0) {
-                # Calculate proportions of each sample in original data
-                sample_props <- table(factor(group_columns, levels = group_columns))
-                sample_props <- sample_props / sum(sample_props)
-                
-                # Sample with these proportions
-                bootstrap_indices[[g]] <- sample(group_columns, length(group_columns),
-                                                 replace = TRUE, prob = sample_props)
+                if (!is.null(boot$batch_vec)) {
+                  cells <- split(group_columns, boot$batch_vec[group_columns])
+                  bootstrap_indices[[g]] <- unlist(lapply(cells, function(cc) {
+                    sample(cc, length(cc), replace = TRUE)
+                  }), use.names = FALSE)
+                } else {
+                  bootstrap_indices[[g]] <- sample(group_columns, length(group_columns), replace = TRUE)
+                }
               }
             }
           }
           else if (bootstrap_strategy == "balanced") {
-            # Balanced approach: Equal probability for each unique sample
-            for (g in seq_along(values$group_column_indices)) {
-              group_columns <- values$group_column_indices[[g]]
-              if (length(group_columns) > 0) {
-                # Ensure unique samples have equal probability
-                unique_cols <- unique(group_columns)
-                selected_cols <- sample(unique_cols, length(group_columns), replace = TRUE)
-                bootstrap_indices[[g]] <- selected_cols
+            # Balanced (Davison-Hinkley): precomputed indices give every sample
+            # exactly equal total representation across all replicates
+            for (g in seq_along(boot_groups_idx)) {
+              if (!is.null(boot$balanced_idx) && length(boot$balanced_idx) >= g &&
+                  length(boot$balanced_idx[[g]]) >= b) {
+                bootstrap_indices[[g]] <- boot$balanced_idx[[g]][[b]]
+              } else {
+                group_columns <- boot_groups_idx[[g]]
+                if (length(group_columns) > 0) {
+                  bootstrap_indices[[g]] <- sample(group_columns, length(group_columns), replace = TRUE)
+                }
               }
             }
           }
           # Initialize results for this bootstrap replicate
-          b_pvals <- rep(NA, length(values$cleaned_molecules))
-          b_fcs <- rep(NA, length(values$cleaned_molecules))
+          b_pvals <- rep(NA, length(boot_molecules))
+          b_fcs <- rep(NA, length(boot_molecules))
           
           # Ensure we have bootstrap indices for at least 2 groups
           if (length(bootstrap_indices) < 2) {
             return(list(p_vals = b_pvals, fcs = b_fcs))
           }
           # Calculate p-values for this bootstrap sample
-          for (i in 1:nrow(values$normalized_data)) {
+          for (i in seq_len(nrow(boot_data_mat))) {
             tryCatch({
               # Extract data for feature i
-              feature_data <- values$normalized_data[i, ]
+              feature_data <- boot_data_mat[i, ]
               
               # Get bootstrap data for each group
               bootstrap_data <- list()
@@ -12059,7 +12795,7 @@ server <- function(input, output, session) {
                 valid_groups <- sapply(bootstrap_data, function(x) sum(!is.na(x)) >= 2)
                 
                 if (sum(valid_groups) >= 2) {              # Calculate p-value based on the selected statistical method
-                  if (identical(input$sig_method, "wilcox")) {
+                  if (identical(boot_method, "wilcox")) {
                     # Pairwise Wilcoxon test (use first 2 groups)
                     if (length(bootstrap_data) >= 2) {
                       tryCatch({
@@ -12072,11 +12808,23 @@ server <- function(input, output, session) {
                       })
                     }
                   }
-                  else if (identical(input$sig_method, "t.test")) {
+                  else if (identical(boot_method, "t.test")) {
                     # Pairwise t-test (use first 2 groups)
+                    # NOTE: base-only inline code (no run_ttest_pair helper) so parallel
+                    # workers serialize cleanly; variant comes from the payload.
                     if (length(bootstrap_data) >= 2) {
                       tryCatch({
-                        p_val <- t.test(bootstrap_data[[1]], bootstrap_data[[2]])$p.value
+                        tv <- boot$ttest_variant
+                        x <- suppressWarnings(as.numeric(bootstrap_data[[1]]))
+                        y <- suppressWarnings(as.numeric(bootstrap_data[[2]]))
+                        x <- x[is.finite(x)]; y <- y[is.finite(y)]
+                        p_val <- NA_real_
+                        if (!(identical(tv, "paired") && length(x) != length(y)) &&
+                            length(x) >= 2 && length(y) >= 2) {
+                          p_val <- suppressWarnings(stats::t.test(x, y,
+                            paired = identical(tv, "paired"),
+                            var.equal = identical(tv, "student"))$p.value)
+                        }
                         if (!is.na(p_val) && is.finite(p_val)) {
                           b_pvals[i] <- p_val
                         }
@@ -12084,7 +12832,7 @@ server <- function(input, output, session) {
                         # Silently continue on error for this feature
                       })
                     }
-                  }else if (identical(input$sig_method, "anova")) {
+                  }else if (identical(boot_method, "anova")) {
                     # ANOVA for multiple groups
                     if (length(bootstrap_data) >= 2) {
                       # Prepare data for ANOVA
@@ -12112,7 +12860,7 @@ server <- function(input, output, session) {
                         })
                       }
                     }
-                  }              else if (identical(input$sig_method, "kruskal")) {
+                  }              else if (identical(boot_method, "kruskal")) {
                     # Kruskal-Wallis for multiple groups (keep original requirements since it worked)
                     if (length(bootstrap_data) >= 2) {
                       # Prepare data for Kruskal-Wallis
@@ -12381,7 +13129,7 @@ server <- function(input, output, session) {
                       # Calculate fold change based on data scale
                       # When data is log-scale: fc = mean2 - mean1 (subtraction in log space)
                       # When data is linear: fc = mean2 / mean1 (division, then logged later)
-                      if (is_data_log_scale()) {
+                      if (isTRUE(boot_is_log)) {
                         fc <- mean2 - mean1
                       } else {
                         # For linear scale, only calculate if mean1 > 0
@@ -12405,7 +13153,12 @@ server <- function(input, output, session) {
           
           return(list(p_vals = b_pvals, fcs = b_fcs))
         }
-        
+
+        # Detach reactive scope so parallel workers serialize only plain data
+        # (perform_bootstrap touches args + base/stats only; limma/DESeq2 branches
+        # are unreachable — those methods skip bootstrap up front)
+        environment(perform_bootstrap) <- globalenv()
+
         # Perform bootstrap analysis (parallel or sequential)
         if (use_parallel) {
           # Parallel implementation
@@ -12418,17 +13171,16 @@ server <- function(input, output, session) {
           for (chunk_idx in seq_along(chunk_indices)) {
             current_chunk <- chunk_indices[[chunk_idx]]
             
-            # Run this chunk in parallel
-            chunk_results <- bplapply(current_chunk, function(b) {
-              # Process this bootstrap replicate
-              return(perform_bootstrap(b))
-            }, BPPARAM = bp_param)
+            # Run this chunk in parallel (payload is plain data, safe to ship to workers)
+            chunk_results <- bplapply(current_chunk, perform_bootstrap, boot = boot_payload, BPPARAM = bp_param)
             
             # Combine results from this chunk
             for (i in seq_along(chunk_results)) {
               b <- current_chunk[i]
-              bootstrap_pvals[, b] <- chunk_results[[i]]$p_vals
-              bootstrap_fcs[, b] <- chunk_results[[i]]$fcs
+              if (is.list(chunk_results[[i]])) {
+                bootstrap_pvals[, b] <- chunk_results[[i]]$p_vals
+                bootstrap_fcs[, b] <- chunk_results[[i]]$fcs
+              }
             }
             
             # Update progress after each chunk
@@ -12437,8 +13189,8 @@ server <- function(input, output, session) {
           }
         } else {
           # Sequential implementation
-          for (b in 1:n_replicates) {
-            result <- perform_bootstrap(b)
+          for (b in seq_len(n_replicates)) {
+            result <- perform_bootstrap(b, boot_payload)
             bootstrap_pvals[, b] <- result$p_vals
             bootstrap_fcs[, b] <- result$fcs
             
@@ -12464,10 +13216,11 @@ server <- function(input, output, session) {
         )
         
         # Add original p-values from values$stat_results if available
+        # (raw p-values only — adjusted columns are excluded so the label stays truthful)
         if (!is.null(values$stat_results)) {
-          # Find the column containing p-values
-          p_value_col <- grep("PValue$", colnames(values$stat_results), value = TRUE)[1]
-          if (!is.na(p_value_col)) {
+          sc0 <- find_stat_cols(values$stat_results)
+          p_value_col <- setdiff(sc0$p, sc0$fdr)[1]
+          if (length(p_value_col) > 0 && !is.na(p_value_col)) {
             bootstrap_results$Original_PValue <- values$stat_results[[p_value_col]]
           }
         }
@@ -12528,9 +13281,10 @@ server <- function(input, output, session) {
               fallback_fcs <- rep(NA, nrow(values$normalized_data))
               
               for (f in 1:nrow(values$normalized_data)) {
-                group1_data <- values$normalized_data[f, group1_cols]
-                group2_data <- values$normalized_data[f, group2_cols]
-                
+                # Numeric vectors (not one-row data.frames): mean() needs atomic input
+                group1_data <- suppressWarnings(as.numeric(values$normalized_data[f, group1_cols]))
+                group2_data <- suppressWarnings(as.numeric(values$normalized_data[f, group2_cols]))
+
                 group1_mean <- mean(group1_data, na.rm = TRUE)
                 group2_mean <- mean(group2_data, na.rm = TRUE)
                 
@@ -12571,21 +13325,33 @@ server <- function(input, output, session) {
           cores = if(use_parallel) n_cores else NA
         )
         
-        # Add bootstrap results to statistics table
+        # Add bootstrap results to statistics table, matched by Feature
+        # (positional assignment would crash or misalign if row counts differ)
         if (!is.null(values$stat_results)) {
-          values$stat_results$Bootstrap_Median_PValue <- bootstrap_results$Bootstrap_Median_PValue
-          values$stat_results$Bootstrap_Lower_CI <- bootstrap_results$Bootstrap_Lower_CI
-          values$stat_results$Bootstrap_Upper_CI <- bootstrap_results$Bootstrap_Upper_CI
-          values$stat_results$Bootstrap_Significant <- bootstrap_results$Bootstrap_Significant
-          values$stat_results$Bootstrap_Strategy <- bootstrap_results$Bootstrap_Strategy
-          
-          # For Bootstrap_Log2FC:
-          # If data is log-scale, Bootstrap_Median_FC is already log-scale difference (log2)
-          # If data is linear-scale, Bootstrap_Median_FC is ratio, so we need to log it
-          if (is_data_log_scale()) {
-            values$stat_results$Bootstrap_Log2FC <- bootstrap_results$Bootstrap_Median_FC
+          if ("Feature" %in% colnames(values$stat_results)) {
+            row_idx <- match(values$stat_results$Feature, bootstrap_results$Feature)
+          } else if (nrow(values$stat_results) == nrow(bootstrap_results)) {
+            row_idx <- seq_len(nrow(values$stat_results))
           } else {
-            values$stat_results$Bootstrap_Log2FC <- log2(bootstrap_results$Bootstrap_Median_FC)
+            row_idx <- NULL
+            showNotification("Bootstrap results could not be matched to the statistics table (row mismatch); skipping merge.",
+                             type = "warning", duration = 8)
+          }
+          if (!is.null(row_idx)) {
+            values$stat_results$Bootstrap_Median_PValue <- bootstrap_results$Bootstrap_Median_PValue[row_idx]
+            values$stat_results$Bootstrap_Lower_CI <- bootstrap_results$Bootstrap_Lower_CI[row_idx]
+            values$stat_results$Bootstrap_Upper_CI <- bootstrap_results$Bootstrap_Upper_CI[row_idx]
+            values$stat_results$Bootstrap_Significant <- bootstrap_results$Bootstrap_Significant[row_idx]
+            values$stat_results$Bootstrap_Strategy <- bootstrap_results$Bootstrap_Strategy[row_idx]
+
+            # For Bootstrap_Log2FC:
+            # If data is log-scale, Bootstrap_Median_FC is already log-scale difference (log2)
+            # If data is linear-scale, Bootstrap_Median_FC is ratio, so we need to log it
+            if (is_data_log_scale()) {
+              values$stat_results$Bootstrap_Log2FC <- bootstrap_results$Bootstrap_Median_FC[row_idx]
+            } else {
+              values$stat_results$Bootstrap_Log2FC <- log2(bootstrap_results$Bootstrap_Median_FC[row_idx])
+            }
           }
         }
         # Update the feature selection dropdown for bootstrap plots
@@ -12883,9 +13649,10 @@ server <- function(input, output, session) {
     
     header <- div(class = "mlfs-card-header",
                   h4(icon("tags", class = "mlfs-feature-icon"), "Configure Data Columns & Group Mapping"))
+    design_label <- if (isTRUE(det$is_complex)) "Complex" else "Simple"
     summary <- div(class = "alert alert-info",
-                   HTML(sprintf("<b>Detected:</b> %s delimiter; method: %s; Complex experiment: <b>%s</b>.<br>Biological groups will drive analyses; experimental groups are available for time/dose facets.",
-                                det$delimiter, det$method, ifelse(det$is_complex, "Yes", "No"))))
+                   HTML(sprintf("<b>Detection summary:</b> Groups auto-detected from sample names.<br><b>Design: %s</b> &mdash; biological groups drive the analysis. Add experimental groups below only for time/dose facets.",
+                                design_label)))
     
     # Auto-detect feature name and accession ID columns
     auto_feature_col <- 1  # Default to first column
@@ -12962,71 +13729,124 @@ server <- function(input, output, session) {
                 
                 # Column Configuration Section
                 tags$hr(),
-                helpText(icon("table"), " Step 1: Specify data column roles (for enrichment analysis and feature identification)."),
+                helpText(icon("table"), HTML("<b>Step 1: Column roles</b> — which column holds feature names vs. database IDs?")),
                 fluidRow(
                   column(4,
-                         selectInput(
-                           "feature_name_column",
-                           "Feature Name Column",
-                           choices = if(!is.null(data_columns)) setNames(seq_along(data_columns), data_columns) else c("Column 1" = 1),
-                           selected = auto_feature_col,
-                           width = "100%"
-                         ),
-                         helpText("Column containing primary feature names/identifiers")
+                         div(style = "background-color: #eef4ff; border: 1px solid #c9d9f7; border-left: 4px solid #2f6fed; border-radius: 8px; padding: 10px 12px;",
+                             div(style = "display: flex; align-items: center; gap: 6px; margin-bottom: 6px;",
+                                 icon("tag", style = "color: #2f6fed;"),
+                                 tags$strong("Feature name"),
+                                 tags$span(title = "Primary IDs used in tables and plots.",
+                                           icon("question-circle", style = "color: #2f6fed; font-size: 13px; cursor: help;"))
+                             ),
+                             selectInput(
+                               "feature_name_column",
+                               NULL,
+                               choices = if(!is.null(data_columns)) setNames(seq_along(data_columns), data_columns) else c("Column 1" = 1),
+                               selected = auto_feature_col,
+                               width = "100%"
+                             )
+                         )
                   ),
                   column(4,
-                         selectizeInput(
-                           "accession_id_column",
-                           "Accession/ID Columns (for enrichment)",
-                           choices = c("None (use feature names)" = 0,
-                                       if(!is.null(data_columns)) setNames(seq_along(data_columns), data_columns) else c("Column 1" = 1)),
-                           selected = if(!is.null(auto_accession_col)) auto_accession_col else 0,
-                           multiple = TRUE,
-                           options = list(placeholder = "Select one or more ID columns"),
-                           width = "100%"
-                         ),
-                         helpText("Columns with UniProt, Entrez, KEGG, HMDB, or other database IDs. Multiple columns supported for different ID types.")
+                         div(style = "background-color: #f1ecff; border: 1px solid #d5c9f7; border-left: 4px solid #6d3df5; border-radius: 8px; padding: 10px 12px;",
+                             div(style = "display: flex; align-items: center; gap: 6px; margin-bottom: 6px;",
+                                 icon("database", style = "color: #6d3df5;"),
+                                 tags$strong("Database IDs (optional)"),
+                                 tags$span(title = "Only needed for enrichment. Multiple ID types allowed.",
+                                           icon("question-circle", style = "color: #6d3df5; font-size: 13px; cursor: help;"))
+                             ),
+                             selectizeInput(
+                               "accession_id_column",
+                               NULL,
+                               choices = c("None (use feature names)" = 0,
+                                           if(!is.null(data_columns)) setNames(seq_along(data_columns), data_columns) else c("Column 1" = 1)),
+                               selected = if(!is.null(auto_accession_col)) auto_accession_col else 0,
+                               multiple = TRUE,
+                               options = list(placeholder = "UniProt, KEGG, HMDB, etc."),
+                               width = "100%"
+                             )
+                         )
                   ),
                   column(4,
-                         selectizeInput(
-                           "ignore_columns",
-                           "Ignore/Exclude Columns",
-                           choices = if(!is.null(data_columns)) setNames(seq_along(data_columns), data_columns) else NULL,
-                           selected = NULL,
-                           multiple = TRUE,
-                           options = list(placeholder = "Select columns to ignore"),
-                           width = "100%"
-                         ),
-                         helpText("Columns to exclude from analysis (e.g., notes, descriptions)")
+                         div(style = "background-color: #f4f5f7; border: 1px solid #d9dce1; border-left: 4px solid #6c757d; border-radius: 8px; padding: 10px 12px;",
+                             div(style = "display: flex; align-items: center; gap: 6px; margin-bottom: 6px;",
+                                 icon("eye-slash", style = "color: #6c757d;"),
+                                 tags$strong("Ignore columns (optional)"),
+                                 tags$span(title = "Excluded from analysis.",
+                                           icon("question-circle", style = "color: #6c757d; font-size: 13px; cursor: help;"))
+                             ),
+                             selectizeInput(
+                               "ignore_columns",
+                               NULL,
+                               choices = if(!is.null(data_columns)) setNames(seq_along(data_columns), data_columns) else NULL,
+                               selected = NULL,
+                               multiple = TRUE,
+                               options = list(placeholder = "Notes, descriptions, etc."),
+                               width = "100%"
+                             )
+                         )
                   )
                 ),
-                
+
                 # Group Mapping Section
                 tags$hr(),
-                helpText(icon("users"), " Step 2: Define biological and experimental group levels, then assign samples in the table below."),
-                helpText(icon("exclamation-triangle", style="color: orange;"), HTML("<strong>Important:</strong> Manual edits in the table below override metadata. Changes here take precedence over automatically detected groupings.")),
+                helpText(icon("users"), HTML("<b>Step 2: Groups</b> — confirm levels, then fix assignments in the table.")),
+                div(class = "alert alert-warning", style = "padding: 6px 10px; margin-bottom: 10px;",
+                    HTML("<b>Note:</b> Table edits override metadata.")),
                 fluidRow(
                   column(6,
                          selectizeInput(
-                           "bio_levels", "Biological group levels",
+                           "bio_levels", "Biological groups (experimental factor)",
                            choices = unique(mapping_df$Biological_Group),
                            selected = unique(mapping_df$Biological_Group),
                            multiple = TRUE,
-                           options = list(create = TRUE, persist = FALSE, placeholder = "Add or edit biological groups")
+                           options = list(create = TRUE, persist = FALSE, placeholder = "e.g. Control, Day 1, Day 3")
                          )
                   ),
                   column(6,
                          selectizeInput(
-                           "exp_levels", "Experimental group levels",
+                           "exp_levels", "Experimental groups (optional facet)",
                            choices = unique(mapping_df$Experimental_Group),
                            selected = unique(mapping_df$Experimental_Group),
                            multiple = TRUE,
-                           options = list(create = TRUE, persist = FALSE, placeholder = "Add or edit experimental groups")
+                           options = list(create = TRUE, persist = FALSE, placeholder = "e.g. time / dose facets")
                          )
                   )
                 ),
+                # Design roles: blocking/repeat structure in standard notation
+                {
+                  md_cols <- if (!is.null(values$metadata) && ncol(values$metadata) > 0) {
+                    colnames(values$metadata)
+                  } else character(0)
+                  pick_col <- function(patterns, exclude = c("sampleid", "sample_id", "sample")) {
+                    cand <- md_cols[!tolower(md_cols) %in% exclude]
+                    hit <- cand[grepl(paste(patterns, collapse = "|"), cand, ignore.case = TRUE)]
+                    if (length(hit) > 0) hit[1] else ""
+                  }
+                  subj_def <- pick_col(c("patient", "subject", "individual", "donor", "animal", "participant"))
+                  batch_def <- pick_col(c("batch", "plate", "run", "site", "center", "operator"))
+                  time_def <- pick_col(c("time", "day", "week", "visit", "dose", "order", "timepoint"))
+                  tagList(
+                    helpText(icon("sitemap"),
+                             HTML("<b>Design roles (optional)</b> — factors are compared (groups above); ",
+                                  "blocks/batches are nuisance variation; the repeated unit identifies replicate ",
+                                  "samples from the same subject; time orders longitudinal facets.")),
+                    fluidRow(
+                      column(4, selectInput("design_subject_col", "Repeated unit (subject)",
+                                            choices = c("None" = "", md_cols),
+                                            selected = subj_def, width = "100%")),
+                      column(4, selectInput("design_batch_col", "Batch / block",
+                                            choices = c("None" = "", md_cols),
+                                            selected = batch_def, width = "100%")),
+                      column(4, selectInput("design_time_col", "Time / ordered facet",
+                                            choices = c("None" = "", md_cols),
+                                            selected = time_def, width = "100%"))
+                    )
+                  )
+                },
                 tags$hr(),
-                helpText(icon("pencil"), " Step 3: Assign each sample to the appropriate Biological and Experimental group. Edit the table directly to override metadata values."),
+                helpText(icon("pencil"), HTML("<b>Step 3: Samples</b> — assign each sample to a group in the table.")),
                 div(class = "group-mapping-table",
                     rhandsontable::rHandsontableOutput("mapping_table", width = "100%", height = 500)
                 )
@@ -14011,6 +14831,40 @@ server <- function(input, output, session) {
       NULL
     }
     values$ignore_columns <- if(!is.null(input$ignore_columns)) as.integer(input$ignore_columns) else NULL
+
+    # Design roles declared in the mapping modal (standard experimental-design notation)
+    nz <- function(x) if (!is.null(x) && nzchar(as.character(x)[1])) as.character(x)[1] else ""
+    values$design_roles <- list(
+      subject = nz(input$design_subject_col),
+      batch = nz(input$design_batch_col),
+      time = nz(input$design_time_col)
+    )
+    # Batch-vs-group confounding screen at mapping time (cheap, actionable early)
+    tryCatch({
+      brole <- values$design_roles$batch
+      if (nzchar(brole) && !is.null(values$metadata) && brole %in% colnames(values$metadata) &&
+          !is.null(map_df) && all(c("Sample", "Biological_Group") %in% colnames(map_df))) {
+        bvec <- as.character(values$metadata[[brole]])
+        # align metadata rows to mapping samples by name when possible
+        msamp <- if ("SampleID" %in% colnames(values$metadata)) {
+          as.character(values$metadata$SampleID)
+        } else if (!is.null(rownames(values$metadata))) {
+          as.character(rownames(values$metadata))
+        } else NULL
+        bper <- if (!is.null(msamp)) bvec[match(map_df$Sample, msamp)] else rep(NA_character_, nrow(map_df))
+        okb <- !is.na(bper) & !is.na(map_df$Biological_Group)
+        if (sum(okb) >= 4 && length(unique(bper[okb])) >= 2) {
+          ct <- table(factor(bper[okb]), factor(map_df$Biological_Group[okb]))
+          # perfectly confounded: every batch sits in exactly one group and vice versa
+          if (all(rowSums(ct > 0) == 1) && all(colSums(ct > 0) == 1)) {
+            showNotification(paste0("Design warning: batch '", brole,
+                                    "' is perfectly confounded with biological groups. ",
+                                    "Group effects cannot be separated from batch — consider a balanced rerun or interpret cautiously."),
+                             type = "warning", duration = 10)
+          }
+        }
+      }
+    }, error = function(e) NULL)
     
     # Remove accession columns from mapping if selected (use adjusted indices to avoid name shifts)
     if (!is.null(values$accession_id_column) && !is.null(values$raw_data)) {
@@ -14607,6 +15461,119 @@ server <- function(input, output, session) {
                  value = 3, min = 2, max = 10, step = 1)
   })
   
+  # Heatmap helpers: native ComplexHeatmap group labeling + safe row z-scoring.
+  # Group labels render as slice titles from a space-preserving factor, so they
+  # look identical at every cell size (no anno_block special-casing, no rainbow
+  # fills, no internal slot pokes). Factors never sanitize names, unlike
+  # data.frame column-name repairs, so levels display verbatim.
+  make_group_split <- function(split_vector) {
+    if (is.null(split_vector)) return(NULL)
+    split_levels <- unique(split_vector)
+    display_labels <- preserve_group_names(split_levels)
+    factor(split_vector, levels = split_levels, labels = display_labels)
+  }
+  # Row z-score for heatmap display. Constant/all-NA rows have SD 0 and scale
+  # to NaN, which breaks clustering distances and renders as gray rows, so
+  # drop them here instead of failing downstream in hclust/dist.
+  zscore_rows_safe <- function(mat) {
+    if (is.null(mat) || nrow(mat) == 0) return(mat)
+    mat <- t(scale(t(mat)))
+    bad_rows <- apply(mat, 1, function(r) any(!is.finite(r)))
+    if (any(bad_rows, na.rm = TRUE)) {
+      message("Removing ", sum(bad_rows, na.rm = TRUE),
+              " constant/all-NA feature row(s) before heatmap rendering.")
+      mat <- mat[!bad_rows, , drop = FALSE]
+    }
+    mat
+  }
+
+  # Reference-style annotations: sample-group color bar plus an optional
+  # per-sample boxplot of the displayed values. Boxplot sits under Group on
+  # top by default, or below the heatmap body when position = "bottom".
+  # Group colors default to ComplexHeatmap's native palette unless the user
+  # picks custom ones (named vector keyed by display label). Returns a list
+  # with $top / $bottom annotation objects (either may be NULL).
+  build_heatmap_annotations <- function(mat, group_split, show_boxplot = TRUE,
+                                        boxplot_position = "top", group_colors = NULL) {
+    mat <- as.matrix(mat)
+    grp <- make_group_split(group_split)
+    top_args <- list()
+    bottom_args <- list()
+    if (!is.null(grp)) top_args$Group <- grp
+    # Boxplot renders only for Top/Bottom ("none" suppresses it entirely)
+    if (isTRUE(show_boxplot) && boxplot_position %in% c("top", "bottom")) {
+      bp <- ComplexHeatmap::anno_boxplot(mat, height = grid::unit(25, "mm"))
+      if (identical(boxplot_position, "bottom")) bottom_args$boxplot <- bp
+      else top_args$boxplot <- bp
+    }
+    col_list <- NULL
+    if (!is.null(grp) && !is.null(group_colors) && !is.null(names(group_colors))) {
+      pal <- group_colors[levels(grp)]
+      pal <- pal[!is.na(pal)]
+      if (length(pal) > 0) col_list <- list(Group = pal)
+    }
+    make_ann <- function(args, col) {
+      if (length(args) == 0) return(NULL)
+      if (!is.null(col)) args$col <- col
+      # Group legend labels bold, matching the Z-score legend text
+      if ("Group" %in% names(args)) {
+        args$annotation_legend_param <- list(
+          Group = list(labels_gp = grid::gpar(fontface = "bold"))
+        )
+      }
+      do.call(ComplexHeatmap::HeatmapAnnotation, args)
+    }
+    list(top = make_ann(top_args, col_list), bottom = make_ann(bottom_args, NULL))
+  }
+  # Per-group colors chosen in the UI (named by display label). NULL until
+  # the picker inputs exist, in which case native defaults apply.
+  get_heatmap_group_colors <- function() {
+    if (is.null(values$unique_groups) || length(values$unique_groups) == 0) return(NULL)
+    groups <- preserve_group_names(values$unique_groups)
+    cols <- vapply(seq_along(groups), function(i) {
+      v <- input[[paste0("heatmap_group_color_", i)]]
+      if (is.null(v) || length(v) == 0 || !nzchar(v)) NA_character_ else v
+    }, character(1))
+    if (any(is.na(cols))) return(NULL)
+    stats::setNames(cols, groups)
+  }
+  # Sanitize user legend-side choices for draw(): anything unexpected falls
+  # back to both legends on the right (stacked vertically via merge_legends).
+  heatmap_legend_sides <- function(heatmap_side, annotation_side) {
+    ok <- c("left", "right", "top", "bottom")
+    pick <- function(v, fallback) {
+      if (length(v) == 1 && !is.na(v) && v %in% ok) v else fallback
+    }
+    list(heatmap = pick(heatmap_side, "right"),
+         annotation = pick(annotation_side, "right"))
+  }
+  # K-means row slices labeled "Cluster 1..k" (one dendrogram per slice,
+  # titles on the left by default). Fixed seed with RNG state restored, so
+  # redraws are stable without perturbing the session RNG stream.
+  cluster_rows_kmeans <- function(mat, k, seed = 1234) {
+    k <- suppressWarnings(as.integer(k))
+    if (length(k) == 0 || is.na(k) || k < 2 || is.null(mat) || nrow(mat) < 3) return(NULL)
+    k <- min(k, nrow(mat) - 1L)
+    has_seed <- exists(".Random.seed", envir = .GlobalEnv)
+    old_seed <- if (has_seed) .GlobalEnv$.Random.seed else NULL
+    set.seed(seed)
+    km <- tryCatch(stats::kmeans(as.matrix(mat), centers = k, nstart = 10),
+                   error = function(e) NULL)
+    if (has_seed) .GlobalEnv$.Random.seed <- old_seed
+    else if (exists(".Random.seed", envir = .GlobalEnv)) rm(".Random.seed", envir = .GlobalEnv)
+    if (is.null(km)) return(NULL)
+    factor(paste("Cluster", km$cluster), levels = paste("Cluster", seq_len(k)))
+  }
+  # Cluster-slice title size: user setting with an auto-cap so titles stop
+  # overlapping once many slices squeeze together (cap is a no-op at small k).
+  cluster_title_size <- function(requested, n_slices) {
+    requested <- suppressWarnings(as.numeric(requested))
+    if (length(requested) == 0 || is.na(requested)) requested <- 10
+    n_slices <- suppressWarnings(as.integer(n_slices))
+    if (length(n_slices) == 0 || is.na(n_slices) || n_slices < 1) n_slices <- 1
+    min(requested, max(7, floor(40 / n_slices)))
+  }
+
   # Generate heatmap - Optimized for tab-specific execution with Data tab priority
   observeEvent({
     # Always watch for statistical results changes, even when not on Heatmaps tab
@@ -14712,6 +15679,14 @@ server <- function(input, output, session) {
           rownames(heatmap_data) <- make.unique(values$accession_ids[significant_idx])
         } else {
           rownames(heatmap_data) <- make.unique(values$cleaned_molecules[significant_idx])
+        }
+        # Same row z-score as every other heatmap path (legend reads "Z-score")
+        heatmap_data <- zscore_rows_safe(heatmap_data)
+        if (is.null(heatmap_data) || nrow(heatmap_data) == 0) {
+          showNotification("No features with finite values remain for heatmap display.", type = "warning")
+          values$heatmap_data <- NULL
+          values$column_split <- NULL
+          return()
         }
         values$heatmap_data <- heatmap_data
         values$column_split <- NULL
@@ -14855,8 +15830,15 @@ server <- function(input, output, session) {
         values$fdr_values_pairwise <- values$stat_results[[fdr_column]][significant_idx]
       }
       
-      # Z-score normalize the rows for visualization
-      heatmap_data <- t(scale(t(heatmap_data)))
+      # Z-score normalize the rows for visualization (constant/all-NA rows are
+      # dropped inside the helper: SD 0 scales to NaN and breaks clustering)
+      heatmap_data <- zscore_rows_safe(heatmap_data)
+      if (nrow(heatmap_data) == 0) {
+        showNotification("No features with finite values remain for heatmap display.", type = "warning")
+        values$heatmap_data <- NULL
+        values$column_split <- NULL
+        return()
+      }
       # Save values in reactive object for use by heatmap renderers
       values$heatmap_data <- heatmap_data
       values$column_split <- column_split
@@ -15167,8 +16149,9 @@ server <- function(input, output, session) {
       
       # Rename sample columns with the corrected names function
       colnames(heatmap_data) <- get_corrected_column_names(colnames(heatmap_data))
-      column_split <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
-      column_split <- column_split[1:ncol(heatmap_data)]
+      # Annotations must follow sample-column order (not grouped order)
+      column_split <- create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                   ncol(heatmap_data))
       
       # Store the significant indices and related values for the table
       values$significant_idx_all <- significant_idx_all
@@ -15185,8 +16168,15 @@ server <- function(input, output, session) {
       }
     }
     
-    # Z-score normalize the feature rows for visualization
-    heatmap_data <- t(scale(t(heatmap_data)))
+    # Z-score normalize the feature rows for visualization (constant/all-NA
+    # rows are dropped inside the helper: SD 0 scales to NaN and breaks clustering)
+    heatmap_data <- zscore_rows_safe(heatmap_data)
+    if (nrow(heatmap_data) == 0) {
+      showNotification("No features with finite values remain for heatmap display.", type = "warning")
+      values$heatmap_data <- NULL
+      values$column_split <- NULL
+      return()
+    }
     
     # Store values in reactive object
     values$heatmap_data <- heatmap_data
@@ -15199,14 +16189,12 @@ server <- function(input, output, session) {
     n_rows <- nrow(values$heatmap_data)
     row_px <- switch(input$heatmap_cell_size,
                      "Small" = 6,
-                     "Compact" = 10,
                      "Medium" = 16,
                      "Large" = 22,
                      14)
     # Overhead for title, legend at bottom, and column labels at top
     overhead <- switch(input$heatmap_cell_size,
                        "Small" = 250,
-                       "Compact" = 300,
                        "Medium" = 380,
                        "Large" = 450,
                        330)
@@ -15227,158 +16215,89 @@ server <- function(input, output, session) {
   
   # Static Heatmap Renderer
   output$staticHeatmap <- renderPlot({ 
-    # Validate required data is available
-    req(values$heatmap_data, values$column_split)
+    # Validate required data is available (column_split may be NULL for
+    # variable-style comparisons, which plot without group slices)
+    req(values$heatmap_data)
     
-    # Get font sizes from inputs or use defaults
-    title_size <- if(!is.null(input$heatmap_title_size)) input$heatmap_title_size else 14
+    # Get font sizes from inputs or use defaults (title 0 = no title at all)
+    title_size <- if(!is.null(input$heatmap_title_size)) input$heatmap_title_size else 0
+    show_plot_title <- !is.na(title_size) && title_size > 0
+    plot_title <- if (show_plot_title) {
+      ifelse(input$heatmapType == "pairwise",
+             ifelse(grepl("^(lmROTS|lmeROTS)_", input$group1 %||% ""),
+                    paste(input$group1, "Heatmap"),
+                    paste(input$group1, "vs", input$group2, "Heatmap")),
+             "Heatmap of All Groups")
+    } else NULL
     row_label_size <- if(!is.null(input$heatmap_row_label_size)) input$heatmap_row_label_size else 10
-    col_label_size <- if(!is.null(input$heatmap_col_label_size)) input$heatmap_col_label_size else 10
     legend_text_size <- if(!is.null(input$heatmap_legend_text_size)) input$heatmap_legend_text_size else 12
-    
-    # Define color function for the heatmap
-    col_fun <- circlize::colorRamp2(c(-2, 0, 2), c(input$lowColor, input$midColor, input$highColor))
-    
-    # Define row split based on data
-    row_split <- if(nrow(values$heatmap_data) < 2) NULL else 2
 
-    # Compute left padding for long row names to prevent truncation
-    row_label_width_mm <- 0
-    if (isTRUE(input$show_row_names)) {
-      row_names <- rownames(values$heatmap_data)
-      if (!is.null(row_names) && length(row_names) > 0) {
-        row_label_width_mm <- tryCatch({
-          grid::convertWidth(
-            ComplexHeatmap::max_text_width(row_names,
-                                           gp = grid::gpar(fontsize = row_label_size, fontface = "bold")),
-            "mm",
-            valueOnly = TRUE
-          )
-        }, error = function(e) 0)
-      }
-    }
-    
-    # Fix spaces in column_split by creating a named factor with proper labels
-    clean_splits <- values$column_split
-    split_levels <- unique(clean_splits)
-    original_labels <- preserve_group_names(split_levels)  # Apply preserve_group_names to restore spaces
-    names(split_levels) <- original_labels  # Preserve original labels as names
-    fixed_column_split <- factor(clean_splits, levels = split_levels)
-    
-    # Handle the Small size option with proper top annotations
-    if (identical(input$heatmap_cell_size, "Small")) {
-      # Create the annotation first
-      column_labels <- ComplexHeatmap::HeatmapAnnotation(
-        Group = ComplexHeatmap::anno_block(
-          gp = grid::gpar(fill = rainbow(length(unique(fixed_column_split)))),
-          labels = original_labels,  # Use preserved labels that contain spaces
-          labels_gp = grid::gpar(fontsize = col_label_size, fontface = "bold"),
-          height = unit(3, "mm")
-        ),
-        show_legend = FALSE,
-        height = unit(5, "mm")
-      )
-      # Create heatmap with top_annotation
-      ht <- ComplexHeatmap::Heatmap(
+    # Native-style color mapping: pheatmap/ComplexHeatmap stretch the palette
+    # across the data range instead of fixed breaks, so contrast adapts to
+    # each result set. Symmetric around 0 to keep the diverging midpoint true.
+    heat_range <- suppressWarnings(max(abs(values$heatmap_data), na.rm = TRUE))
+    if (!is.finite(heat_range) || heat_range <= 0) heat_range <- 2
+    col_fun <- circlize::colorRamp2(c(-heat_range, 0, heat_range),
+                                    c(input$lowColor, input$midColor, input$highColor))
+
+    # Reference-style native display: sample groups + per-sample boxplots as
+    # top annotations, k-means row slices ("Cluster 1..k" with one dendrogram
+    # each), feature names on the right, Z-score legend on the left.
+    anns <- build_heatmap_annotations(values$heatmap_data, values$column_split,
+                                        TRUE,
+                                        input$heatmap_boxplot_position %||% "none",
+                                        get_heatmap_group_colors())
+    row_slice <- cluster_rows_kmeans(values$heatmap_data, input$heatmap_row_clusters %||% 1)
+    ct_size <- cluster_title_size(input$heatmap_cluster_label_size,
+                                  if (!is.null(row_slice)) nlevels(row_slice) else 1)
+
+    # Feature names follow the Show Row Names checkbox at every cell size
+    show_feature_names <- isTRUE(input$show_row_names)
+
+    ht <- ComplexHeatmap::Heatmap(
         values$heatmap_data,
         name = "Z-score",
         cluster_rows = input$cluster_rows,
         cluster_columns = input$cluster_cols,
-        show_row_names = FALSE,
+        show_row_names = show_feature_names,
         show_column_names = FALSE,
-        column_names_side = "top",
-        rect_gp = grid::gpar(col = "black"),
-        row_dend_reorder = FALSE,
-        column_title = ifelse(input$heatmapType == "pairwise",
-                              ifelse(grepl("^(lmROTS|lmeROTS)_", input$group1 %||% ""),
-                                     paste(input$group1, "Heatmap"),
-                                     paste(input$group1, "vs", input$group2, "Heatmap")),
-                              "Heatmap of All Groups"),
+        row_names_side = "right",
+        column_title = plot_title,
         column_title_gp = grid::gpar(fontface = "bold", fontsize = title_size),
         heatmap_legend_param = list(
-          title = NULL,
-          legend_width = switch(input$heatmap_cell_size,
-                                "Small" = unit(1, "in"),
-                                "Compact" = unit(2, "in"),
-                                "Medium" = unit(3, "in"),
-                                "Large" = unit(4, "in"),
-                                unit(3, "in")),
-          grid_height = unit(0.05, "in"),
-          direction = "horizontal",
           labels_gp = grid::gpar(fontface = "bold", fontsize = legend_text_size)
         ),
         col = col_fun,
         na_col = input$naColor %||% "gray",
-        row_split = row_split,
-        column_split = fixed_column_split,  # Use the fixed factor here
-        row_names_gp = grid::gpar(fontsize = 0),
-        column_names_gp = grid::gpar(fontsize = 0),
-        row_title = NULL,
-        top_annotation = column_labels,
-        row_gap = unit(1, "mm"),
-        column_gap = unit(1, "mm"),
-        border = FALSE
-      )
-    } else {
-      # For larger sizes, we need to fix column_split differently
-      ht <- ComplexHeatmap::Heatmap(
-        values$heatmap_data,
-        name = "Z-score",
-        cluster_rows = input$cluster_rows,
-        cluster_columns = input$cluster_cols,
-        show_row_names = ifelse(input$heatmap_cell_size %in% c("Compact"), FALSE, input$show_row_names),
-        show_column_names = TRUE,
-        column_names_side = "top",
-        rect_gp = grid::gpar(col = "black"),
-        row_dend_reorder = FALSE,
-        column_title = ifelse(input$heatmapType == "pairwise",
-                              ifelse(grepl("^(lmROTS|lmeROTS)_", input$group1 %||% ""),
-                                     paste(input$group1, "Heatmap"),
-                                     paste(input$group1, "vs", input$group2, "Heatmap")),
-                              "Heatmap of All Groups"),
-        column_title_gp = grid::gpar(fontface = "bold", fontsize = title_size),
-        heatmap_legend_param = list(
-          title = NULL,
-          legend_width = switch(input$heatmap_cell_size,
-                                "Small" = unit(1, "in"),
-                                "Compact" = unit(2, "in"),
-                                "Medium" = unit(3, "in"),
-                                "Large" = unit(4, "in"),
-                                unit(3, "in")),
-          grid_height = unit(0.05, "in"),
-          direction = "horizontal",
-          labels_gp = grid::gpar(fontface = "bold", fontsize = legend_text_size)
-        ),
-        col = col_fun,
-        na_col = input$naColor %||% "gray",
-        row_split = row_split,
-        column_split = fixed_column_split,  # Use the fixed factor here
+        row_split = row_slice,
+        top_annotation = anns$top,
+        bottom_annotation = anns$bottom,
         row_names_gp = grid::gpar(fontsize = row_label_size, fontface = "bold"),
-        column_names_gp = grid::gpar(fontsize = col_label_size, fontface = "bold"),
-        row_title = NULL,
-        show_row_dend = TRUE,
-        row_gap = unit(1, "mm"),
-        column_gap = unit(1, "mm"),
-        border = FALSE
+        row_title_gp = grid::gpar(fontsize = ct_size, fontface = "bold")
       )
-      
-      # Add explicit column labels using the original strings for larger sizes
-      ht@column_title_param$labels_row <- original_labels
-    }
+
+    # (Row-name width is budgeted in the device width below, not here.)
+
+    # NOTE: legacy per-size label branches (anno_block for Small, S4 slot poke
+    # for larger sizes) were removed; the single native path above covers all sizes.
     
     # Store the heatmap object for download (like PCA)
     values$heatmap_obj <- ht
     
-    # Draw the heatmap with extra padding to prevent label truncation
+    # Draw the heatmap. Outer padding is breathing room only (see note above).
     right_pad_mm <- switch(input$heatmap_cell_size,
                            "Medium" = 15,
                            "Large" = 20,
                            5)
-    left_pad_mm <- max(5, row_label_width_mm + 5)
+    left_pad_mm <- 5
+    legend_sides <- heatmap_legend_sides(input$heatmap_legend_side,
+                                         input$heatmap_ann_legend_side)
     ComplexHeatmap::draw(
       ht,
-      heatmap_legend_side = "bottom",
-      padding = unit(c(5, right_pad_mm, 5, left_pad_mm), "mm")
+      heatmap_legend_side = legend_sides$heatmap,
+      annotation_legend_side = legend_sides$annotation,
+      merge_legends = legend_sides$heatmap == legend_sides$annotation,
+      padding = unit(c(5, left_pad_mm, 5, right_pad_mm), "mm")
     )
   },
   height = function() {
@@ -15391,24 +16310,28 @@ server <- function(input, output, session) {
     n_rows <- nrow(values$heatmap_data)
     col_px <- switch(input$heatmap_cell_size,
                      "Small" = 8,
-                     "Compact" = 12,
                      "Medium" = 18,
                      "Large" = 24,
                      14)
-    # Calculate left margin for row labels (if shown) and dendrogram
-    left_margin <- 150  # Base margin for dendrogram
-    if (isTRUE(input$show_row_names) && !input$heatmap_cell_size %in% c("Small", "Compact")) {
-      # Estimate character width based on longest row name
-      max_chars <- max(nchar(rownames(values$heatmap_data)), na.rm = TRUE)
-      left_margin <- left_margin + max_chars * 7  # ~7px per character
+    # Device width budgets, by side (row names moved to the right in the
+    # reference layout; the left only holds dendrogram + parked legends).
+    # Left: row dendrogram + room for a left-parked legend.
+    left_margin <- 210
+    # Right: annotation legends + measured feature-name budget when shown.
+    right_margin <- 170
+    if (isTRUE(input$show_row_names)) {
+      # Estimate name width from the longest row name, scaled by the actual
+      # label font size and device resolution (~0.6em average bold glyph).
+      # The old fixed 7px/char underestimated 10pt text at res 120 (~10px),
+      # squeezing the body to zero width on long metabolite names.
+      max_chars <- tryCatch(max(nchar(rownames(values$heatmap_data)), na.rm = TRUE),
+                            error = function(e) 0)
+      rl_size <- suppressWarnings(as.numeric(input$heatmap_row_label_size %||% 10))
+      if (length(rl_size) == 0 || is.na(rl_size) || rl_size <= 0) rl_size <- 10
+      if (is.finite(max_chars) && max_chars > 0) {
+        right_margin <- right_margin + max_chars * rl_size * (UI_PLOT_RES / 72) * 0.6
+      }
     }
-    # Right margin for legend and group labels
-    right_margin <- switch(input$heatmap_cell_size,
-                           "Small" = 120,
-                           "Compact" = 150,
-                           "Medium" = 200,
-                           "Large" = 250,
-                           170)
     w <- n_cols * col_px + left_margin + right_margin
     w <- max(900, min(round(w), 3000))
     w
@@ -15417,11 +16340,13 @@ server <- function(input, output, session) {
   
   # Interactive Heatmap Renderer
   output$interactiveHeatmap <- renderPlotly({
-    # Validate required data is available
-    req(values$heatmap_data, values$column_split)
+    # Validate required data is available (column_split may be NULL for
+    # variable-style comparisons, which plot without group slices)
+    req(values$heatmap_data)
     
-    # Get font sizes from inputs or use defaults
-    title_size <- if(!is.null(input$heatmap_title_size)) input$heatmap_title_size else 14
+    # Get font sizes from inputs or use defaults (title 0 = no title at all)
+    title_size <- if(!is.null(input$heatmap_title_size)) input$heatmap_title_size else 0
+    show_plotly_title <- !is.na(title_size) && title_size > 0
     row_label_size <- if(!is.null(input$heatmap_row_label_size)) input$heatmap_row_label_size else 10
     col_label_size <- if(!is.null(input$heatmap_col_label_size)) input$heatmap_col_label_size else 10
     legend_text_size <- if(!is.null(input$heatmap_legend_text_size)) input$heatmap_legend_text_size else 12
@@ -15430,8 +16355,12 @@ server <- function(input, output, session) {
     plot_data <- as.data.frame(as.table(as.matrix(values$heatmap_data)))
     colnames(plot_data) <- c("Row", "Column", "Value")
     
-    # Add group information for hover text
-    plot_data$Group <- values$column_split[as.numeric(plot_data$Column)]
+    # Add group information for hover text (NULL split = ungrouped comparison)
+    if (!is.null(values$column_split)) {
+      plot_data$Group <- values$column_split[as.numeric(plot_data$Column)]
+    } else {
+      plot_data$Group <- "All"
+    }
     
     # Create colors that match the static heatmap
     colors <- colorRampPalette(c(input$lowColor, input$midColor, input$highColor))(100)
@@ -15453,14 +16382,16 @@ server <- function(input, output, session) {
         "Feature:", Row, "<br>",
         "Sample:", Column, "<br>",
         "Group:", Group, "<br>",
-        "Value:", round(Value, 3)
+        "Z-score:", round(Value, 3)
       )
     ) %>%
       layout(
         title = list(
-          text = ifelse(input$heatmapType == "pairwise",
-                        paste(input$group1, "vs", input$group2, "Heatmap"),
-                        "Heatmap of All Groups"),
+          text = if (show_plotly_title) {
+            ifelse(input$heatmapType == "pairwise",
+                   paste(input$group1, "vs", input$group2, "Heatmap"),
+                   "Heatmap of All Groups")
+          } else "",
           font = list(size = title_size)
         ),
         xaxis = list(
@@ -15480,7 +16411,7 @@ server <- function(input, output, session) {
             max(60, min(400, max_label_chars * 6))
           },
           r = 20,
-          t = 60,
+          t = if (show_plotly_title) 60 else 20,
           b = 60
         ),
         height = compute_heatmap_height_px()
@@ -15499,13 +16430,11 @@ server <- function(input, output, session) {
     # Height calculation (matching UI logic)
     row_px <- switch(cell_size,
                      "Small" = 3,      # ~0.8 mm per row (reduced from 4)
-                     "Compact" = 6,    # ~1.5 mm per row (reduced from 8)
                      "Medium" = 9,     # ~2.5 mm per row (reduced from 12)
                      "Large" = 14,     # ~4 mm per row (reduced from 19)
                      9)
     height_overhead <- switch(cell_size,
                               "Small" = 5000,
-                              "Compact" = 5000,
                               "Medium" = 5000,
                               "Large" = 6000,
                               5000)
@@ -15514,13 +16443,11 @@ server <- function(input, output, session) {
     # Width calculation (matching UI logic)
     col_px <- switch(cell_size,
                      "Small" = 4,    # ~1 mm per column (reduced from 6)
-                     "Compact" = 6,  # ~1.5 mm per column (reduced from 8)
                      "Medium" = 10,  # ~2.5 mm per column (reduced from 14)
                      "Large" = 16,   # ~4 mm per column (reduced from 22)
                      10)
     width_overhead <- switch(cell_size,
                              "Small" = 5000,
-                             "Compact" = 5000,
                              "Medium" = 6000,    # More space for long feature names
                              "Large" = 6000,     # Even more space for long feature names
                              5000)
@@ -15569,32 +16496,21 @@ server <- function(input, output, session) {
           svg(file, width = canvas_size$width / dpi, height = canvas_size$height / dpi)
         }
         
-        # Use the stored heatmap object (like PCA) instead of recreating
-        row_label_size <- if(!is.null(input$heatmap_row_label_size)) input$heatmap_row_label_size else 10
-        show_row_labels <- isTRUE(input$show_row_names) && !input$heatmap_cell_size %in% c("Small", "Compact")
-        row_label_width_mm <- 0
-        if (show_row_labels) {
-          row_names <- rownames(values$heatmap_data)
-          if (!is.null(row_names) && length(row_names) > 0) {
-            row_label_width_mm <- tryCatch({
-              grid::convertWidth(
-                ComplexHeatmap::max_text_width(row_names,
-                                               gp = grid::gpar(fontsize = row_label_size, fontface = "bold")),
-                "mm",
-                valueOnly = TRUE
-              )
-            }, error = function(e) 0)
-          }
-        }
+        # Use the stored heatmap object (like PCA) instead of recreating.
+        # Outer padding is breathing room only (see static render note).
         right_pad_mm <- switch(input$heatmap_cell_size,
                                "Medium" = 15,
                                "Large" = 20,
                                5)
-        left_pad_mm <- max(5, row_label_width_mm + 5)
+        left_pad_mm <- 5
+        dl_sides <- heatmap_legend_sides(input$heatmap_legend_side,
+                                         input$heatmap_ann_legend_side)
         ComplexHeatmap::draw(
           values$heatmap_obj,
-          heatmap_legend_side = "bottom",
-          padding = unit(c(5, right_pad_mm, 5, left_pad_mm), "mm")
+          heatmap_legend_side = dl_sides$heatmap,
+          annotation_legend_side = dl_sides$annotation,
+          merge_legends = dl_sides$heatmap == dl_sides$annotation,
+          padding = unit(c(5, left_pad_mm, 5, right_pad_mm), "mm")
         )
         dev.off()
         
@@ -15890,32 +16806,6 @@ server <- function(input, output, session) {
       plot_obj <- add_stat_annotations(plot_obj, plot_df, input$sig_method)
     }
     
-    # --- ROTS FDR edge case handling for Distribution Analysis ---
-    # If ROTS is selected, use FDR cutoff for significance
-    if (input$sig_method == "rots" && "FDR" %in% colnames(values$stat_results)) {
-      fdr_col <- NULL
-      # Try to find the correct FDR column for this feature
-      for (g1 in values$unique_groups) {
-        for (g2 in values$unique_groups) {
-          if (g1 != g2) {
-            possible_col <- paste0(g1, "vs", g2, "_FDR")
-            if (possible_col %in% colnames(values$stat_results)) {
-              fdr_col <- possible_col
-              break
-            }
-          }
-        }
-        if (!is.null(fdr_col)) break
-      }
-      if (!is.null(fdr_col)) {
-        fdr_val <- values$stat_results[feature_idx, fdr_col]
-        pval_col <- get_appropriate_pvalue_column(fdr_col)
-        pval_val <- values$stat_results[feature_idx, pval_col]
-        # You can use input$dist_fdr_cutoff here for any downstream logic or display
-        # Example: is_significant <- !is.na(pval_val) && pval_val < input$pvalue_cutoff && !is.na(fdr_val) && fdr_val < input$dist_fdr_cutoff
-      }
-    }
-    
     # Calculate statistics using precomputed values from stat_results
     calculate_distribution_stats(plot_df, input$sig_method)
     
@@ -16182,7 +17072,6 @@ server <- function(input, output, session) {
         x = NULL,
         y = y_label
       ) +
-      scale_fill_manual(values = colors) +
       theme_minimal(base_size = 14) +
       theme(
         plot.title = element_text(hjust = 0.5, size = title_size, face = "bold"),
@@ -16227,12 +17116,8 @@ server <- function(input, output, session) {
   # Create Ridgeline Plot
   create_ridgeline_plot <- function(plot_df, colors) {
     # Make sure ggridges is available
-    if(!requireNamespace("ggridges", quietly = TRUE)) {
-      install.packages("ggridges")
-      library(ggridges)
-    } else {
-      library(ggridges)
-    }
+    require_pkg_or_fail("ggridges", bioc = FALSE, "ridgeline plots")
+    library(ggridges)
     
     # Determine display label based on dist_label_type
     display_label <- input$featureSelect
@@ -16647,8 +17532,10 @@ server <- function(input, output, session) {
           }
         }
         
-        # Check if this annotation will be displayed
-        if (!is.na(p_value) && p_value < 0.05 && fdr_passes) {
+        # Bracket significance follows the Data tab P-value cutoff so the
+        # stars agree with the Statistics Results table (ROTS adds its FDR gate)
+        sig_cutoff <- input$pvalue_cutoff %||% 0.05
+        if (!is.na(p_value) && p_value < sig_cutoff && fdr_passes) {
           has_annotations <- TRUE
           annotations_to_add[[length(annotations_to_add) + 1]] <- list(
             comp = comp,
@@ -16741,20 +17628,14 @@ server <- function(input, output, session) {
       sig_color <- if(use_bootstrap_color) "#287BDE" else "black"
       
       if (!is_ridgeline) {
-        # For log scales, convert the data-space y_position into transformed scale units
-        y_position_to_use <- y_position
-        if (y_scale == "log10") {
-          # Use log10 transformed coordinate so it matches other layers that are transformed
-          y_position_to_use <- log10(y_position)
-        } else if (y_scale == "log2") {
-          y_position_to_use <- log2(y_position)
-        }
-        # message("add_stat_annotations: adding geom_signif with y_position_to_use=", y_position_to_use)
+        # y_position is already in data units; the log scale transforms it
+        # at draw time, so no manual log conversion here (that would apply
+        # the transform twice and sink brackets to the plot floor).
         plot_obj <- plot_obj +
           ggsignif::geom_signif(
           comparisons = list(c(comp[1], comp[2])),
           annotations = sig_symbol,
-          y_position = y_position_to_use,
+          y_position = y_position,
           tip_length = 0.005,  # Very short tips for minimal spacing
           textsize = 9,
           vjust = 0.5,  # Positive value pushes star down toward bracket line
@@ -16825,8 +17706,23 @@ server <- function(input, output, session) {
             NA
           }
           
-          # Create test results object
-          if(grepl("wilcox", p_value_column, ignore.case = TRUE)) {
+          # Create test results object with the correct method label.
+          # (Column-name sniffing mislabeled limma/edgeR/DESeq2 as "t-test".)
+          method_label <- switch(input$sig_method %||% "t.test",
+                                 "t.test" = "t-test (precomputed)",
+                                 "wilcox" = "Wilcoxon rank sum test (precomputed)",
+                                 "anova" = "One-way ANOVA (precomputed)",
+                                 "kruskal" = "Kruskal-Wallis test (precomputed)",
+                                 "limma" = "Limma (precomputed)",
+                                 "limma_voom" = "Limma-voom (precomputed)",
+                                 "deseq2" = "DESeq2 (precomputed)",
+                                 "edger" = "edgeR (precomputed)",
+                                 "rots" = "ROTS (precomputed)",
+                                 "lmm" = "Linear mixed-effects (precomputed)",
+                                 "sam" = "SAM (precomputed)",
+                                 paste0(input$sig_method, " (precomputed)"))
+          if (grepl("wilcox", p_value_column, ignore.case = TRUE) &&
+              identical(input$sig_method, "wilcox")) {
             test_results <- list(
               method = "Wilcoxon rank sum test (precomputed)",
               overall = list(p.value = p_value, statistic = NA, fold_change = fc),
@@ -16834,7 +17730,7 @@ server <- function(input, output, session) {
             )
           } else {
             test_results <- list(
-              method = "t-test (precomputed)",
+              method = method_label,
               overall = list(p.value = p_value, statistic = NA, fold_change = fc),
               posthoc = NULL
             )
@@ -17715,7 +18611,8 @@ get_legend_grid_layout <- function(n_items) {
     req(values$normalized_data, values$unique_groups, values$group_column_indices,
         input$pcaType)
     
-    # Create cache key based on critical parameters
+    # Create cache key based on critical parameters (group assignment included:
+    # remapping groups must invalidate cached scores AND labels)
     cache_key <- paste(
       input$pcaType,
       if (identical(input$pcaType, "pairwise")) paste(input$pcaGroup1, input$pcaGroup2, sep="_") else "all_groups",
@@ -17725,6 +18622,8 @@ get_legend_grid_layout <- function(n_items) {
       input$pca_feature_ranking,
       values$active_grouping_level %||% "single",
       digest::digest(values$normalized_data, algo = "md5"),
+      digest::digest(list(values$unique_groups, values$group_column_indices,
+                          values$biological_unique_groups, values$experimental_unique_groups), algo = "md5"),
       sep = "_"
     )
     
@@ -17740,6 +18639,7 @@ get_legend_grid_layout <- function(n_items) {
     }
     
     # Validate current inputs to prevent unnecessary recalculation
+    # (group assignment included: remapping must retrigger computation)
     current_inputs <- list(
       pcaType = input$pcaType,
       pcaGroup1 = input$pcaGroup1,
@@ -17747,7 +18647,8 @@ get_legend_grid_layout <- function(n_items) {
       pcaScale = input$pcaScale,
       pca_feature_source = input$pca_feature_source,
       pca_top_features = input$pca_top_features,
-      pca_feature_ranking = input$pca_feature_ranking
+      pca_feature_ranking = input$pca_feature_ranking,
+      groups_digest = digest::digest(list(values$unique_groups, values$group_column_indices), algo = "md5")
     )
     
     # Skip execution if inputs haven't changed significantly
@@ -17841,14 +18742,15 @@ get_legend_grid_layout <- function(n_items) {
           pca_input <- t(all_data)
           
           # Create group labels for all samples - use the active grouping level
+          # (labels must follow sample-column order to match t(all_data) rows)
           if (isTRUE(values$has_dual_grouping) && !is.null(values$active_grouping_level)) {
             if (values$active_grouping_level == "biological") {
-              all_group_labels <- create_proper_group_labels(values$biological_unique_groups, values$biological_group_column_indices)
+              all_group_labels <- create_sample_ordered_labels(values$biological_unique_groups, values$biological_group_column_indices, ncol(all_data))
             } else {
-              all_group_labels <- create_proper_group_labels(values$experimental_unique_groups, values$experimental_group_column_indices)
+              all_group_labels <- create_sample_ordered_labels(values$experimental_unique_groups, values$experimental_group_column_indices, ncol(all_data))
             }
           } else {
-            all_group_labels <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
+            all_group_labels <- create_sample_ordered_labels(values$unique_groups, values$group_column_indices, ncol(all_data))
           }
           
           # Basic validation - ensure we have minimum required dimensions
@@ -17984,7 +18886,9 @@ get_legend_grid_layout <- function(n_items) {
 
         if (length(selected_col_indices) >= 2) {
           pca_input <- tryCatch(t(values$normalized_data[, selected_col_indices, drop = FALSE]), error = function(e) NULL)
-          all_group_labels <- tryCatch(create_proper_group_labels(active_groups, active_indices), error = function(e) NULL)
+          all_group_labels <- tryCatch(create_sample_ordered_labels(active_groups, active_indices,
+                                                                     ncol(values$normalized_data)),
+                                       error = function(e) NULL)
           if (!is.null(all_group_labels)) {
             all_group_labels <- preserve_group_names(all_group_labels)
             all_group_labels <- all_group_labels[selected_col_indices]
@@ -19192,7 +20096,8 @@ get_legend_grid_layout <- function(n_items) {
     
     # Run PCA on all groups data
     all_groups_pca_data <- t(values$normalized_data)
-    all_groups_groups <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
+    all_groups_groups <- create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                      nrow(all_groups_pca_data))
     all_groups_pca <- prcomp(all_groups_pca_data, scale = input$pcaScale)
     values$pca_result <- all_groups_pca
     store_pca_result("all_groups", all_groups_pca)
@@ -20142,9 +21047,7 @@ get_legend_grid_layout <- function(n_items) {
   # UMAP plot with parameters
   output$umapPlot <- renderPlot({ 
     req(values$normalized_data, values$unique_groups, values$group_column_indices)
-    if (!requireNamespace("umap", quietly = TRUE)) {
-      install.packages("umap")
-    }
+    require_pkg_or_fail("umap", bioc = FALSE, "UMAP plots")
     library(umap)
     
     # Get font sizes from inputs or use defaults
@@ -20164,14 +21067,15 @@ get_legend_grid_layout <- function(n_items) {
       # Prepare data
       data_mat <- t(values$normalized_data)
       # Use active grouping level if dual grouping is available
+      # (labels must follow sample order to match data_mat rows)
       if (isTRUE(values$has_dual_grouping) && !is.null(values$active_grouping_level)) {
         if (values$active_grouping_level == "biological") {
-          group_labels <- create_proper_group_labels(values$biological_unique_groups, values$biological_group_column_indices)
+          group_labels <- create_sample_ordered_labels(values$biological_unique_groups, values$biological_group_column_indices, nrow(data_mat))
         } else {
-          group_labels <- create_proper_group_labels(values$experimental_unique_groups, values$experimental_group_column_indices)
+          group_labels <- create_sample_ordered_labels(values$experimental_unique_groups, values$experimental_group_column_indices, nrow(data_mat))
         }
       } else {
-        group_labels <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
+        group_labels <- create_sample_ordered_labels(values$unique_groups, values$group_column_indices, nrow(data_mat))
       }
 
       group_labels <- preserve_group_names(group_labels)
@@ -20193,26 +21097,32 @@ get_legend_grid_layout <- function(n_items) {
       keep_samples <- group_labels %in% selected_groups
       data_mat <- data_mat[keep_samples, , drop = FALSE]
       group_labels <- group_labels[keep_samples]
-      if (nrow(data_mat) < 2) {
+      if (nrow(data_mat) < 3) {
         return(ggplot() +
                  annotate("text", x = 0.5, y = 0.5,
-                          label = "Not enough samples for UMAP after group filtering.",
+                          label = "Not enough samples for UMAP after group filtering (need at least 3).",
                           size = 6) +
                  theme_void())
       }
+      # umap requires n_neighbors < n samples: clamp to the filtered data
+      # (subtitle below prints this effective value, not the raw input)
+      n_neighbors <- min(input$umap_n_neighbors %||% 15, nrow(data_mat) - 1)
       
-      # Clean data - handle NAs and infinite values
+      # Clean data - handle NAs and infinite values (disclosed: 0 distorts log-scale)
+      n_zeroed <- sum(is.na(data_mat)) + sum(is.infinite(data_mat))
       data_mat[is.na(data_mat)] <- 0
       data_mat[is.infinite(data_mat)] <- 0
-      
+
       # Set UMAP configuration
       umap_config <- umap::umap.defaults
       umap_config$n_neighbors <- n_neighbors
       umap_config$min_dist <- min_dist
       umap_config$spread <- spread
-      
-      # Run UMAP
+      umap_seed <- suppressWarnings(as.integer(input$umap_seed %||% 123))
+
+      # Run UMAP (R umap honors set.seed for reproducibility)
       tryCatch({
+        if (!is.na(umap_seed)) set.seed(umap_seed)
         umap_res <- umap::umap(data_mat, config = umap_config, scale = do_scale)
         
         # Get original sample names and use corrected names
@@ -20233,7 +21143,8 @@ get_legend_grid_layout <- function(n_items) {
           labs(title = "UMAP Visualization",
                subtitle = paste0("n_neighbors = ", n_neighbors,
                                  ", min_dist = ", min_dist,
-                                 ", spread = ", spread)) +
+                                 ", spread = ", spread,
+                                 if (n_zeroed > 0) sprintf(", %d NA/Inf zero-filled", n_zeroed) else "")) +
           ggprism::theme_prism(base_size = 14) +
           theme(
             plot.title = element_text(hjust = 0.5, face = "bold", size = title_size),
@@ -20314,9 +21225,7 @@ get_legend_grid_layout <- function(n_items) {
   # t-SNE plot with parameters
   output$tsnePlot <- renderPlot({ 
     req(values$normalized_data, values$unique_groups, values$group_column_indices)
-    if (!requireNamespace("Rtsne", quietly = TRUE)) {
-      install.packages("Rtsne")
-    }
+    require_pkg_or_fail("Rtsne", bioc = FALSE, "t-SNE plots")
     library(Rtsne)
     
     # Get font sizes from inputs or use defaults
@@ -20327,9 +21236,9 @@ get_legend_grid_layout <- function(n_items) {
     sample_label_size <- if(!is.null(input$tsne_sample_label_size)) input$tsne_sample_label_size else 3.5
     border_size <- if(!is.null(input$tsne_border_size)) input$tsne_border_size else 1
     
-    # Get user-specified parameters
-    perplexity <- min(input$tsne_perplexity, nrow(t(values$normalized_data)) - 1)
-    max_iter <- input$tsne_max_iter
+      # Get user-specified parameters (perplexity is clamped to the filtered
+      # sample count below, next to the Rtsne call)
+      max_iter <- input$tsne_max_iter
     theta <- input$tsne_theta
     seed_val <- input$tsne_seed
     do_scale <- input$tsne_scale
@@ -20338,14 +21247,15 @@ get_legend_grid_layout <- function(n_items) {
       data_mat <- t(values$normalized_data)
       
       # Support dual grouping - use appropriate group level if dual grouping is enabled
+      # (labels must follow sample order to match data_mat rows)
       if (isTRUE(values$has_dual_grouping) && !is.null(values$active_grouping_level)) {
         if (values$active_grouping_level == "biological") {
-          group_labels <- create_proper_group_labels(values$biological_unique_groups, values$biological_group_column_indices)
+          group_labels <- create_sample_ordered_labels(values$biological_unique_groups, values$biological_group_column_indices, nrow(data_mat))
         } else {
-          group_labels <- create_proper_group_labels(values$experimental_unique_groups, values$experimental_group_column_indices)
+          group_labels <- create_sample_ordered_labels(values$experimental_unique_groups, values$experimental_group_column_indices, nrow(data_mat))
         }
       } else {
-        group_labels <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
+        group_labels <- create_sample_ordered_labels(values$unique_groups, values$group_column_indices, nrow(data_mat))
       }
 
       group_labels <- preserve_group_names(group_labels)
@@ -20376,13 +21286,14 @@ get_legend_grid_layout <- function(n_items) {
       }
       perplexity <- min(input$tsne_perplexity, max(1, floor((nrow(data_mat) - 1) / 3)))
       
-      # Clean data - handle NAs and infinite values
+      # Clean data - handle NAs and infinite values (disclosed: 0 distorts log-scale)
+      n_zeroed <- sum(is.na(data_mat)) + sum(is.infinite(data_mat))
       data_mat[is.na(data_mat)] <- 0
       data_mat[is.infinite(data_mat)] <- 0
-      
+
       # Run t-SNE
       tryCatch({
-        set.seed(seed_val)
+        if (!is.null(seed_val) && !is.na(suppressWarnings(as.integer(seed_val)))) set.seed(seed_val)
         tsne_res <- Rtsne::Rtsne(
           data_mat,
           dims = 2,
@@ -20411,7 +21322,8 @@ get_legend_grid_layout <- function(n_items) {
           labs(title = "t-SNE Visualization",
                subtitle = paste0("perplexity = ", perplexity,
                                  ", iterations = ", max_iter,
-                                 ", theta = ", theta)) +
+                                 ", theta = ", theta,
+                                 if (n_zeroed > 0) sprintf(", %d NA/Inf zero-filled", n_zeroed) else "")) +
           ggprism::theme_prism(base_size = 14) +
           theme(
             plot.title = element_text(hjust = 0.5, face = "bold", size = title_size),
@@ -20766,13 +21678,15 @@ get_legend_grid_layout <- function(n_items) {
         }
       }
       
-      # Calculate fold change as Group2/Group1 after filtering
-      # When data is log-scale: log2_fc = mean2 - mean1 (subtraction in log scale)
-      # When data is NOT log-scale: log2_fc = log2(mean2 / mean1) (division then log)
-      if (is_data_log_scale()) {
-        log2_fc <- mean_group2 - mean_group1
-      } else {
-        log2_fc <- log2(mean_group2 / mean_group1)
+      # Use the precomputed Log2FC oriented Group1-vs-Group2 (positive =
+      # higher in Group1), matching the volcano plots and the Data tab.
+      # fc_column / is_reversed were resolved above; recomputing here as
+      # Group2-Group1 inverted every sign vs the rest of the tab.
+      log2_fc_full <- values$stat_results[[fc_column]]
+      if (is_reversed) log2_fc_full <- -log2_fc_full
+      log2_fc <- log2_fc_full
+      if (length(feature_indices) > 0 && length(feature_indices) < length(values$cleaned_molecules)) {
+        log2_fc <- log2_fc[feature_indices]
       }
       
       # Calculate mean intensity
@@ -21120,14 +22034,11 @@ get_legend_grid_layout <- function(n_items) {
         mean_group2 <- rowMeans(data2, na.rm = TRUE)
         mean_intensity <- (mean_group1 + mean_group2) / 2
         
-        # Calculate fold change as Group2/Group1
-        # When data is log-scale: log2_fc = mean2 - mean1 (subtraction in log scale)
-        # When data is NOT log-scale: log2_fc = log2(mean2 / mean1) (division then log)
-        if (is_data_log_scale()) {
-          log2_fc <- mean_group2 - mean_group1
-        } else {
-          log2_fc <- log2(mean_group2 / mean_group1)
-        }
+        # Use precomputed Log2FC oriented Group1-vs-Group2 (positive = higher
+        # in Group1), matching volcano plots and the Data tab. fc_column /
+        # is_reversed were resolved above for the existence check.
+        log2_fc <- values$stat_results[[fc_column]][feature_indices]
+        if (is_reversed) log2_fc <- -log2_fc
         
         # Get statistical p-values (filtered by feature source)
         adjusted_p_values <- values$stat_results[[p_value_column]][feature_indices]
@@ -21953,14 +22864,11 @@ get_legend_grid_layout <- function(n_items) {
       mean_group2 <- rowMeans(data2, na.rm = TRUE)
       mean_intensity <- (mean_group1 + mean_group2) / 2
       
-      # Calculate fold change based on data scale
-      # When data is log-scale: log2_fc = mean_group2 - mean_group1 (subtraction in log space)
-      # When data is linear: log2_fc = log2(mean_group2 / mean_group1) (log of division)
-      if (is_data_log_scale()) {
-        log2_fc <- mean_group2 - mean_group1
-      } else {
-        log2_fc <- log2(mean_group2 / mean_group1)
-      }
+      # Use precomputed Log2FC oriented Group1-vs-Group2 (positive = higher
+      # in Group1), matching volcano plots and the Data tab. fc_column /
+      # is_reversed were resolved above for the existence check.
+      log2_fc <- values$stat_results[[fc_column]][feature_indices]
+      if (is_reversed) log2_fc <- -log2_fc
       
       # Get statistical p-values (filtered by feature source)
       adjusted_p_values <- values$stat_results[[p_value_column]][feature_indices]
@@ -22661,9 +23569,16 @@ get_legend_grid_layout <- function(n_items) {
                                                           paste0(comparison_name, "_Bootstrap_AdjPValue") %in% colnames(values$stat_results) &&
                                                           paste0(comparison_name, "_Bootstrap_Log2FC") %in% colnames(values$stat_results))
                                       
-                                      # Get the appropriate p-value and fold change columns using our improved functions
+                                      # Get the appropriate p-value and fold change columns using our improved functions.
+                                      # get_foldchange_column may return a REVERSED: marker when groups were
+                                      # picked opposite to Data-tab storage: strip it and negate below so
+                                      # up/down filtering stays in the user's comparison direction.
+                                      # Either lookup may be NULL: skip the set gracefully instead of
+                                      # crashing the whole analysis on a zero-length if().
                                       p_value_column <- get_appropriate_pvalue_column(comparison_name)
-                                      fc_column <- get_foldchange_column(comparison_name)
+                                      fc_column_raw <- get_foldchange_column(comparison_name)
+                                      is_fc_reversed <- isTRUE(grepl("^REVERSED:", fc_column_raw %||% ""))
+                                      fc_column <- if (!is.null(fc_column_raw)) sub("^REVERSED:", "", fc_column_raw) else NULL
                                       
                                       # Debug information
                                       cat("Intersection analysis debug for", comparison_name, ":\n")
@@ -22681,11 +23596,12 @@ get_legend_grid_layout <- function(n_items) {
                                       
                                       # Check if the required columns exist
                                       if(!is.null(values$stat_results) &&
-                                         p_value_column %in% colnames(values$stat_results) &&
-                                         fc_column %in% colnames(values$stat_results)) {
+                                         !is.null(p_value_column) && p_value_column %in% colnames(values$stat_results) &&
+                                         !is.null(fc_column) && fc_column %in% colnames(values$stat_results)) {
                                         # Get the precomputed values
                                         adjusted_p_values <- values$stat_results[[p_value_column]]
                                         log2_fc <- values$stat_results[[fc_column]]
+                                        if (is_fc_reversed) log2_fc <- -log2_fc
                                         
                                         # Debug: show basic stats about the data
                                         cat("- Adjusted p-values summary: min=", min(adjusted_p_values, na.rm=TRUE),
@@ -23703,9 +24619,7 @@ get_legend_grid_layout <- function(n_items) {
     }
     
     # Create cache key based on current settings and data
-    if (!requireNamespace("digest", quietly = TRUE)) {
-      install.packages("digest")
-    }
+    require_pkg_or_fail("digest", bioc = FALSE, "result caching")
     data_hash <- digest::digest(list(values$intersection_sets, values$intersection_set_names), algo = "md5")
     cache_key <- paste(
       data_hash,
@@ -24793,11 +25707,13 @@ get_legend_grid_layout <- function(n_items) {
     
     # Create data in long format for better ROC calculation
     withProgress(message = "Calculating ROC curves...", {
-      # Create data container
+      # Create data container (Sample tracked so multi-feature models
+      # can be fit at sample level, not on group means)
       data_long <- data.frame(
         Molecule = character(),
         Value = numeric(),
         GroupLabel = character(),
+        Sample = character(),
         stringsAsFactors = FALSE
       )
       
@@ -24815,29 +25731,38 @@ get_legend_grid_layout <- function(n_items) {
         # Process group 1
         for(col in group1_cols) {
           if(!is.na(molecule_data[col])) {
-            data_long <- rbind(data_long, data.frame(
+            data_long_i <- data_long_i + 1L
+            data_long_rows[[data_long_i]] <- data.frame(
               Molecule = molecule_name,
               Value = as.numeric(molecule_data[col]),
               GroupLabel = group1,
+              Sample = col,
               stringsAsFactors = FALSE
-            ))
+            )
           }
         }
         
         # Process group 2
         for(col in group2_cols) {
           if(!is.na(molecule_data[col])) {
-            data_long <- rbind(data_long, data.frame(
+            data_long_i <- data_long_i + 1L
+            data_long_rows[[data_long_i]] <- data.frame(
               Molecule = molecule_name,
               Value = as.numeric(molecule_data[col]),
               GroupLabel = group2,
+              Sample = col,
               stringsAsFactors = FALSE
-            ))
+            )
           }
         }
         
         setProgress(i/length(selected_indices),
                     detail = paste("Processing", i, "of", length(selected_indices)))
+      }
+      
+      # Single bind after the loop (identical content to incremental rbind)
+      if (length(data_long_rows) > 0) {
+        data_long <- do.call(rbind, data_long_rows)
       }
       
       # Determine regulation status for each molecule
@@ -24970,37 +25895,45 @@ get_legend_grid_layout <- function(n_items) {
         }
       }
       
-      # Calculate combined model if we have more than one molecule
+      # Calculate combined model if we have more than one molecule.
+      # Sample-level logistic regression: one row per sample (NOT group
+      # means — fitting on 2 group-mean rows is degenerate and always
+      # returns AUC 1). In-sample AUC, so mildly optimistic by construction.
       if(length(roc_results) > 1) {
         setProgress(0.9, detail = "Calculating combined model")
         
-        # Prepare data for logistic regression considering regulation
+        # Sign-correct values (downregulated molecules negated) for modeling
         combined_data <- data_long %>%
           left_join(regulation_status, by = "Molecule") %>%
           mutate(
             corrected_value = ifelse(Regulation == "Downregulated", -Value, Value)
           )
         
-        # Convert to wide format for logistic regression
-        wide_data <- combined_data %>%
-          group_by(Molecule, GroupLabel) %>%
-          summarise(mean_value = mean(corrected_value, na.rm = TRUE), .groups = 'drop') %>%
-          tidyr::pivot_wider(names_from = Molecule, values_from = mean_value, values_fill = 0) %>%
-          mutate(Class = if_else(GroupLabel == group2, 1, 0)) %>%
-          dplyr::select(-GroupLabel)
+        # One row per sample, one column per molecule (sign-corrected)
+        sample_lookup <- data_long %>%
+          dplyr::select(Sample, GroupLabel) %>%
+          dplyr::distinct()
+        wide_samples <- combined_data %>%
+          dplyr::select(Sample, Molecule, corrected_value) %>%
+          dplyr::distinct() %>%
+          tidyr::pivot_wider(names_from = Molecule, values_from = corrected_value) %>%
+          dplyr::left_join(sample_lookup, by = "Sample") %>%
+          dplyr::mutate(Class = if_else(GroupLabel == group2, 1, 0)) %>%
+          dplyr::select(-Sample, -GroupLabel)
+        wide_samples <- wide_samples[complete.cases(wide_samples), , drop = FALSE]
         
-        # Check if we have sufficient data for logistic regression
-        if(length(unique(wide_data$Class)) >= 2) {
+        # Need more samples than predictors for a non-degenerate fit
+        if (nrow(wide_samples) > ncol(wide_samples) && length(unique(wide_samples$Class)) >= 2) {
           # Fit the model
           tryCatch({
-            combined_model <- glm(Class ~ ., data = wide_data, family = binomial)
+            combined_model <- glm(Class ~ ., data = wide_samples, family = binomial)
             combined_pred <- predict(combined_model, type = "response")
-            combined_roc <- pROC::roc(wide_data$Class, combined_pred, quiet = TRUE)
+            combined_roc <- pROC::roc(wide_samples$Class, combined_pred, quiet = TRUE)
             
             # Calculate combined PR curve
             combined_pr <- calc_PR_curve(
               data.frame(
-                GroupLabel = ifelse(wide_data$Class == 1, group2, group1),
+                GroupLabel = ifelse(wide_samples$Class == 1, group2, group1),
                 Value = combined_pred,
                 stringsAsFactors = FALSE
               ),
@@ -25162,6 +26095,20 @@ get_legend_grid_layout <- function(n_items) {
         plot_data_filtered <- plot_data
         if (!isTRUE(input$rocShowCombined)) {
           plot_data_filtered <- subset(plot_data, !grepl("Combined", Molecule, ignore.case = TRUE))
+        }
+        
+        # Honor Max Curves: keep top-N individual curves by AUC (Combined always kept)
+        max_curves <- suppressWarnings(as.integer(input$rocMaxCurves %||% 10))
+        if (!is.na(max_curves) && max_curves >= 1) {
+          is_comb <- grepl("Combined", plot_data_filtered$Molecule, ignore.case = TRUE)
+          indiv_labels <- unique(plot_data_filtered$Molecule[!is_comb])
+          if (length(indiv_labels) > max_curves) {
+            auc_by_label <- vapply(indiv_labels, function(lab) {
+              max(plot_data_filtered$AUC[plot_data_filtered$Molecule == lab], na.rm = TRUE)
+            }, numeric(1))
+            keep_labels <- names(sort(auc_by_label, decreasing = TRUE))[seq_len(max_curves)]
+            plot_data_filtered <- plot_data_filtered[plot_data_filtered$Molecule %in% c(keep_labels, unique(plot_data_filtered$Molecule[is_comb])), , drop = FALSE]
+          }
         }
         
         # Ensure factor order with Combined last
@@ -26080,20 +27027,29 @@ get_legend_grid_layout <- function(n_items) {
               
               # Create matrices to store bootstrap results
               n_features <- nrow(values$normalized_data)
-              n_replicates <- input$bootstrap_replicates
+              # Clamp replicates server-side (UI limits can be bypassed)
+              n_replicates <- suppressWarnings(as.integer(input$bootstrap_replicates))
+              if (is.na(n_replicates) || n_replicates < 100) {
+                showNotification("Bootstrap replicates adjusted to the 100–10000 range.", type = "warning", duration = 5)
+                n_replicates <- 100
+              }
+              n_replicates <- min(n_replicates, 10000)
+              # Snapshot log-scale state once (inputs must not be read per replicate)
+              boot_fc_is_log <- is_data_log_scale()
               
               bootstrap_pvals <- matrix(NA, nrow = n_features, ncol = n_replicates)
               bootstrap_fcs <- matrix(NA, nrow = n_features, ncol = n_replicates)
               
               # Run bootstrap replicates
-              for (b in 1:n_replicates) {
+              for (b in seq_len(n_replicates)) {
                 # Resample with replacement
                 sampled_group1_columns <- sample(group1_columns, length(group1_columns), replace = TRUE)
                 sampled_group2_columns <- sample(group2_columns, length(group2_columns), replace = TRUE)
                 
                 # Calculate bootstrap p-values and fold changes for each feature
                 for (f in 1:n_features) {
-                  feature_data <- values$normalized_data[f, ]
+                  # Numeric vector (not one-row data.frame): mean()/length()/tests need atomic input
+                  feature_data <- suppressWarnings(as.numeric(values$normalized_data[f, ]))
                   
                   group1_data <- feature_data[sampled_group1_columns]
                   group2_data <- feature_data[sampled_group2_columns]
@@ -26111,7 +27067,7 @@ get_legend_grid_layout <- function(n_items) {
                       }, error = function(e) { NA })
                     } else if (identical(input$sig_method, "t.test")) {
                       test_result <- tryCatch({
-                        t.test(group1_data, group2_data)$p.value
+                        run_ttest_pair(group1_data, group2_data, input$ttest_variant)
                       }, error = function(e) { NA })
                     } else if (identical(input$sig_method, "kruskal")) {
                       test_result <- tryCatch({
@@ -26123,28 +27079,37 @@ get_legend_grid_layout <- function(n_items) {
                     
                     bootstrap_pvals[f, b] <- test_result
                     
-                    # Calculate fold change as Group2/Group1
-                    group1_mean <- mean(group1_data, na.rm = TRUE)
-                    group2_mean <- mean(group2_data, na.rm = TRUE)
-                    if (!is.na(group1_mean) && !is.na(group2_mean) && group1_mean > 0) {
-                      bootstrap_fcs[f, b] <- group2_mean / group1_mean
-                    }
+                    # Log-scale-aware fold change (difference of means for log data, ratio otherwise)
+                    fc_one <- compute_fc_pair(suppressWarnings(mean(group1_data, na.rm = TRUE)),
+                                              suppressWarnings(mean(group2_data, na.rm = TRUE)),
+                                              boot_fc_is_log)
+                    bootstrap_fcs[f, b] <- fc_one$fc
                   }
                 }
               }
               
-              # Calculate bootstrap statistics
-              conf_level <- as.numeric(input$bootstrap_ci)
+              # Calculate bootstrap statistics (clamped server-side)
+              conf_level <- suppressWarnings(as.numeric(input$bootstrap_ci))
+              if (is.na(conf_level)) {
+                showNotification("Invalid confidence level; using 0.95.", type = "warning", duration = 5)
+                conf_level <- 0.95
+              }
+              conf_level <- min(max(conf_level, 0.8), 0.999)
               
               # Calculate median p-values and confidence intervals
               median_pvals <- apply(bootstrap_pvals, 1, median, na.rm = TRUE)
               lower_ci_pvals <- apply(bootstrap_pvals, 1, function(x) quantile(x, (1-conf_level)/2, na.rm = TRUE))
               upper_ci_pvals <- apply(bootstrap_pvals, 1, function(x) quantile(x, 1-(1-conf_level)/2, na.rm = TRUE))
               
-              # Calculate median fold changes
-              median_fcs <- apply(bootstrap_fcs, 1, median, na.rm = TRUE)
-              log2_median_fcs <- log2(median_fcs)
-              log2_median_fcs[is.infinite(log2_median_fcs)] <- NA
+              # Calculate median fold changes (for log-scale data the median
+              # is already a log2 difference and must NOT be logged again)
+              median_fcs <- suppressWarnings(apply(bootstrap_fcs, 1, median, na.rm = TRUE))
+              if (isTRUE(boot_fc_is_log)) {
+                log2_median_fcs <- median_fcs
+              } else {
+                log2_median_fcs <- suppressWarnings(log2(median_fcs))
+                log2_median_fcs[!is.finite(log2_median_fcs)] <- NA
+              }
               
               # Store bootstrap results in stat_results
               stat_results[[paste0(comparison_name, "_Bootstrap_PValue")]] <- median_pvals
@@ -26230,9 +27195,10 @@ get_legend_grid_layout <- function(n_items) {
               metadata_ordered <- values$metadata[matched_idx, , drop = FALSE]
               rownames(metadata_ordered) <- colnames(data_matrix)
               
-              # Use auto-detected groups from column headers
-              group_labels <- factor(create_proper_group_labels(values$unique_groups, values$group_column_indices))
-              all_sample_indices <- unlist(values$group_column_indices)
+              # Use auto-detected groups from column headers (sample-column order!)
+              group_labels <- factor(create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                                  ncol(values$normalized_data)))
+              all_sample_indices <- seq_len(ncol(values$normalized_data))
               valid_sample_mask <- all_sample_indices %in% which(!is.na(match(colnames(values$normalized_data), sample_names)))
               if (sum(valid_sample_mask) < length(group_labels)) {
                 group_labels <- group_labels[valid_sample_mask]
@@ -26275,16 +27241,12 @@ get_legend_grid_layout <- function(n_items) {
               
               # For Type III SS, load car package
               if (use_type3) {
-                if (!requireNamespace("car", quietly = TRUE)) {
-                  install.packages("car")
-                }
+                require_pkg_or_fail("car", bioc = FALSE, "ANCOVA Type III sums of squares")
               }
-              
+
               # For post-hoc EMMs, load emmeans package
               if (length(unique(group_labels)) > 2 && input$posthoc_method != "none") {
-                if (!requireNamespace("emmeans", quietly = TRUE)) {
-                  install.packages("emmeans")
-                }
+                require_pkg_or_fail("emmeans", bioc = FALSE, "ANCOVA post-hoc estimated marginal means")
               }
             }
             
@@ -26461,7 +27423,8 @@ get_legend_grid_layout <- function(n_items) {
                   anova_result <- summary(aov(anova_data ~ anova_groups))
                   stat_results$ANOVA_PValue[i] <- anova_result[[1]]$`Pr(>F)`[1]
                 # Run post-hoc test if ANOVA is significant AND posthoc_method is not "none"
-                if (stat_results$ANOVA_PValue[i] < 0.05 && input$posthoc_method != "none") {
+                # (isTRUE guards against NA p-values from failed model fits)
+                if (isTRUE(stat_results$ANOVA_PValue[i] < 0.05) && input$posthoc_method != "none") {
                   # Create a data frame for post-hoc tests
                   posthoc_df <- data.frame(
                     value = anova_data,
@@ -26473,8 +27436,8 @@ get_legend_grid_layout <- function(n_items) {
                   posthoc_result <- switch(
                     input$posthoc_method,
                     "tukey" = {
-                      if (!requireNamespace("multcomp", quietly = TRUE)) {
-                        install.packages("multcomp")
+                      require_pkg_or_fail("multcomp", bioc = FALSE, "Tukey post-hoc tests")
+                      if (!"package:multcomp" %in% search()) {
                         library(multcomp)
                       }
                       tryCatch({
@@ -26762,8 +27725,8 @@ get_legend_grid_layout <- function(n_items) {
                     },
                     # Default to Tukey if something goes wrong
                     {
-                      if (!requireNamespace("multcomp", quietly = TRUE)) {
-                        install.packages("multcomp")
+                      require_pkg_or_fail("multcomp", bioc = FALSE, "Tukey post-hoc tests")
+                      if (!"package:multcomp" %in% search()) {
                         library(multcomp)
                       }
                       tryCatch({
@@ -26843,19 +27806,67 @@ get_legend_grid_layout <- function(n_items) {
           withProgress(message = "Calculating Limma statistics...", {
             expr_matrix <- as.matrix(values$normalized_data)
             rownames(expr_matrix) <- make.unique(values$cleaned_molecules)
-            # Create design matrix for limma
-            group_factors <- factor(create_proper_group_labels(values$unique_groups, values$group_column_indices))
+            # Create design matrix for limma (labels must follow sample-column order)
+            group_factors <- factor(create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                                 ncol(expr_matrix)))
             design <- model.matrix(~0 + group_factors)
             colnames(design) <- make.names(levels(group_factors))
             
-            # Fit the linear model
+            # Fit the linear model (optionally with duplicateCorrelation for repeated measures)
             setProgress(0.3, detail = "Fitting linear models...")
-            fit <- limma::lmFit(expr_matrix, design)
             limma_trend_param <- if (identical(input$limma_trend, "auto")) TRUE else as.logical(input$limma_trend)
             limma_robust_param <- isTRUE(input$limma_robust)
+            limma_dupcor_used <- FALSE
+            limma_dupcor_consensus <- NA_real_
+            limma_dupcor_column <- NA_character_
+
+            if (isTRUE(input$limma_use_dupcor)) {
+              setProgress(0.25, detail = "Estimating within-block correlation...")
+              dupcor_info <- get_limma_block_factor(
+                colnames(expr_matrix), values$metadata, input$limma_block_column
+              )
+              if (!isTRUE(dupcor_info$ok)) {
+                showNotification(dupcor_info$message, type = "error", duration = 12)
+                return()
+              }
+              corfit <- tryCatch({
+                limma::duplicateCorrelation(expr_matrix, design, block = dupcor_info$block)
+              }, error = function(e) e)
+              if (inherits(corfit, "error")) {
+                showNotification(paste("duplicateCorrelation failed:", corfit$message),
+                                 type = "error", duration = 12)
+                return()
+              }
+              consensus_cor <- corfit$consensus.correlation
+              if (is.null(consensus_cor)) consensus_cor <- corfit$consensus
+              if (!is.finite(consensus_cor)) {
+                showNotification("duplicateCorrelation did not return a finite consensus correlation. Check the blocking column.",
+                                 type = "error", duration = 12)
+                return()
+              }
+              fit <- limma::lmFit(expr_matrix, design, block = dupcor_info$block,
+                                  correlation = consensus_cor)
+              limma_dupcor_used <- TRUE
+              limma_dupcor_consensus <- as.numeric(consensus_cor)
+              limma_dupcor_column <- dupcor_info$column
+              showNotification(
+                HTML(paste0("<b>Limma mixed-effects (duplicateCorrelation)</b><br>",
+                            "Block: ", dupcor_info$column, "<br>",
+                            "Subjects/blocks: ", dupcor_info$n_blocks,
+                            " (", dupcor_info$n_repeated, " with repeats)<br>",
+                            "Consensus within-block correlation: ", signif(consensus_cor, 4))),
+                type = "message", duration = 10
+              )
+            } else {
+              fit <- limma::lmFit(expr_matrix, design)
+            }
             
             # Create column to store limma results
-            stat_results$Limma_Method <- "Linear Models for Microarray/RNA-Seq Data"
+            stat_results$Limma_Method <- if (limma_dupcor_used) {
+              "Linear Models for Microarray/RNA-Seq Data (duplicateCorrelation)"
+            } else {
+              "Linear Models for Microarray/RNA-Seq Data"
+            }
             
             # Add the global F-test across all groups
             if (length(values$unique_groups) > 2) {
@@ -26947,12 +27958,14 @@ get_legend_grid_layout <- function(n_items) {
                   stat_results[[paste0(comparison_name, "_PValue")]] <- limma_results$P.Value
                   stat_results[[paste0(comparison_name, "_AdjPValue")]] <- limma_results$adj.P.Val
                   stat_results[[paste0(comparison_name, "_Log2FC")]] <- limma_results$logFC
+                  stat_results[[paste0(comparison_name, "_Tstat")]] <- limma_results$t
                 }
               } else {
                 for (comparison_name in comparison_names) {
                   stat_results[[paste0(comparison_name, "_PValue")]] <- NA
                   stat_results[[paste0(comparison_name, "_AdjPValue")]] <- NA
                   stat_results[[paste0(comparison_name, "_Log2FC")]] <- NA
+                  stat_results[[paste0(comparison_name, "_Tstat")]] <- NA
                 }
               }
             }
@@ -26960,6 +27973,9 @@ get_legend_grid_layout <- function(n_items) {
             # Add extra metadata for limma results
             stat_results$Limma_Parameter_Trend <- limma_trend_param
             stat_results$Limma_Parameter_Robust <- limma_robust_param
+            stat_results$Limma_Parameter_DupCor <- limma_dupcor_used
+            stat_results$Limma_Parameter_BlockColumn <- limma_dupcor_column
+            stat_results$Limma_Parameter_ConsensusCorrelation <- limma_dupcor_consensus
             
             # Store the statistical results
             values$stat_results <- merge_bootstrap_columns(stat_results)
@@ -27169,8 +28185,9 @@ get_legend_grid_layout <- function(n_items) {
                                type = "warning", duration = 8)
             }
             
-            # Create sample metadata (condition + optional batch)
-            sample_groups <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
+            # Create sample metadata (condition + optional batch, sample-column order!)
+            sample_groups <- create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                          ncol(count_matrix))
             sample_metadata <- data.frame(
               condition = factor(sample_groups),
               row.names = colnames(count_matrix)
@@ -27356,8 +28373,10 @@ get_legend_grid_layout <- function(n_items) {
               
               # Run likelihood ratio test for global effect
               dds_lrt <- tryCatch({
-                # Reduced model (no condition effect)
-                dds_reduced <- DESeq2::DESeq(dds, test = "LRT", reduced = ~ 1, quiet = TRUE)
+                # Reduced model drops condition only (keeps batch when present,
+                # otherwise an intercept-only model is the correct reduced form)
+                lrt_reduced <- if (isTRUE(use_batch_in_deseq2) && "batch" %in% colnames(sample_metadata)) ~ batch else ~ 1
+                dds_reduced <- DESeq2::DESeq(dds, test = "LRT", reduced = lrt_reduced, quiet = TRUE)
                 dds_reduced
               }, error = function(e) {
                 showNotification(paste("Error in DESeq2 global test:", e$message), type = "warning", duration = 8)
@@ -27411,12 +28430,14 @@ get_legend_grid_layout <- function(n_items) {
                 stat_results[[paste0(comparison_name, "_AdjPValue")]] <- deseq_results$padj
                 stat_results[[paste0(comparison_name, "_Log2FC")]] <- deseq_results$log2FoldChange
                 stat_results[[paste0(comparison_name, "_BaseMean")]] <- deseq_results$baseMean
+                stat_results[[paste0(comparison_name, "_Tstat")]] <- deseq_results$stat
               } else {
                 # If comparison failed, add NA columns
                 stat_results[[paste0(comparison_name, "_PValue")]] <- NA
                 stat_results[[paste0(comparison_name, "_AdjPValue")]] <- NA
                 stat_results[[paste0(comparison_name, "_Log2FC")]] <- NA
                 stat_results[[paste0(comparison_name, "_BaseMean")]] <- NA
+                stat_results[[paste0(comparison_name, "_Tstat")]] <- NA
               }
             } else {
               # Multiple group comparisons - use selected pairwise combinations
@@ -27450,12 +28471,14 @@ get_legend_grid_layout <- function(n_items) {
                   stat_results[[paste0(comparison_name, "_AdjPValue")]] <- deseq_results$padj
                   stat_results[[paste0(comparison_name, "_Log2FC")]] <- deseq_results$log2FoldChange
                   stat_results[[paste0(comparison_name, "_BaseMean")]] <- deseq_results$baseMean
+                  stat_results[[paste0(comparison_name, "_Tstat")]] <- deseq_results$stat
                 } else {
                   # If comparison failed, add NA columns
                   stat_results[[paste0(comparison_name, "_PValue")]] <- NA
                   stat_results[[paste0(comparison_name, "_AdjPValue")]] <- NA
                   stat_results[[paste0(comparison_name, "_Log2FC")]] <- NA
                   stat_results[[paste0(comparison_name, "_BaseMean")]] <- NA
+                  stat_results[[paste0(comparison_name, "_Tstat")]] <- NA
                 }
               }
             }
@@ -27527,7 +28550,8 @@ get_legend_grid_layout <- function(n_items) {
                 stat_results$KW_PValue[i] <- kw_result$p.value
                 
                 # Only run post-hoc tests if the global test is significant AND posthoc_method is not "none"
-                if (kw_result$p.value < 0.05 && input$posthoc_method != "none") {
+                # (isTRUE guards against NaN p-values, e.g. constant features)
+                if (isTRUE(kw_result$p.value < 0.05) && input$posthoc_method != "none") {
                   # Create a data frame for post-hoc tests
                   posthoc_df <- data.frame(
                     value = all_data,
@@ -27536,9 +28560,9 @@ get_legend_grid_layout <- function(n_items) {
                   
                   # Run selected post-hoc test
                   posthoc_result <- switch(
-                    input$posthoc_method,            "dunn" = {
-                      if (!requireNamespace("dunn.test", quietly = TRUE)) {
-                        install.packages("dunn.test")
+                    input$posthoc_method,                                "dunn" = {
+                      require_pkg_or_fail("dunn.test", bioc = FALSE, "Dunn post-hoc tests")
+                      if (!"package:dunn.test" %in% search()) {
                         library(dunn.test)
                       }
                       dunn_result <- dunn.test::dunn.test(posthoc_df$value, posthoc_df$group,
@@ -27617,8 +28641,8 @@ get_legend_grid_layout <- function(n_items) {
                     },
                     # Default to Dunn's test if something goes wrong
                     {
-                      if (!requireNamespace("dunn.test", quietly = TRUE)) {
-                        install.packages("dunn.test")
+                      require_pkg_or_fail("dunn.test", bioc = FALSE, "Dunn post-hoc tests")
+                      if (!"package:dunn.test" %in% search()) {
                         library(dunn.test)
                       }
                       dunn_result <- dunn.test::dunn.test(posthoc_df$value, posthoc_df$group,
@@ -27703,8 +28727,9 @@ get_legend_grid_layout <- function(n_items) {
             }
             rownames(mat) <- make.unique(values$cleaned_molecules)
             
-            # Group and optional batch
-            groups <- factor(create_proper_group_labels(values$unique_groups, values$group_column_indices))
+            # Group and optional batch (labels must follow sample-column order!)
+            groups <- factor(create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                          ncol(mat)))
             design <- NULL
             batch_fac <- NULL
             if (identical(input$batch_correction_enabled, "yes") && !is.null(values$metadata) && !is.null(input$batch_column) && nzchar(input$batch_column) && input$batch_column %in% colnames(values$metadata)) {
@@ -27812,15 +28837,23 @@ get_legend_grid_layout <- function(n_items) {
             # Global test for multi-group when using QLF/LRT
             if (length(values$unique_groups) > 2 && (input$edger_test %||% "qlf") %in% c("qlf","lrt")) {
               setProgress(0.5, detail = "Calculating edgeR global test...")
+              # NOTE: glmQLFTest/glmLRT default to the LAST coefficient only, so all
+              # group coefficients must be tested jointly for a true global test.
+              global_coef <- if (!is.null(batch_fac)) {
+                grep("^groups", colnames(design))
+              } else {
+                seq_len(ncol(design))
+              }
+              if (length(global_coef) == 0) global_coef <- seq_len(ncol(design))
               if (grepl("^qlf$", input$edger_test %||% "qlf")) {
                 qlf <- edgeR::glmQLFit(y, design = design, robust = robust_flag)
-                qlf_res <- edgeR::glmQLFTest(qlf)
+                qlf_res <- edgeR::glmQLFTest(qlf, coef = global_coef)
                 stat_results$edgeR_Global_PValue <- qlf_res$table$PValue
                 stat_results$edgeR_Global_LogFC <- qlf_res$table$logFC
                 # Store QLF fit object for visualization
                 values$edger_qlf <- qlf
               } else {
-                lrt <- edgeR::glmLRT(fit)
+                lrt <- edgeR::glmLRT(fit, coef = global_coef)
                 stat_results$edgeR_Global_PValue <- lrt$table$PValue
                 stat_results$edgeR_Global_LogFC <- lrt$table$logFC
               }
@@ -28026,8 +29059,9 @@ get_legend_grid_layout <- function(n_items) {
             }
             rownames(mat) <- make.unique(values$cleaned_molecules)
             
-            # Group and optional batch
-            groups <- factor(create_proper_group_labels(values$unique_groups, values$group_column_indices))
+            # Group and optional batch (labels must follow sample-column order!)
+            groups <- factor(create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                          ncol(mat)))
             design <- NULL
             batch_fac <- NULL
             if (identical(input$batch_correction_enabled, "yes") && !is.null(values$metadata) && !is.null(input$batch_column) && nzchar(input$batch_column) && input$batch_column %in% colnames(values$metadata)) {
@@ -28077,8 +29111,66 @@ get_legend_grid_layout <- function(n_items) {
             v <- limma::voom(y, design = design, plot = FALSE, span = 0.5, save.plot = FALSE,
                              normalize.method = "none", weights = if(use_weights) NULL else NULL)
             
-            # Fit linear model
-            fit <- limma::lmFit(v, design, weights = if(use_weights) limma::arrayWeights(v$E, design) else NULL)
+            # Fit linear model (optionally with duplicateCorrelation for repeated measures)
+            limma_voom_dupcor_used <- FALSE
+            limma_voom_dupcor_consensus <- NA_real_
+            limma_voom_block <- NULL
+            sample_aw <- if (use_weights) limma::arrayWeights(v$E, design) else NULL
+
+            if (isTRUE(input$limma_voom_use_dupcor)) {
+              voom_samples <- colnames(v$E)
+              if (is.null(voom_samples) || length(voom_samples) == 0) {
+                voom_samples <- colnames(mat)
+              }
+              dupcor_info <- get_limma_block_factor(
+                voom_samples, values$metadata, input$limma_voom_block_column
+              )
+              if (!isTRUE(dupcor_info$ok)) {
+                showNotification(dupcor_info$message, type = "error", duration = 12)
+                return()
+              }
+              if (!is.null(batch_fac) && identical(input$limma_voom_block_column, input$batch_column)) {
+                showNotification("Blocking column is the same as the batch column. Use a patient/subject ID for mixed effects, not batch.",
+                                 type = "warning", duration = 10)
+              }
+              corfit <- tryCatch({
+                limma::duplicateCorrelation(v, design, block = dupcor_info$block)
+              }, error = function(e) e)
+              if (inherits(corfit, "error")) {
+                showNotification(paste("duplicateCorrelation failed:", corfit$message),
+                                 type = "error", duration = 12)
+                return()
+              }
+              consensus_cor <- corfit$consensus.correlation
+              if (is.null(consensus_cor)) consensus_cor <- corfit$consensus
+              if (!is.finite(consensus_cor)) {
+                showNotification("duplicateCorrelation did not return a finite consensus correlation. Check the blocking column.",
+                                 type = "error", duration = 12)
+                return()
+              }
+              v2 <- tryCatch({
+                limma::voom(y, design = design, plot = FALSE, span = 0.5, save.plot = FALSE,
+                            normalize.method = "none",
+                            block = dupcor_info$block, correlation = consensus_cor)
+              }, error = function(e) NULL)
+              if (!is.null(v2)) v <- v2
+              if (use_weights) sample_aw <- limma::arrayWeights(v$E, design)
+              fit <- limma::lmFit(v, design, block = dupcor_info$block,
+                                  correlation = consensus_cor, weights = sample_aw)
+              limma_voom_dupcor_used <- TRUE
+              limma_voom_dupcor_consensus <- as.numeric(consensus_cor)
+              limma_voom_block <- dupcor_info$block
+              showNotification(
+                HTML(paste0("<b>Limma-voom mixed-effects (duplicateCorrelation)</b><br>",
+                            "Block: ", dupcor_info$column, "<br>",
+                            "Subjects/blocks: ", dupcor_info$n_blocks,
+                            " (", dupcor_info$n_repeated, " with repeats)<br>",
+                            "Consensus within-block correlation: ", signif(consensus_cor, 4))),
+                type = "message", duration = 10
+              )
+            } else {
+              fit <- limma::lmFit(v, design, weights = sample_aw)
+            }
             
             # Store limma-voom state for caching
             values$limma_voom_state <- list(
@@ -28089,7 +29181,10 @@ get_legend_grid_layout <- function(n_items) {
               norm_method = norm_method,
               robust = robust_flag,
               use_weights = use_weights,
-              fit = fit  # Fitted model for residuals
+              fit = fit,  # Fitted model for residuals
+              dupcor = limma_voom_dupcor_used,
+              consensus_correlation = limma_voom_dupcor_consensus,
+              block = limma_voom_block
             )
             
             # Create logCPM for visualization
@@ -28304,7 +29399,17 @@ get_legend_grid_layout <- function(n_items) {
                 stat_results[[fc_col]] <- results$logFC
                 stat_results[[t_col]] <- results$t
                 stat_results[[b_col]] <- results$B
+                # Canonical alias for GSEA tstat lookup (get_tstat_column).
+                stat_results[[paste0(comp_name, "_Tstat")]] <- results$t
             }
+
+            stat_results$LimmaVoom_Parameter_DupCor <- limma_voom_dupcor_used
+            stat_results$LimmaVoom_Parameter_BlockColumn <- if (limma_voom_dupcor_used) {
+              input$limma_voom_block_column
+            } else {
+              NA_character_
+            }
+            stat_results$LimmaVoom_Parameter_ConsensusCorrelation <- limma_voom_dupcor_consensus
             
             values$stat_results <- stat_results
           })
@@ -28319,13 +29424,7 @@ get_legend_grid_layout <- function(n_items) {
             # =================================================================
             withProgress(message = "Running lmROTS analysis...", value = 0, {
               # Ensure ROTS package is loaded
-              if (!requireNamespace("ROTS", quietly = TRUE)) {
-                showNotification("Installing ROTS package...", type = "message", duration = 3)
-                if (!requireNamespace("BiocManager", quietly = TRUE)) {
-                  install.packages("BiocManager")
-                }
-                BiocManager::install("ROTS", ask = FALSE)
-              }
+              require_pkg_or_fail("ROTS", bioc = TRUE, "ROTS analysis")
               library(ROTS)
               
               # Validate metadata is available
@@ -28567,13 +29666,7 @@ get_legend_grid_layout <- function(n_items) {
             # =================================================================
             withProgress(message = "Running lmeROTS analysis...", value = 0, {
               # Ensure ROTS package is loaded
-              if (!requireNamespace("ROTS", quietly = TRUE)) {
-                showNotification("Installing ROTS package...", type = "message", duration = 3)
-                if (!requireNamespace("BiocManager", quietly = TRUE)) {
-                  install.packages("BiocManager")
-                }
-                BiocManager::install("ROTS", ask = FALSE)
-              }
+              require_pkg_or_fail("ROTS", bioc = TRUE, "ROTS analysis")
               library(ROTS)
               
               # Validate metadata is available
@@ -28854,10 +29947,8 @@ get_legend_grid_layout <- function(n_items) {
             # =================================================================
           withProgress(message = "Running ROTS analysis...", value = 0, {
             # Ensure ROTS is loaded
-            if (!requireNamespace("ROTS", quietly = TRUE)) {
-              install.packages("ROTS")
-              library(ROTS)
-            }
+            require_pkg_or_fail("ROTS", bioc = TRUE, "ROTS analysis")
+            library(ROTS)
             
             # Get parameters
             B_val <- if (!is.null(input$rots_B)) input$rots_B else 1000
@@ -29114,6 +30205,324 @@ get_legend_grid_layout <- function(n_items) {
             values$stat_results <- merge_bootstrap_columns(stat_results)
           })
           }  # End of else block for standard ROTS (rots_mode != "lmrots")
+        } else if (identical(input$sig_method, "lmm")) {
+          # =================================================================
+          # Linear Mixed-Effects Models via lme4/lmerTest, fit JOINTLY across all groups:
+          #   value ~ Group + (1 | random_var), REML fits, Satterthwaite df
+          # A joint fit preserves repeated measures (patients spanning days);
+          # pairwise per-comparison slices would reduce every patient to a
+          # singleton and make the random effect unidentifiable. A Type-III F
+          # test gives the overall Group p-value; Satterthwaite t-contrasts on
+          # the cell-means fit give per-comparison p-values.
+          # Columns match the standard pipeline so downstream tabs work unchanged.
+          # =================================================================
+          withProgress(message = "Calculating linear mixed-effects statistics...", value = 0, {
+            if (!requireNamespace("lme4", quietly = TRUE)) {
+              showNotification("lme4 package is required for linear mixed-effects analysis. Please install it from CRAN.",
+                               type = "error", duration = 10)
+              return(NULL)
+            }
+            if (!requireNamespace("lmerTest", quietly = TRUE)) {
+              showNotification("lmerTest package is required for Satterthwaite p-values. Please install it from CRAN.",
+                               type = "error", duration = 10)
+              return(NULL)
+            }
+            if (is.null(values$metadata) || nrow(values$metadata) == 0) {
+              showNotification("LMM requires sample metadata with a repeated-unit column (e.g., Patient ID). Upload data with a metadata sheet.",
+                               type = "error", duration = 10)
+              return(NULL)
+            }
+            random_var <- input$lmm_random_var %||% ""
+            if (!nzchar(random_var) || !(random_var %in% colnames(values$metadata))) {
+              showNotification("Select a random-effects grouping variable for LMM (e.g., Patient ID).",
+                               type = "error", duration = 10)
+              return(NULL)
+            }
+
+            # Guard: raw count data (integers) needs count models, not Gaussian LMM
+            lmm_count_check <- suppressWarnings(as.numeric(as.matrix(values$normalized_data)))
+            if (length(lmm_count_check) > 0 &&
+                all(lmm_count_check == floor(lmm_count_check), na.rm = TRUE) &&
+                suppressWarnings(max(lmm_count_check, na.rm = TRUE)) > 100) {
+              showNotification(paste0("LMM: data look like raw integer counts. Gaussian mixed models are ",
+                                      "not valid for counts — use DESeq2, edgeR, or limma-voom instead. ",
+                                      "Proceed only if these are transformed values."),
+                               type = "warning", duration = 10)
+            }
+
+            # Align metadata to ALL samples (rownames, Sample col, or first col)
+            samp_names <- colnames(values$normalized_data)
+            meta_sample_col <- NULL
+            for (col in colnames(values$metadata)) {
+              if (tolower(col) %in% c("sample", "sampleid", "sample_id", "sample_id_")) {
+                meta_sample_col <- col
+                break
+              }
+            }
+            if (is.null(meta_sample_col)) {
+              if (!is.null(rownames(values$metadata)) && all(rownames(values$metadata) != seq_len(nrow(values$metadata)))) {
+                meta_samples <- rownames(values$metadata)
+              } else {
+                meta_samples <- as.character(values$metadata[, 1])
+              }
+            } else {
+              meta_samples <- as.character(values$metadata[[meta_sample_col]])
+            }
+            matched_all <- match(samp_names, meta_samples)
+            if (any(is.na(matched_all))) {
+              showNotification(paste0("LMM: ", sum(is.na(matched_all)),
+                                      " sample(s) missing from metadata; cannot run mixed-effects analysis."),
+                               type = "error", duration = 8)
+              return(NULL)
+            }
+            patient_full <- trimws(as.character(values$metadata[matched_all, random_var, drop = TRUE]))
+
+            # Group label per sample column (positions, not grouped order)
+            grp_full <- rep(NA_character_, length(samp_names))
+            for (gi in seq_along(values$unique_groups)) {
+              idx <- values$group_column_indices[[gi]]
+              if (is.character(idx)) idx <- match(idx, samp_names)
+              idx <- idx[!is.na(idx) & idx >= 1 & idx <= length(samp_names)]
+              grp_full[idx] <- values$unique_groups[gi]
+            }
+            if (any(is.na(grp_full))) {
+              showNotification("LMM: some samples have no group assignment; cannot run mixed-effects analysis.",
+                               type = "error", duration = 8)
+              return(NULL)
+            }
+
+            # Replication must exist in the JOINT data (patients spanning groups/time)
+            if (max(table(patient_full)) < 2) {
+              showNotification("LMM: no repeated samples per unit found — random effect is uninformative. Results equal fixed-effects estimates.",
+                               type = "warning", duration = 8)
+            }
+
+            pairwise_combinations <- get_pairwise_combinations_for_analysis()
+            n_comparisons <- nrow(pairwise_combinations)
+            if (is.null(n_comparisons) || n_comparisons == 0) {
+              showNotification("No pairwise comparisons defined for LMM analysis.", type = "error", duration = 8)
+              return(NULL)
+            }
+
+            fc_is_log_lmm <- is_data_log_scale()
+
+            # ---- Multi-factor design (Wilkinson-Rogers): extra fixed effects,
+            # multiple/nested random terms, optional period for crossover ----
+            md_cols_all <- colnames(values$metadata)
+            fixed_extra <- intersect(input$lmm_fixed_extra %||% character(0), md_cols_all)
+            if (random_var %in% fixed_extra) {
+              fixed_extra <- setdiff(fixed_extra, random_var)
+              showNotification("LMM: grouping variable removed from additional fixed effects (it is already the random term).",
+                               type = "message", duration = 6)
+            }
+            # Syntactic, collision-free names; "Group"/"value" stay reserved
+            synt <- make.names(md_cols_all, unique = TRUE)
+            reserved_lmm <- c("Group", "value")
+            while (any(synt %in% reserved_lmm)) synt[synt %in% reserved_lmm] <- paste0("X", synt[synt %in% reserved_lmm])
+            des_meta <- values$metadata[matched_all, md_cols_all, drop = FALSE]
+            names(des_meta) <- synt
+            for (cn in synt) {
+              if (is.character(des_meta[[cn]])) {
+                vv <- trimws(as.character(des_meta[[cn]]))
+                vv[!nzchar(vv)] <- NA_character_
+                des_meta[[cn]] <- vv
+              }
+            }
+            fixed_synt <- unname(stats::setNames(synt, md_cols_all)[fixed_extra])
+            rand_synt <- trimws(input$lmm_random_text %||% "")
+            if (!nzchar(rand_synt)) rand_synt <- sprintf("(1|%s)", unname(stats::setNames(synt, md_cols_all)[random_var]))
+            for (cn in md_cols_all[order(-nchar(md_cols_all))]) {
+              rand_synt <- gsub(cn, unname(stats::setNames(synt, md_cols_all)[cn]), rand_synt, fixed = TRUE)
+            }
+            rand_words <- unique(unlist(regmatches(rand_synt, gregexpr("[A-Za-z][A-Za-z0-9._]*", rand_synt))))
+            rand_unknown <- setdiff(rand_words, synt)
+            if (length(rand_unknown) > 0) {
+              showNotification(paste0("LMM: unknown variable(s) in random effects: ",
+                                      paste(rand_unknown, collapse = ", "),
+                                      ". Use metadata column names, e.g. (1|PatientID)."),
+                               type = "error", duration = 10)
+              return(NULL)
+            }
+            rand_vars <- intersect(rand_words, synt)
+            fixed_part <- paste(c("Group", fixed_synt), collapse = " + ")
+            f_tr <- tryCatch(as.formula(paste0("value ~ ", fixed_part, " + ", rand_synt)),
+                             error = function(e) NULL)
+            f_cm <- tryCatch(as.formula(paste0("value ~ 0 + Group",
+                                               if (length(fixed_synt) > 0) paste0(" + ", paste(fixed_synt, collapse = " + ")) else "",
+                                               " + ", rand_synt)),
+                             error = function(e) NULL)
+            if (is.null(f_tr) || is.null(f_cm)) {
+              showNotification("LMM: could not parse the model formula. Check fixed/random effect names.",
+                               type = "error", duration = 10)
+              return(NULL)
+            }
+            need_cols <- unique(c("Group", fixed_synt, rand_vars))
+
+            n_feat_lmm <- nrow(values$normalized_data)
+            grp_levels <- values$unique_groups
+            # per-comparison p-values + global p-value
+            p_global <- rep(NA_real_, n_feat_lmm)
+            p_comp <- lapply(seq_len(n_comparisons), function(k) rep(NA_real_, n_feat_lmm))
+
+            # Worker-safe per-feature fit: plain-data payload only (parallel workers
+            # have no Shiny reactive context and must serialize cleanly, so this
+            # touches its arguments + base/stats/lme4/lmerTest only).
+            lmm_fit_feature <- function(f, payload) {
+              fv <- suppressWarnings(as.numeric(payload$data_mat[f, , drop = TRUE]))
+              ddf <- data.frame(value = fv,
+                                Group = factor(payload$grp_full, levels = payload$grp_levels),
+                                payload$des_meta, check.names = FALSE, stringsAsFactors = FALSE)
+              keep <- is.finite(ddf$value) & !is.na(ddf$Group) &
+                complete.cases(ddf[, payload$need_cols, drop = FALSE])
+              ddf <- ddf[keep, , drop = FALSE]
+              present <- intersect(payload$grp_levels, levels(droplevels(ddf$Group)))
+              # Need >=2 groups present, >=2 distinct random units, >=4 observations
+              nunits <- if (length(payload$rand_vars) > 0) {
+                length(unique(stats::na.omit(unlist(ddf[, payload$rand_vars, drop = FALSE]))))
+              } else 0
+              if (length(present) < 2 || nunits < 2 || nrow(ddf) < 4) return(NULL)
+              res_f <- tryCatch({
+                # REML fits + Satterthwaite df (lmerTest): Type-III F for the
+                # overall Group effect; t-contrasts on the cell-means fit below.
+                fit_tr <- suppressWarnings(lmerTest::lmer(payload$f_tr, data = ddf, REML = TRUE))
+                aov_tab <- suppressWarnings(anova(fit_tr, type = "III", ddf = "Satterthwaite"))
+                grow <- which(rownames(aov_tab) == "Group")
+                gp <- if (length(grow) > 0) aov_tab[grow, "Pr(>F)"] else NA_real_
+                if (length(gp) == 0 || is.na(gp) || !is.finite(gp)) gp <- NA_real_
+                fit_cm <- suppressWarnings(lmerTest::lmer(payload$f_cm, data = ddf, REML = TRUE))
+                beta <- tryCatch(lme4::fixef(fit_cm), error = function(e) NULL)
+                cp <- rep(NA_real_, nrow(payload$pairs))
+                if (!is.null(beta)) {
+                  bnames <- names(beta)
+                  K <- length(beta)
+                  for (k in seq_len(nrow(payload$pairs))) {
+                    g1 <- payload$pairs[k, "Group_1"]
+                    g2 <- payload$pairs[k, "Group_2"]
+                    # name-based lookup (robust to extra covariates shifting positions)
+                    j1 <- match(paste0("Group", g1), bnames)
+                    j2 <- match(paste0("Group", g2), bnames)
+                    if ((is.na(j1) || is.na(j2)) && length(beta) == length(present)) {
+                      j1 <- match(g1, present); j2 <- match(g2, present)
+                    }
+                    if (is.na(j1) || is.na(j2)) next
+                    Lk <- numeric(K); Lk[j1] <- -1; Lk[j2] <- 1
+                    ct <- tryCatch(suppressWarnings(lmerTest::contest(fit_cm, Lk, joint = FALSE, ddf = "Satterthwaite")),
+                                   error = function(e) NULL)
+                    if (!is.null(ct) && nrow(ct) > 0) {
+                      pcol <- grep("^Pr", colnames(ct), value = TRUE)[1]
+                      pv <- suppressWarnings(as.numeric(ct[1, pcol]))
+                      if (length(pv) > 0 && !is.na(pv) && is.finite(pv)) cp[k] <- pv
+                    }
+                  }
+                }
+                list(global = gp, comp = cp)
+              }, error = function(e) NULL)
+              res_f
+            }
+            environment(lmm_fit_feature) <- globalenv()
+
+            lmm_payload <- list(
+              data_mat = as.matrix(values$normalized_data),
+              grp_full = grp_full,
+              des_meta = des_meta,
+              grp_levels = grp_levels,
+              pairs = pairwise_combinations,
+              f_tr = { environment(f_tr) <- globalenv(); f_tr },
+              f_cm = { environment(f_cm) <- globalenv(); f_cm },
+              need_cols = need_cols,
+              rand_vars = rand_vars
+            )
+            collect_lmm <- function(f, res_f) {
+              if (is.null(res_f)) return()
+              p_global[f] <<- res_f$global
+              for (k in seq_len(n_comparisons)) p_comp[[k]][f] <<- res_f$comp[k]
+            }
+
+            use_lmm_parallel <- isTRUE(input$lmm_parallel)
+            lmm_cores <- 1L
+            if (use_lmm_parallel) {
+              if (!requireNamespace("BiocParallel", quietly = TRUE)) {
+                showNotification("BiocParallel not available — running LMM sequentially.",
+                                 type = "warning", duration = 6)
+                use_lmm_parallel <- FALSE
+              } else {
+                lmm_cores <- suppressWarnings(as.integer(input$lmm_cores %||% 4))
+                if (is.na(lmm_cores) || lmm_cores < 1) lmm_cores <- 1L
+                lmm_cores <- min(lmm_cores, parallel::detectCores())
+              }
+            }
+
+            if (isTRUE(use_lmm_parallel) && lmm_cores > 1) {
+              bp <- if (.Platform$OS.type == "windows") {
+                BiocParallel::SnowParam(workers = lmm_cores)
+              } else {
+                BiocParallel::MulticoreParam(workers = lmm_cores)
+              }
+              chunk_size <- max(10, floor(n_feat_lmm / (lmm_cores * 4)))
+              chunk_indices <- split(seq_len(n_feat_lmm),
+                                     ceiling(seq_len(n_feat_lmm) / chunk_size))
+              for (chunk_idx in seq_along(chunk_indices)) {
+                chunk <- chunk_indices[[chunk_idx]]
+                chunk_res <- tryCatch(
+                  BiocParallel::bplapply(chunk, lmm_fit_feature,
+                                         payload = lmm_payload, BPPARAM = bp),
+                  error = function(e) {
+                    showNotification(paste0("LMM parallel chunk failed (", e$message, "); finishing sequentially."),
+                                     type = "warning", duration = 8)
+                    lapply(chunk, lmm_fit_feature, payload = lmm_payload)
+                  }
+                )
+                for (ii in seq_along(chunk)) collect_lmm(chunk[ii], chunk_res[[ii]])
+                setProgress(value = max(chunk) / n_feat_lmm,
+                            detail = paste0("LMM: ", max(chunk), " of ", n_feat_lmm, " features"))
+              }
+            } else {
+              for (f in seq_len(n_feat_lmm)) {
+                collect_lmm(f, lmm_fit_feature(f, lmm_payload))
+                if (f %% 100 == 0) {
+                  setProgress(value = f / n_feat_lmm, detail = paste("LMM:", f, "of", n_feat_lmm, "features"))
+                }
+              }
+            }
+
+            # Log-scale-aware fold changes on full group means (as other methods)
+            for (comp_idx in seq_len(n_comparisons)) {
+              group1 <- pairwise_combinations[comp_idx, "Group_1"]
+              group2 <- pairwise_combinations[comp_idx, "Group_2"]
+              comparison_name <- paste(group1, "vs", group2)
+              g1c <- values$group_column_indices[[which(values$unique_groups == group1)]]
+              g2c <- values$group_column_indices[[which(values$unique_groups == group2)]]
+              if (is.character(g1c)) g1c <- match(g1c, samp_names)
+              if (is.character(g2c)) g2c <- match(g2c, samp_names)
+              g1c <- g1c[!is.na(g1c)]; g2c <- g2c[!is.na(g2c)]
+              if (length(g1c) == 0 || length(g2c) == 0) next
+              fc_res <- lapply(seq_len(n_feat_lmm), function(rr) {
+                row <- suppressWarnings(as.numeric(values$normalized_data[rr, ]))
+                compute_fc_pair(suppressWarnings(mean(row[g1c], na.rm = TRUE)),
+                                suppressWarnings(mean(row[g2c], na.rm = TRUE)),
+                                fc_is_log_lmm)
+              })
+              stat_results[[paste0(comparison_name, "_PValue")]] <- p_comp[[comp_idx]]
+              stat_results[[paste0(comparison_name, "_AdjPValue")]] <-
+                p.adjust(p_comp[[comp_idx]], method = get_correction_method())
+              stat_results[[paste0(comparison_name, "_FoldChange")]] <-
+                vapply(fc_res, function(z) z$fc, numeric(1))
+              stat_results[[paste0(comparison_name, "_Log2FC")]] <-
+                vapply(fc_res, function(z) z$log2fc, numeric(1))
+            }
+
+            stat_results$LMM_Global_PValue <- p_global
+            stat_results$LMM_Global_AdjPValue <- p.adjust(p_global, method = get_correction_method())
+            stat_results$LMM_Parameter_RandomVar <- random_var
+            lmm_adj_cols <- grep("_AdjPValue$", colnames(stat_results), value = TRUE)
+            n_sig <- if (length(lmm_adj_cols) > 0) {
+              sum(stat_results[[lmm_adj_cols[length(lmm_adj_cols)]]] < 0.05, na.rm = TRUE)
+            } else 0
+            showNotification(paste0("Linear mixed-effects analysis complete (random: ", random_var,
+                                    "). Significant features (FDR < 0.05): ", n_sig, "."),
+                             type = "message", duration = 5)
+            values$stat_results <- merge_bootstrap_columns(stat_results)
+          })
         } else {
           # For pairwise comparisons (default to Wilcoxon if more than 2 groups)
           # Get pairwise combinations to use (respects pre-analysis modal selection)
@@ -29132,7 +30541,21 @@ get_legend_grid_layout <- function(n_items) {
           
           n_comparisons <- nrow(pairwise_combinations)
           message("  ENTERING PAIRWISE LOOP: n_comparisons = ", n_comparisons)
-          
+
+          # Paired t-test needs equal group sizes (pairing is by sample position)
+          if (identical(input$sig_method, "t.test") && identical(input$ttest_variant, "paired")) {
+            pair_sizes <- vapply(seq_len(n_comparisons), function(k) {
+              ga <- pairwise_combinations[k, "Group_1"]; gb <- pairwise_combinations[k, "Group_2"]
+              ia <- which(values$unique_groups == ga); ib <- which(values$unique_groups == gb)
+              if (length(ia) == 0 || length(ib) == 0) return(NA_integer_)
+              c(length(values$group_column_indices[[ia]]), length(values$group_column_indices[[ib]]))
+            }, integer(2))
+            if (any(is.na(pair_sizes)) || any(pair_sizes[1, ] != pair_sizes[2, ])) {
+              showNotification("Paired t-test requires equal group sizes — comparisons with unequal sizes will return NA. Pairing is by sample position within each group.",
+                               type = "warning", duration = 8)
+            }
+          }
+
           for (comp_idx in seq_len(n_comparisons)) {
             group1 <- pairwise_combinations[comp_idx, "Group_1"]
             group2 <- pairwise_combinations[comp_idx, "Group_2"]
@@ -29214,8 +30637,8 @@ get_legend_grid_layout <- function(n_items) {
                     covariate_data <- covariate_data[covariate_complete, , drop = FALSE]
                     
                     use_type3 <- isTRUE(input$anova_type3)
-                    if (use_type3 && !requireNamespace("car", quietly = TRUE)) {
-                      install.packages("car")
+                    if (use_type3) {
+                      require_pkg_or_fail("car", bioc = FALSE, "ANCOVA Type III sums of squares")
                     }
                     
                     ancova_formula <- as.formula(paste0("feature_value ~ Group + ", paste(covariates, collapse = " + ")))
@@ -29274,7 +30697,7 @@ get_legend_grid_layout <- function(n_items) {
                     }, error = function(e) { NA })
                   } else if (identical(input$sig_method, "t.test")) {
                     tryCatch({
-                      t.test(group1_data, group2_data)$p.value
+                      run_ttest_pair(group1_data, group2_data, input$ttest_variant)
                     }, error = function(e) { NA })
                   } else if (identical(input$sig_method, "kruskal")) {
                     tryCatch({
@@ -29301,16 +30724,21 @@ get_legend_grid_layout <- function(n_items) {
               })
             }
               
-              # Calculate fold change as Group2/Group1 to match documentation
-              fold_changes <- apply(values$normalized_data, 1, function(row) {
-                group1_mean <- mean(row[group1_columns], na.rm = TRUE)
-                group2_mean <- mean(row[group2_columns], na.rm = TRUE)
-                return(group2_mean / group1_mean)
+              # Log-scale-aware fold change (difference of means for log data, ratio otherwise)
+              fc_is_log <- is_data_log_scale()
+              fc_res <- lapply(seq_len(nrow(values$normalized_data)), function(rr) {
+                row <- suppressWarnings(as.numeric(values$normalized_data[rr, ]))
+                compute_fc_pair(suppressWarnings(mean(row[group1_columns], na.rm = TRUE)),
+                                suppressWarnings(mean(row[group2_columns], na.rm = TRUE)),
+                                fc_is_log)
               })
-              
-              # Calculate log2 fold change
-              log2_fold_changes <- log2(fold_changes)
-              log2_fold_changes[is.infinite(log2_fold_changes)] <- NA
+              fold_changes <- vapply(fc_res, function(z) z$fc, numeric(1))
+              log2_fold_changes <- vapply(fc_res, function(z) z$log2fc, numeric(1))
+
+              # Welch t-statistic (Group2 - Group1 orientation, matches Log2FC sign).
+              t_stats <- apply(values$normalized_data, 1, function(row) {
+                compute_welch_t_pair(row[group1_columns], row[group2_columns], input$ttest_variant)
+              })
               
               # Adjust p-values
               adjusted_p_values <- p.adjust(p_values, method = get_correction_method())
@@ -29320,6 +30748,7 @@ get_legend_grid_layout <- function(n_items) {
               stat_results[[paste0(comparison_name, "_AdjPValue")]] <- adjusted_p_values
               stat_results[[paste0(comparison_name, "_FoldChange")]] <- fold_changes
               stat_results[[paste0(comparison_name, "_Log2FC")]] <- log2_fold_changes
+              stat_results[[paste0(comparison_name, "_Tstat")]] <- t_stats
               message("      Added ", comparison_name, " columns")
           }
           message("  PAIRWISE LOOP COMPLETE. stat_results now: ", ncol(stat_results), " cols = ", paste(colnames(stat_results), collapse=", "))
@@ -30322,9 +31751,7 @@ get_legend_grid_layout <- function(n_items) {
       if (!is.null(values$dds)) {
         tryCatch({
           # Load required package
-          if (!requireNamespace("vsn", quietly = TRUE)) {
-            install.packages("vsn")
-          }
+          require_pkg_or_fail("vsn", bioc = TRUE, "VSN transformation plots")
           library(vsn)
           
           # Get different transformations
@@ -31180,31 +32607,20 @@ get_legend_grid_layout <- function(n_items) {
               png(file.path(heatmap_dir, "All_Groups_Heatmap.png"),
                   width = all_groups_canvas_size$width, height = all_groups_canvas_size$height, res = dpi)
               if (!is.null(values$heatmap_obj)) {
-                row_label_size <- if(!is.null(input$heatmap_row_label_size)) input$heatmap_row_label_size else 10
-                show_row_labels <- isTRUE(input$show_row_names) && !input$heatmap_cell_size %in% c("Small", "Compact")
-                row_label_width_mm <- 0
-                if (show_row_labels) {
-                  row_names <- rownames(values$heatmap_data)
-                  if (!is.null(row_names) && length(row_names) > 0) {
-                    row_label_width_mm <- tryCatch({
-                      grid::convertWidth(
-                        ComplexHeatmap::max_text_width(row_names,
-                                                       gp = grid::gpar(fontsize = row_label_size, fontface = "bold")),
-                        "mm",
-                        valueOnly = TRUE
-                      )
-                    }, error = function(e) 0)
-                  }
-                }
+                # Outer padding is breathing room only (see static render note).
                 right_pad_mm <- switch(input$heatmap_cell_size,
                                        "Medium" = 15,
                                        "Large" = 20,
                                        5)
-                left_pad_mm <- max(5, row_label_width_mm + 5)
+                left_pad_mm <- 5
+                zip_sides <- heatmap_legend_sides(input$heatmap_legend_side,
+                                                  input$heatmap_ann_legend_side)
                 ComplexHeatmap::draw(
                   values$heatmap_obj,
-                  heatmap_legend_side = "bottom",
-                  padding = unit(c(5, right_pad_mm, 5, left_pad_mm), "mm")
+                  heatmap_legend_side = zip_sides$heatmap,
+                  annotation_legend_side = zip_sides$annotation,
+                  merge_legends = zip_sides$heatmap == zip_sides$annotation,
+                  padding = unit(c(5, left_pad_mm, 5, right_pad_mm), "mm")
                 )
               } else {
                 # Fallback: recreate the heatmap if the stored object is missing
@@ -31327,11 +32743,17 @@ get_legend_grid_layout <- function(n_items) {
             column_split <- c(rep(group1, length(group1_columns)),
                               rep(group2, length(group2_columns)))
             
-            # Z-score normalize
-            heatmap_data <- t(scale(t(heatmap_data)))
+            # Z-score normalize (drop constant/all-NA rows: SD 0 scales to NaN)
+            heatmap_data <- zscore_rows_safe(heatmap_data)
+            if (nrow(heatmap_data) == 0) {
+              stop("No finite feature rows remain after z-scoring.")
+            }
             
-            # Define color function
-            col_fun <- circlize::colorRamp2(c(-2, 0, 2),
+            # Native-style color mapping: palette stretches across the data
+            # range (symmetric around 0 for the diverging midpoint)
+            heat_range <- suppressWarnings(max(abs(heatmap_data), na.rm = TRUE))
+            if (!is.finite(heat_range) || heat_range <= 0) heat_range <- 2
+            col_fun <- circlize::colorRamp2(c(-heat_range, 0, heat_range),
                                             c(input$lowColor, input$midColor, input$highColor))
             
             tryCatch({
@@ -31341,137 +32763,63 @@ get_legend_grid_layout <- function(n_items) {
               png(file.path(heatmap_dir, paste0(group1, "_vs_", group2, "_Heatmap.png")),
                   width = pairwise_canvas_size$width, height = pairwise_canvas_size$height, res = dpi)
               
-              row_split <- if(nrow(heatmap_data) < 2) NULL else 2
+              # Reference-style native display (same convention as the UI):
+              # group + boxplot annotations, k-means row slices, labels right
+              zip_anns <- build_heatmap_annotations(heatmap_data, column_split,
+                                                    TRUE,
+                                                    input$heatmap_boxplot_position %||% "none",
+                                                    get_heatmap_group_colors())
+              row_slice <- cluster_rows_kmeans(heatmap_data, input$heatmap_row_clusters %||% 1)
+              zip_ct_size <- cluster_title_size(input$heatmap_cluster_label_size,
+                                                if (!is.null(row_slice)) nlevels(row_slice) else 1)
+
+              show_feature_names <- isTRUE(input$show_row_names)
+
+              # Title size 0 = no title at all (mirrors the UI render)
+              zip_title_size <- if (!is.null(input$heatmap_title_size)) input$heatmap_title_size else 0
+              zip_plot_title <- if (!is.na(zip_title_size) && zip_title_size > 0) {
+                paste0(group1, " vs ", group2, " Heatmap")
+              } else NULL
+
+              ht <- ComplexHeatmap::Heatmap(
+                heatmap_data,
+                name = "Z-score",
+                cluster_rows = input$cluster_rows,
+                cluster_columns = input$cluster_cols,
+                show_row_names = show_feature_names,
+                show_column_names = FALSE,
+                row_names_side = "right",
+                column_title = zip_plot_title,
+                column_title_gp = grid::gpar(fontface = "bold",
+                                             fontsize = if (!is.null(zip_plot_title)) zip_title_size else 14),
+                heatmap_legend_param = list(
+                  labels_gp = grid::gpar(fontface = "bold")
+                ),
+                col = col_fun,
+                na_col = input$naColor %||% "gray",
+                row_split = row_slice,
+                top_annotation = zip_anns$top,
+                bottom_annotation = zip_anns$bottom,
+                row_names_gp = grid::gpar(
+                  fontsize = if (!is.null(input$heatmap_row_label_size)) input$heatmap_row_label_size else 10,
+                  fontface = "bold"),
+                row_title_gp = grid::gpar(fontsize = zip_ct_size, fontface = "bold")
+              )
               
-              # Fix spaces in column_split by creating a named factor with proper labels (SAME AS UI)
-              clean_splits <- column_split
-              split_levels <- unique(clean_splits)
-              original_labels <- preserve_group_names(split_levels)
-              names(split_levels) <- original_labels
-              fixed_column_split <- factor(clean_splits, levels = split_levels)
-              
-              # Handle the Small size option (EXACT same as UI staticHeatmap)
-              if (identical(input$heatmap_cell_size, "Small")) {
-                column_labels <- HeatmapAnnotation(
-                  Group = anno_block(
-                    gp = grid::gpar(fill = rainbow(length(unique(fixed_column_split)))),
-                    labels = original_labels,
-                    labels_gp = grid::gpar(fontsize = 8, fontface = "bold"),
-                    height = unit(3, "mm")
-                  ),
-                  show_legend = FALSE,
-                  height = unit(5, "mm")
-                )
-                
-                ht <- ComplexHeatmap::Heatmap(
-                  heatmap_data,
-                  name = "Z-score",
-                  cluster_rows = input$cluster_rows,
-                  cluster_columns = input$cluster_cols,
-                  show_row_names = FALSE,
-                  show_column_names = FALSE,
-                  column_names_side = "top",
-                  rect_gp = gpar(col = "black"),
-                  row_dend_reorder = FALSE,
-                  column_title = paste0(group1, " vs ", group2, " Heatmap"),
-                  column_title_gp = grid::gpar(fontface = "bold", fontsize = 14),
-                  heatmap_legend_param = list(
-                    title = NULL,
-                    legend_width = switch(input$heatmap_cell_size,
-                                          "Small" = unit(1, "in"),
-                                          "Compact" = unit(2, "in"),
-                                          "Medium" = unit(3, "in"),
-                                          "Large" = unit(4, "in"),
-                                          unit(3, "in")),
-                    grid_height = unit(0.05, "in"),
-                    direction = "horizontal",
-                    labels_gp = grid::gpar(fontface = "bold")
-                  ),
-                  col = col_fun,
-                  na_col = input$naColor %||% "gray",
-                  row_split = row_split,
-                  column_split = fixed_column_split,
-                  row_names_gp = grid::gpar(fontsize = 0),
-                  column_names_gp = grid::gpar(fontsize = 0),
-                  row_title = NULL,
-                  top_annotation = column_labels,
-                  show_row_dend = TRUE,
-                  row_gap = unit(1, "mm"),
-                  column_gap = unit(1, "mm"),
-                  border = FALSE
-                )
-              } else {
-                ht <- ComplexHeatmap::Heatmap(
-                  heatmap_data,
-                  name = "Z-score",
-                  cluster_rows = input$cluster_rows,
-                  cluster_columns = input$cluster_cols,
-                  show_row_names = ifelse(input$heatmap_cell_size %in% c("Compact"), FALSE, input$show_row_names),
-                  show_column_names = TRUE,
-                  column_names_side = "top",
-                  rect_gp = gpar(col = "black"),
-                  row_dend_reorder = FALSE,
-                  column_title = paste0(group1, " vs ", group2, " Heatmap"),
-                  column_title_gp = gpar(fontface = "bold", fontsize = 14),
-                  heatmap_legend_param = list(
-                    title = NULL,
-                    legend_width = switch(input$heatmap_cell_size,
-                                          "Small" = unit(1, "in"),
-                                          "Compact" = unit(2, "in"),
-                                          "Medium" = unit(3, "in"),
-                                          "Large" = unit(4, "in"),
-                                          unit(3, "in")),
-                    grid_height = unit(0.05, "in"),
-                    direction = "horizontal",
-                    labels_gp = grid::gpar(fontface = "bold")
-                  ),
-                  col = col_fun,
-                  na_col = input$naColor %||% "gray",
-                  row_split = row_split,
-                  column_split = fixed_column_split,
-                  row_names_gp = switch(input$heatmap_cell_size,
-                                        "Compact" = grid::gpar(fontsize = 0),
-                                        "Medium" = grid::gpar(fontsize = 8, fontface = "bold"),
-                                        "Large" = grid::gpar(fontsize = 10, fontface = "bold"),
-                                        grid::gpar(fontsize = 10, fontface = "bold")),
-                  column_names_gp = switch(input$heatmap_cell_size,
-                                           "Compact" = grid::gpar(fontsize = 12, fontface = "bold"),
-                                           "Medium" = grid::gpar(fontsize = 12, fontface = "bold"),
-                                           "Large" = grid::gpar(fontsize = 14, fontface = "bold"),
-                                           grid::gpar(fontsize = 12, fontface = "bold")),
-                  row_title = NULL,
-                  show_row_dend = TRUE,
-                  row_gap = unit(1, "mm"),
-                  column_gap = unit(1, "mm"),
-                  border = FALSE
-                )
-              }
-              
-              row_label_size <- if(!is.null(input$heatmap_row_label_size)) input$heatmap_row_label_size else 10
-              show_row_labels <- isTRUE(input$show_row_names) && !input$heatmap_cell_size %in% c("Small", "Compact")
-              row_label_width_mm <- 0
-              if (show_row_labels) {
-                row_names <- rownames(heatmap_data)
-                if (!is.null(row_names) && length(row_names) > 0) {
-                  row_label_width_mm <- tryCatch({
-                    grid::convertWidth(
-                      ComplexHeatmap::max_text_width(row_names,
-                                                     gp = grid::gpar(fontsize = row_label_size, fontface = "bold")),
-                      "mm",
-                      valueOnly = TRUE
-                    )
-                  }, error = function(e) 0)
-                }
-              }
+              # Outer padding is breathing room only (see static render note).
               right_pad_mm <- switch(input$heatmap_cell_size,
                                      "Medium" = 15,
                                      "Large" = 20,
                                      5)
-              left_pad_mm <- max(5, row_label_width_mm + 5)
+              left_pad_mm <- 5
+              zip_pair_sides <- heatmap_legend_sides(input$heatmap_legend_side,
+                                                     input$heatmap_ann_legend_side)
               ComplexHeatmap::draw(
                 ht,
-                heatmap_legend_side = "bottom",
-                padding = unit(c(5, right_pad_mm, 5, left_pad_mm), "mm")
+                heatmap_legend_side = zip_pair_sides$heatmap,
+                annotation_legend_side = zip_pair_sides$annotation,
+                merge_legends = zip_pair_sides$heatmap == zip_pair_sides$annotation,
+                padding = unit(c(5, left_pad_mm, 5, right_pad_mm), "mm")
               )
               dev.off()
               
@@ -31976,13 +33324,16 @@ get_legend_grid_layout <- function(n_items) {
       proteomics_values$gene_list_feature_names <- feature_names
       
       # Store additional data for GSEA if available
-      if (!is.null(result$pvalues) && !is.null(result$fold_changes)) {
+      # t-stats alone are sufficient for tstat ranking; p+FC for log2fc/signed_pval.
+      if ((!is.null(result$pvalues) && !is.null(result$fold_changes)) || !is.null(result$tstats)) {
         proteomics_values$manual_pvalues <- result$pvalues
         proteomics_values$manual_fold_changes <- result$fold_changes
+        proteomics_values$manual_tstats <- result$tstats
         proteomics_values$analysis_type <- "GSEA"
       } else {
         proteomics_values$manual_pvalues <- NULL
         proteomics_values$manual_fold_changes <- NULL
+        proteomics_values$manual_tstats <- NULL
         proteomics_values$analysis_type <- "ORA"
       }
     }
@@ -32142,6 +33493,8 @@ get_legend_grid_layout <- function(n_items) {
         proteomics_values$pathview_gene_data <- cached_enrichment$pathview_gene_data
         cat("Restored", length(cached_enrichment$pathview_gene_data), "cached Entrez genes for pathview\n")
       }
+      # Restore pre-ID-mapping results for upsetplot boxplots (may be NULL in older caches)
+      proteomics_values$enrichment_results_original <- cached_enrichment$enrichment_results_original
       showNotification("Using cached enrichment results (no recalculation needed)", type = "message", duration = 3)
     } else {
       cat("Generating new enrichment results for", input$proteomics_tool, "and caching them\n")
@@ -32377,7 +33730,7 @@ get_legend_grid_layout <- function(n_items) {
                 fc_mapped <- fc_mapped[!is.na(fc_mapped)]  # Remove NA values
                 
                 # Convert names to ENTREZ IDs using the same mapping we did above
-                if(exists("gene_ids") && nrow(gene_ids) > 0) {
+                if(exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
                   # Create mapping from original to ENTREZ IDs
                   name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
                   
@@ -32419,7 +33772,7 @@ get_legend_grid_layout <- function(n_items) {
             if(length(fc_values) > 0) {
               if (!identical(input$proteomics_id_type, "ENTREZID")) {
                 # Map fold change data to ENTREZ IDs using the same mapping we did above
-                if(exists("gene_ids") && nrow(gene_ids) > 0) {
+                if(exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
                   # Create mapping from original to ENTREZ IDs
                   name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
                   
@@ -32714,7 +34067,7 @@ get_legend_grid_layout <- function(n_items) {
                   showNotification(paste("Using", length(pc_genes), "UniProt IDs for Pathway Commons analysis"), type = "message")
                 } else {
                   # For other ID types, try to convert to HGNC symbols first, then UniProt if that fails
-                  if(exists("gene_ids") && nrow(gene_ids) > 0) {
+                  if(exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
                     # First attempt: Convert to SYMBOL
                     if (identical(input$proteomics_id_type, "ENTREZID")) {
                       # Map ENTREZ to SYMBOL
@@ -32794,7 +34147,7 @@ get_legend_grid_layout <- function(n_items) {
                      (input$proteomics_id_type == "UNIPROT" && conversion_type == "UNIPROT")) {
                     pc_universe <- custom_universe
                     showNotification(paste("Using custom universe directly with", length(pc_universe), conversion_type, "IDs"), type = "message")
-                  } else if(exists("gene_ids") && nrow(gene_ids) > 0) {
+                  } else if(exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
                     # Only convert if input type differs from conversion type
                     if(conversion_type == "SYMBOL" && "SYMBOL" %in% colnames(gene_ids)) {
                       if (identical(input$proteomics_id_type, "ENTREZID")) {
@@ -32977,6 +34330,9 @@ get_legend_grid_layout <- function(n_items) {
             if(!fold_change_available && input$proteomics_source == "pairwise" && !is.null(values$stat_results)) {
               comparison_name <- paste(input$proteomics_pairwise_group1, "vs", input$proteomics_pairwise_group2)
               fc_col <- get_foldchange_column(comparison_name)
+              # Strip REVERSED: marker for the existence check (orientation
+              # only matters at use sites, which negate explicitly)
+              if (!is.null(fc_col)) fc_col <- sub("^REVERSED:", "", fc_col)
               if(!is.null(fc_col) && fc_col %in% colnames(values$stat_results)) {
                 fold_change_available <- TRUE
               }
@@ -32994,6 +34350,24 @@ get_legend_grid_layout <- function(n_items) {
               fold_change_available <- TRUE
             }
 
+            # For t-statistic ranking, native stat columns or manual stat column suffice.
+            # Pairwise always has a Welch fallback computed from normalized_data.
+            if (!fold_change_available && identical(input$proteomics_gsea_ranking_metric, "tstat")) {
+              if (input$proteomics_source == "pairwise" && !is.null(values$stat_results)) {
+                comparison_name_t <- paste(input$proteomics_pairwise_group1, "vs", input$proteomics_pairwise_group2)
+                t_col_check <- get_tstat_column(comparison_name_t)
+                if (!is.null(t_col_check)) t_col_check <- sub("^REVERSED:", "", t_col_check)
+                if (!is.null(t_col_check) && t_col_check %in% colnames(values$stat_results)) {
+                  fold_change_available <- TRUE
+                } else if (!is.null(values$normalized_data) && nrow(values$normalized_data) > 0) {
+                  fold_change_available <- TRUE
+                }
+              } else if (input$proteomics_source == "manual" &&
+                         !is.null(proteomics_values$manual_tstats) && length(proteomics_values$manual_tstats) > 0) {
+                fold_change_available <- TRUE
+              }
+            }
+
             # Show error only if no fold change data is available from any source
             if(!fold_change_available) {
               # Provide a helpful message that includes MOFA as a valid source when rankings are present
@@ -33009,7 +34383,9 @@ get_legend_grid_layout <- function(n_items) {
                 # Use log2 fold change directly
                 if (input$proteomics_source == "pairwise" && !is.null(values$stat_results)) {
                   comparison_name <- paste(input$proteomics_pairwise_group1, "vs", input$proteomics_pairwise_group2)
-                  fc_col <- get_foldchange_column(comparison_name)
+                  fc_col_raw <- get_foldchange_column(comparison_name)
+                  is_rank_reversed <- isTRUE(grepl("^REVERSED:", fc_col_raw %||% ""))
+                  fc_col <- if (!is.null(fc_col_raw)) sub("^REVERSED:", "", fc_col_raw) else NULL
                   if (!is.null(fc_col) && fc_col %in% colnames(values$stat_results)) {
                     # Use designated accession IDs if available to name the fc vector so GSEA sees proper IDs
                     id_names <- if (!is.null(values$accession_ids) && length(values$accession_ids) == length(values$cleaned_molecules)) {
@@ -33018,6 +34394,8 @@ get_legend_grid_layout <- function(n_items) {
                       values$cleaned_molecules
                     }
                     fc_values <- values$stat_results[[fc_col]]
+                    # Orient Group1-vs-Group2 when the stored comparison is reversed
+                    if (is_rank_reversed) fc_values <- -fc_values
                     # Assign IDs and remove any NA/empty names
                     names(fc_values) <- id_names
                     valid_idx <- which(!is.na(names(fc_values)) & nzchar(names(fc_values)))
@@ -33044,13 +34422,16 @@ get_legend_grid_layout <- function(n_items) {
                   # Extract p-values and fold changes for ranking
                   comparison_name <- paste(input$proteomics_pairwise_group1, "vs", input$proteomics_pairwise_group2)
                   p_value_col <- get_appropriate_pvalue_column(comparison_name)
-                  fc_col <- get_foldchange_column(comparison_name)
+                  fc_col_raw <- get_foldchange_column(comparison_name)
+                  is_rank_reversed <- isTRUE(grepl("^REVERSED:", fc_col_raw %||% ""))
+                  fc_col <- if (!is.null(fc_col_raw)) sub("^REVERSED:", "", fc_col_raw) else NULL
                   
                   if(!is.null(p_value_col) && p_value_col %in% colnames(values$stat_results) &&
                      !is.null(fc_col) && fc_col %in% colnames(values$stat_results)) {
-                    # Get p-values and fold changes
+                    # Get p-values and fold changes (oriented Group1-vs-Group2)
                     p_values <- values$stat_results[[p_value_col]]
                     fc_values <- values$stat_results[[fc_col]]
+                    if (is_rank_reversed) fc_values <- -fc_values
 
                     # Create signed p-value metric
                     signed_pvals <- -log10(p_values + 1e-300) * sign(fc_values)  # Add small value to avoid log(0)
@@ -33065,7 +34446,7 @@ get_legend_grid_layout <- function(n_items) {
                     
                     # Map to ENTREZ IDs if needed
                     if (!identical(input$proteomics_id_type, "ENTREZID")) {
-                      if(exists("gene_ids") && nrow(gene_ids) > 0) {
+                      if(exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
                         name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
                         entrez_names <- name_to_entrez[names(signed_pvals)]
                         entrez_names <- entrez_names[!is.na(entrez_names)]
@@ -33102,7 +34483,7 @@ get_legend_grid_layout <- function(n_items) {
                   
                   # Map to ENTREZ IDs if needed
                   if (!identical(input$proteomics_id_type, "ENTREZID")) {
-                    if(exists("gene_ids") && nrow(gene_ids) > 0) {
+                    if(exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
                       name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
                       entrez_names <- name_to_entrez[names(signed_pvals)]
                       entrez_names <- entrez_names[!is.na(entrez_names)]
@@ -33125,10 +34506,114 @@ get_legend_grid_layout <- function(n_items) {
                   showNotification("Signed p-value ranking requires both p-values and fold changes", type = "error")
                   enrichment_results <- NULL
                 }
-              } else {
-                # For t-statistic, would need additional implementation
-                showNotification("t-statistic ranking not yet implemented. Using log2 fold change instead.", type = "warning")
-                ranked_genes <- fold_change_data
+              } else if (identical(input$proteomics_gsea_ranking_metric, "tstat")) {
+                showNotification("Creating ranked list using t-statistics...", type = "message")
+                t_ranked <- NULL
+                if (input$proteomics_source == "pairwise" && !is.null(values$stat_results)) {
+                  comparison_name <- paste(input$proteomics_pairwise_group1, "vs", input$proteomics_pairwise_group2)
+                  t_col_raw <- get_tstat_column(comparison_name)
+                  is_t_reversed <- isTRUE(grepl("^REVERSED:", t_col_raw %||% ""))
+                  t_col <- if (!is.null(t_col_raw)) sub("^REVERSED:", "", t_col_raw) else NULL
+                  id_names <- if (!is.null(values$accession_ids) && length(values$accession_ids) == length(values$cleaned_molecules)) {
+                    values$accession_ids
+                  } else {
+                    values$cleaned_molecules
+                  }
+                  if (!is.null(t_col) && t_col %in% colnames(values$stat_results)) {
+                    # Native stat: limma moderated t, DESeq2 Wald stat, or stored Welch t.
+                    t_vals <- values$stat_results[[t_col]]
+                    if (is_t_reversed) t_vals <- -t_vals
+                    names(t_vals) <- id_names
+                    t_vals <- t_vals[!is.na(t_vals) & !is.na(names(t_vals)) & nzchar(names(t_vals))]
+                    t_ranked <- t_vals
+                  } else {
+                    # Welch fallback from normalized expression (Group2 - Group1 orientation).
+                    g1_idx <- which(values$unique_groups == input$proteomics_pairwise_group1)
+                    g2_idx <- which(values$unique_groups == input$proteomics_pairwise_group2)
+                    if (length(g1_idx) > 0 && length(g2_idx) > 0 &&
+                        !is.null(values$group_column_indices) &&
+                        !is.null(values$normalized_data)) {
+                      g1_cols <- values$group_column_indices[[g1_idx]]
+                      g2_cols <- values$group_column_indices[[g2_idx]]
+                      t_vals <- apply(values$normalized_data, 1, function(row) {
+                        compute_welch_t_pair(row[g1_cols], row[g2_cols], input$ttest_variant)
+                      })
+                      names(t_vals) <- id_names
+                      t_vals <- t_vals[!is.na(t_vals) & !is.na(names(t_vals)) & nzchar(names(t_vals))]
+                      t_ranked <- t_vals
+                      showNotification("No stored t-statistic column found; used Welch t computed from expression data.", type = "message", duration = 4)
+                    } else {
+                      showNotification("Could not find or compute t-statistics for this comparison.", type = "error")
+                      enrichment_results <- NULL
+                    }
+                  }
+                  if (!is.null(t_ranked) && length(t_ranked) > 0) {
+                    if (!identical(input$proteomics_id_type, "ENTREZID")) {
+                      if (exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0 &&
+                          input$proteomics_id_type %in% colnames(gene_ids)) {
+                        name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
+                        entrez_names <- name_to_entrez[names(t_ranked)]
+                        entrez_names <- entrez_names[!is.na(entrez_names)]
+                        if (length(entrez_names) > 0) {
+                          ranked_genes <- t_ranked[names(entrez_names)]
+                          names(ranked_genes) <- entrez_names
+                          ranked_genes <- deduplicate_ranked_vector(ranked_genes)
+                        } else {
+                          showNotification("Could not map gene IDs for t-statistic ranking", type = "error")
+                          enrichment_results <- NULL
+                        }
+                      } else {
+                        # No mapping table yet but names may already be Entrez (e.g. prior conversion).
+                        ranked_genes <- deduplicate_ranked_vector(t_ranked)
+                      }
+                    } else {
+                      ranked_genes <- deduplicate_ranked_vector(t_ranked)
+                    }
+                  }
+                } else if (input$proteomics_source == "manual" && !is.null(proteomics_values$manual_tstats) && length(proteomics_values$manual_tstats) > 0) {
+                  t_vals <- proteomics_values$manual_tstats
+                  names(t_vals) <- gene_list
+                  t_vals <- t_vals[!is.na(t_vals) & !is.na(names(t_vals)) & nzchar(names(t_vals))]
+                  if (length(t_vals) == 0) {
+                    showNotification("Manual stat column contains no valid numeric values.", type = "error")
+                    enrichment_results <- NULL
+                  } else if (!identical(input$proteomics_id_type, "ENTREZID")) {
+                    if (exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0 &&
+                        input$proteomics_id_type %in% colnames(gene_ids)) {
+                      name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
+                      entrez_names <- name_to_entrez[names(t_vals)]
+                      entrez_names <- entrez_names[!is.na(entrez_names)]
+                      if (length(entrez_names) > 0) {
+                        ranked_genes <- t_vals[names(entrez_names)]
+                        names(ranked_genes) <- entrez_names
+                        ranked_genes <- deduplicate_ranked_vector(ranked_genes)
+                      } else {
+                        showNotification("Could not map gene IDs for t-statistic ranking", type = "error")
+                        enrichment_results <- NULL
+                      }
+                    } else {
+                      ranked_genes <- deduplicate_ranked_vector(t_vals)
+                    }
+                  } else {
+                    ranked_genes <- deduplicate_ranked_vector(t_vals)
+                  }
+                } else {
+                  showNotification("t-statistic ranking requires a stat column (manual) or pairwise stats; falling back to log2 fold change.", type = "warning")
+                  ranked_genes <- fold_change_data
+                }
+              }
+              
+              # Central guard: fgsea/clusterProfiler requires unique names ("Duplicate values in
+              # names(stats) not allowed"). ENSEMBL->ENTREZ is 1:many, so mapping can create
+              # duplicates when the redundant second bitr is skipped. Keep max |value| per Entrez ID.
+              if (!is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes))) {
+                n_before_dedup <- length(ranked_genes)
+                ranked_genes <- deduplicate_ranked_vector(ranked_genes)
+                if (length(ranked_genes) < n_before_dedup) {
+                  showNotification(paste("Collapsed", n_before_dedup - length(ranked_genes),
+                                         "duplicate Entrez IDs (kept max absolute value)."),
+                                   type = "message", duration = 3)
+                }
               }
               
               # Proceed with GSEA if we have a ranked gene list
@@ -33146,8 +34631,9 @@ get_legend_grid_layout <- function(n_items) {
 
                   # If using MOFA or other non-ENTREZ identifiers, attempt to convert ranked gene names to ENTREZ IDs
                   if (can_run_gsea && !is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes)) && length(names(ranked_genes)) > 0) {
-                    # Only attempt conversion if ID type is not ENTREZ
-                    if (!identical(input$proteomics_id_type, "ENTREZID")) {
+                    # Only attempt conversion if ID type is not ENTREZ and ranked names are not already ENTREZ IDs
+                    # (fold_change_data is already converted to ENTREZ earlier, so skip redundant bitr)
+                    if (!identical(input$proteomics_id_type, "ENTREZID") && !all(grepl("^[0-9]+$", names(ranked_genes)))) {
                       # Validate the actual ID type in the ranked gene names
                       ranked_validation <- validate_ids(names(ranked_genes))
                       
@@ -33240,7 +34726,7 @@ get_legend_grid_layout <- function(n_items) {
 
                   # Attempt to convert ranked gene names to ENTREZ IDs if needed
                   can_run_gsea <- TRUE
-                  if (!is.null(ranked_genes) && length(ranked_genes) > 0 && input$proteomics_id_type != "ENTREZID") {
+                  if (!is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes)) && input$proteomics_id_type != "ENTREZID" && !all(grepl("^[0-9]+$", names(ranked_genes)))) {
                     if (is.null(annotation_db)) {
                       showNotification("Cannot convert IDs for KEGG GSEA because annotation database is missing. Install OrgDb or set ID type to ENTREZID.", type = "error")
                       can_run_gsea <- FALSE
@@ -33314,7 +34800,7 @@ get_legend_grid_layout <- function(n_items) {
 
                   # Attempt to convert ranked gene names to ENTREZ IDs if needed
                   can_run_gsea <- TRUE
-                  if (!is.null(ranked_genes) && length(ranked_genes) > 0 && input$proteomics_id_type != "ENTREZID") {
+                  if (!is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes)) && input$proteomics_id_type != "ENTREZID" && !all(grepl("^[0-9]+$", names(ranked_genes)))) {
                     if (is.null(annotation_db)) {
                       showNotification("Cannot convert IDs for KEGG module GSEA because annotation database is missing. Install OrgDb or set ID type to ENTREZID.", type = "error")
                       can_run_gsea <- FALSE
@@ -33401,7 +34887,7 @@ get_legend_grid_layout <- function(n_items) {
                     } else {
                       # Attempt to convert ranked gene names to ENTREZ IDs if needed
                       can_run_gsea <- TRUE
-                      if (!is.null(ranked_genes) && length(ranked_genes) > 0 && input$proteomics_id_type != "ENTREZID") {
+                      if (!is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes)) && input$proteomics_id_type != "ENTREZID" && !all(grepl("^[0-9]+$", names(ranked_genes)))) {
                         if (is.null(annotation_db)) {
                           showNotification("Cannot convert IDs for Reactome GSEA because annotation database is missing. Install OrgDb or set ID type to ENTREZID.", type = "error")
                           can_run_gsea <- FALSE
@@ -33502,7 +34988,7 @@ get_legend_grid_layout <- function(n_items) {
                         showNotification(paste("Using", length(pc_ranked_genes), "UniProt IDs for Pathway Commons GSEA"), type = "message")
                       } else {
                         # For other ID types, try to convert to HGNC symbols first, then UniProt if that fails
-                        if(exists("gene_ids") && nrow(gene_ids) > 0) {
+                        if(exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
                           # First attempt: Convert to SYMBOL
                           if (identical(input$proteomics_id_type, "ENTREZID")) {
                             # Map ENTREZ to SYMBOL
@@ -33682,7 +35168,7 @@ get_legend_grid_layout <- function(n_items) {
 
                       # Attempt to convert ranked gene names to ENTREZ IDs if needed
                       can_run_gsea <- TRUE
-                      if (!is.null(ranked_genes) && length(ranked_genes) > 0 && input$proteomics_id_type != "ENTREZID") {
+                      if (!is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes)) && input$proteomics_id_type != "ENTREZID" && !all(grepl("^[0-9]+$", names(ranked_genes)))) {
                         if (is.null(annotation_db)) {
                           showNotification("Cannot convert IDs for WikiPathways GSEA because annotation database is missing. Install OrgDb or set ID type to ENTREZID.", type = "error")
                           can_run_gsea <- FALSE
@@ -33792,7 +35278,7 @@ get_legend_grid_layout <- function(n_items) {
 
                         # Ensure ranked genes are ENTREZ IDs
                         can_run_gsea <- TRUE
-                        if (!is.null(ranked_genes) && length(ranked_genes) > 0 && input$proteomics_id_type != "ENTREZID") {
+                        if (!is.null(ranked_genes) && length(ranked_genes) > 0 && !is.null(names(ranked_genes)) && input$proteomics_id_type != "ENTREZID" && !all(grepl("^[0-9]+$", names(ranked_genes)))) {
                           if (is.null(annotation_db)) {
                             showNotification("Cannot convert IDs for MSigDB GSEA because annotation database is missing. Install OrgDb or set ID type to ENTREZID.", type = "error")
                             can_run_gsea <- FALSE
@@ -33875,8 +35361,12 @@ get_legend_grid_layout <- function(n_items) {
           } else {
             # === STORE ORIGINAL ENRICHMENT RESULTS FOR UPSETPLOT ===
             # Store the original enrichment results with ENTREZ IDs before ID mapping
-            # This is needed for upsetplot to properly show expression box plots
+            # This is needed for upsetplot to properly show expression box plots.
+            # Must persist in proteomics_values: a local variable is invisible to
+            # the display/download renderers (different reactive scopes), which is
+            # why downloads fell back to the ID-mapped object with an empty top panel.
             enrichment_results_original <- enrichment_results
+            proteomics_values$enrichment_results_original <- enrichment_results
             
             # === ID MAPPING FOR VISUALIZATION ===
             # ClusterProfiler internally uses ENTREZ IDs for analysis, but we want to display
@@ -33886,7 +35376,7 @@ get_legend_grid_layout <- function(n_items) {
             # they see the familiar gene identifiers they originally provided.
             
             # Map ENTREZ IDs back to original IDs in the enrichment results
-            if(input$proteomics_id_type != "ENTREZID" && exists("gene_ids") && nrow(gene_ids) > 0) {
+            if(input$proteomics_id_type != "ENTREZID" && exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
               # Create mapping from ENTREZ to original IDs
               entrez_to_original <- setNames(gene_ids[[input$proteomics_id_type]], gene_ids$ENTREZID)
               
@@ -34625,7 +36115,8 @@ get_legend_grid_layout <- function(n_items) {
         cat("Caching enrichment results for", input$proteomics_tool, "\n")
         store_enrichment_in_cache(enrichment_cache_key, enrichment_results,
                                   fold_change_data,
-                                  if(exists("original_fold_change_data")) original_fold_change_data else NULL)
+                                  if(exists("original_fold_change_data")) original_fold_change_data else NULL,
+                                  if(exists("enrichment_results_original")) enrichment_results_original else NULL)
         showNotification("Enrichment results cached for faster future access", type = "message", duration = 2)
       }
     } # End of cache check
@@ -34643,7 +36134,7 @@ get_legend_grid_layout <- function(n_items) {
       pathview_data <- fold_change_data
       
       # Ensure names are Entrez IDs for pathview
-      if(input$proteomics_id_type != "ENTREZID" && exists("gene_ids") && nrow(gene_ids) > 0) {
+      if(input$proteomics_id_type != "ENTREZID" && exists("gene_ids") && !is.null(gene_ids) && is.data.frame(gene_ids) && nrow(gene_ids) > 0) {
         # Double-check that we have the correct Entrez ID mapping
         name_to_entrez <- setNames(gene_ids$ENTREZID, gene_ids[[input$proteomics_id_type]])
         
@@ -35024,11 +36515,22 @@ get_legend_grid_layout <- function(n_items) {
         # Interactive plot for g:Profiler Manhattan
         plotly::plotlyOutput("proteomics_plot_interactive", height = "600px")
       } else {
-        # Regular static plot for all other cases (including static Manhattan plots)
-        plotOutput("proteomics_plot", height = "600px")
+        # Regular static plot for all other cases (including static Manhattan plots).
+        # Chord diagrams carry long peripheral labels: give them a taller frame
+        # so the image is not squeezed and clipped at the top/bottom.
+        chord_tall <- isTRUE(identical(input$proteomics_plot_type, "chord"))
+        plotOutput("proteomics_plot",
+                   height = if (chord_tall) "850px" else "600px")
       }
     })
-    
+
+    # Readiness flag for the Visualization/Network overlay drawer (read by JS).
+    # The drawer only offers itself once an analysis has produced results.
+    output$enrich_drawer_ready <- renderText({
+      if (!is.null(proteomics_values$enrichment_results)) "ready" else ""
+    })
+    outputOptions(output, "enrich_drawer_ready", suspendWhenHidden = FALSE)
+
     # Interactive plot for g:Profiler Manhattan plot
     output$proteomics_plot_interactive <- plotly::renderPlotly({
       enrichment_results <- proteomics_values$enrichment_results
@@ -35085,6 +36587,13 @@ get_legend_grid_layout <- function(n_items) {
       # Determine number of terms to show for cache key
       # Use helper function to get number of rows for different result types
       total_rows <- get_enrichment_results_nrow(enrichment_results, input$proteomics_tool)
+      if (is.null(total_rows) || is.na(total_rows) || total_rows <= 0) {
+        # No readable rows: stale results from another tool, or a genuinely
+        # empty result. Bail quietly (no crash, nothing cached) and wait for
+        # fresh results instead of rendering mismatched data.
+        cat("Skipping proteomics plot render: no readable enrichment rows\n")
+        return(invisible())
+      }
       num_terms <- min(30, total_rows)
       if (!is.null(input$proteomics_top_terms)) {
         num_terms <- min(as.numeric(input$proteomics_top_terms), total_rows)
@@ -35098,7 +36607,8 @@ get_legend_grid_layout <- function(n_items) {
         num_terms = num_terms,
         fold_change_data = proteomics_values$fold_change_data,
         color_theme = input$proteomics_plot_color %||% "default",
-        highlight_terms = proteomics_values$highlight_terms
+        highlight_terms = proteomics_values$highlight_terms,
+        extra = get_enrichment_plot_cache_extra(input$proteomics_plot_type, for_download = FALSE)
       )
       
       # Check cache first (skip for topGO GO graphs as they use base R plots)
@@ -35199,9 +36709,8 @@ get_legend_grid_layout <- function(n_items) {
           top_results <- head(gost_results[order(gost_results$p_value), ], top_n)
           
           # Create term labels from term names (without GO identifiers)
+          # (long names are wrapped onto multiple lines via scale_y_discrete below)
           top_results$term_label <- top_results$term_name
-          # Trim term names if too long
-          top_results$term_label <- substr(top_results$term_label, 1, 60)
           
           # Create bar plot using ggplot2
           p <- ggplot(top_results,
@@ -35209,6 +36718,7 @@ get_legend_grid_layout <- function(n_items) {
                           y = reorder(term_label, negative_log10_of_adjusted_p_value),
                           fill = negative_log10_of_adjusted_p_value)) +
             geom_bar(stat = "identity") +
+            scale_y_discrete(labels = wrap_enrichment_labels) +
             geom_text(aes(label = intersection_size, hjust = -0.2),
                       color = "black", size = axis_text_size * 0.45, fontface = "bold") +
             coord_cartesian(clip = "off") +
@@ -35323,6 +36833,7 @@ get_legend_grid_layout <- function(n_items) {
                   return(ggplot(enrichment_df, aes(x = NES, y = reorder(Description, abs(NES)), fill = neg_log_padj)) +
                            geom_bar(stat = "identity") +
                            scale_fill_gradient(low = "lightblue", high = "darkred", name = "-log10(P.adj)") +
+                    scale_y_discrete(labels = wrap_enrichment_labels) +
                            labs(title = "GSEA Enrichment Analysis", x = "Normalized Enrichment Score (NES)", y = y_label) +
                            theme_bw() +
                            theme(
@@ -35342,6 +36853,7 @@ get_legend_grid_layout <- function(n_items) {
                   # For ORA results, use enrichplot::barplot
                     return(barplot(enrichment_results, showCategory = num_terms) +
                              scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
+                             scale_y_discrete(labels = wrap_enrichment_labels) +
                              theme(
                                axis.text.x = element_text(size = axis_text_size, color = "black", face = "bold"),
                                axis.text.y = element_text(size = axis_text_size, color = "black", face = "bold"),
@@ -35382,6 +36894,7 @@ get_legend_grid_layout <- function(n_items) {
                   return(ggplot(enrichment_df, aes(x = NES, y = reorder(Description, abs(NES)), fill = neg_log_padj)) +
                            geom_bar(stat = "identity") +
                            scale_fill_gradient(low = "lightblue", high = "darkred", name = "-log10(P.adj)") +
+                    scale_y_discrete(labels = wrap_enrichment_labels) +
                            labs(title = "GSEA Enrichment Analysis", x = "Normalized Enrichment Score (NES)", y = y_label) +
                            theme_bw() +
                            theme(
@@ -35413,6 +36926,7 @@ get_legend_grid_layout <- function(n_items) {
                   
                   return(ggplot(enrichment_df, aes(x = Count, y = reorder(Description, Count))) +
                            geom_bar(stat = "identity", fill = "steelblue") +
+                           scale_y_discrete(labels = wrap_enrichment_labels) +
                            labs(title = "Enrichment Analysis", x = "Gene Count", y = y_label) +
                            theme_bw() +
                            theme(
@@ -35442,6 +36956,7 @@ get_legend_grid_layout <- function(n_items) {
                   
                   return(ggplot(enrichment_df, aes(x = setSize, y = reorder(Description, setSize))) +
                            geom_bar(stat = "identity", fill = "steelblue") +
+                           scale_y_discrete(labels = wrap_enrichment_labels) +
                            labs(title = "Enrichment Analysis", x = "Set Size", y = y_label) +
                            theme_bw() +
                            theme(
@@ -35472,6 +36987,7 @@ get_legend_grid_layout <- function(n_items) {
                   enrichment_df$neg_log_pval <- -log10(enrichment_df$p.adjust)
                   return(ggplot(enrichment_df, aes(x = neg_log_pval, y = reorder(Description, neg_log_pval))) +
                            geom_bar(stat = "identity", fill = "steelblue") +
+                           scale_y_discrete(labels = wrap_enrichment_labels) +
                            labs(title = "Enrichment Analysis", x = "-log10(Adjusted P-value)", y = y_label) +
                            theme_bw() +
                            theme(
@@ -35501,7 +37017,7 @@ get_legend_grid_layout <- function(n_items) {
             # For GSEA, only use fold change data if the ranking metric requires fold change
             # Log2 Fold Change and Signed p-value require fold change data
             requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
             should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
             
             if (should_use_fold_change) {
@@ -35587,7 +37103,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_df_check <- as.data.frame(enrichment_results)
               is_gsea <- "NES" %in% colnames(enrichment_df_check)
               requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
               should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
               
               # For GSEA, use fold change data only if the ranking metric requires it
@@ -35637,7 +37153,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_df_check <- as.data.frame(enrichment_results)
               is_gsea <- "NES" %in% colnames(enrichment_df_check)
               requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
               should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
               
               if(should_use_fold_change) {
@@ -35694,7 +37210,7 @@ get_legend_grid_layout <- function(n_items) {
             enrichment_df_check <- as.data.frame(enrichment_results)
             is_gsea <- "NES" %in% colnames(enrichment_df_check)
             requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
             should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
             
             if (should_use_fold_change) {
@@ -35704,22 +37220,58 @@ get_legend_grid_layout <- function(n_items) {
               return(enrichplot::cnetplot(enrichment_results, showCategory = min(num_terms, 10)))
             }
           }
+          else if (identical(input$proteomics_plot_type, "chord")) {
+            # Chord diagram (term <-> gene links) via circlize. Base graphics, so it
+            # works with the recordPlot display cache. Always reset circos state
+            # first: a stale layout from a previous render corrupts the next one.
+            tryCatch({
+              if (!requireNamespace("circlize", quietly = TRUE)) {
+                plot.new()
+                text(0.5, 0.5, "Chord diagram requires the 'circlize' package.\nPlease install it.", cex = 1.2, adj = 0.5)
+                return(NULL)
+              }
+              chord_data <- build_chord_pairs(enrichment_results, num_terms,
+                                              max_genes = input$proteomics_chord_max_genes %||% 10,
+                                              color_mode = input$proteomics_chord_colors %||% "single",
+                                              term_color = input$proteomics_chord_term_color %||% "#4DAF4A",
+                                              palette = input$proteomics_chord_palette %||% "rainbow",
+                                              label_top_genes = chord_label_top_n(input$proteomics_chord_gene_labels))
+              if (is.null(chord_data)) {
+                plot.new()
+                text(0.5, 0.5, "No term-gene links available for chord diagram.", cex = 1.2, adj = 0.5)
+                return(NULL)
+              }
+              circlize::circos.clear()
+              on.exit(circlize::circos.clear(), add = TRUE)
+              draw_chord_diagram(chord_data$pairs, chord_data$gene_colors,
+                                 label_facing = input$proteomics_chord_labels %||% "radial",
+                                 term_cex = input$proteomics_chord_term_cex %||% 0.9,
+                                 gene_cex = input$proteomics_chord_gene_cex %||% 0.7,
+                                 rotation = input$proteomics_chord_rotation %||% 90,
+                                 labeled_genes = chord_data$labeled_genes)
+              return(NULL)  # base-graphics plot already on device; recordPlot() captures it
+            }, error = function(e) {
+              tryCatch(circlize::circos.clear(), error = function(e2) NULL)
+              plot.new()
+              text(0.5, 0.5, paste("Error generating chord diagram:\n", e$message), cex = 1, adj = 0.5)
+              return(NULL)
+            })
+          }
           else if (identical(input$proteomics_plot_type, "upsetplot")) {
             # Generate UpSet plot for ClusterProfiler results
             tryCatch({
-              # For upsetplot to show expression box plots, we need to use the original enrichment results
-              # before any ID mapping modifications, as upsetplot relies on the internal GSEA structure
-              
+              # Boxplots on top require the pre-ID-mapping gseaResult (ENTREZ IDs
+              # matching the geneList slot). Use the persisted original for GSEA;
+              # ORA keeps the mapped (human-readable) IDs.
+              upset_source <- enrichment_results
+              if (inherits(enrichment_results, "gseaResult") &&
+                  !is.null(proteomics_values$enrichment_results_original)) {
+                upset_source <- proteomics_values$enrichment_results_original
+              }
+
               # Check if we have the original enrichment results stored somewhere
               # If the enrichment_results has been modified for display, we need the original version
-              if (exists("enrichment_results_original") && !is.null(enrichment_results_original)) {
-                # Use the original enrichment results with ENTREZ IDs and embedded expression data
-                return(enrichplot::upsetplot(enrichment_results_original, n = min(num_terms, 20)))
-              } else {
-                # If no original version is available, use the current enrichment_results
-                # This should work if the enrichment_results hasn't been modified
-                return(enrichplot::upsetplot(enrichment_results, n = min(num_terms, 20)))
-              }
+              return(enrichplot::upsetplot(upset_source, n = min(num_terms, 20)))
             }, error = function(e) {
               # Fallback to a custom UpSet plot if enrichplot version doesn't support it
               tryCatch({
@@ -36078,6 +37630,7 @@ get_legend_grid_layout <- function(n_items) {
               return(ggplot(top_results, aes(x = -log10(Adjusted.P.value),
                                              y = reorder(Term, -log10(Adjusted.P.value)))) +
                        geom_bar(stat = "identity", fill = "steelblue") +
+                       scale_y_discrete(labels = wrap_enrichment_labels) +
                        labs(title = paste("Enrichr Bar Plot:", db_name),
                             x = "-log10(Adjusted P-value)",
                             y = "Term") +
@@ -36157,6 +37710,7 @@ get_legend_grid_layout <- function(n_items) {
               return(ggplot(top_results, aes(x = -log10(Adjusted.P.value),
                                              y = reorder(Term, -log10(Adjusted.P.value)))) +
                        geom_bar(stat = "identity", fill = "steelblue") +
+                       scale_y_discrete(labels = wrap_enrichment_labels) +
                        labs(title = paste("Enrichr Bar Plot:", db_name),
                             x = "-log10(Adjusted P-value)",
                             y = "Term") +
@@ -36217,6 +37771,7 @@ get_legend_grid_layout <- function(n_items) {
             ggplot(df, aes(x = reorder(Description, -log10(p.adjust)), y = -log10(p.adjust))) +
               geom_bar(stat = "identity", fill = "steelblue") +
               coord_flip() +
+              scale_x_discrete(labels = wrap_enrichment_labels) +
               labs(title = "Enriched Reactome Pathways",
                    x = "Pathway",
                    y = "-log10(adjusted p-value)") +
@@ -36233,7 +37788,7 @@ get_legend_grid_layout <- function(n_items) {
             enrichment_df_check <- as.data.frame(enrichment_results)
             is_gsea <- "NES" %in% colnames(enrichment_df_check)
             requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
             should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
             
             if (should_use_fold_change) {
@@ -36292,8 +37847,8 @@ get_legend_grid_layout <- function(n_items) {
               # Download the pathway image with proper headers
               tryCatch({
                 # Ensure required packages
-                if (!requireNamespace("httr", quietly = TRUE)) install.packages("httr")
-                if (!requireNamespace("png", quietly = TRUE)) install.packages("png")
+                require_pkg_or_fail("httr", bioc = FALSE, "pathway image downloads")
+                require_pkg_or_fail("png", bioc = FALSE, "pathway image downloads")
                 
                 # Create a temporary file
                 tmp_file <- tempfile(fileext = ".png")
@@ -36604,6 +38159,237 @@ get_legend_grid_layout <- function(n_items) {
     })
     
     # Generate pathview visualization
+    # ---- Pathview multi-omics layer helpers ----
+    # Saved analyses (Data tab -> Save Analysis, tagged with an omics type, same
+    # pattern as the multi-omics tab) feed pathview layers:
+    #   gene layer <- transcriptomics/proteomics analysis, compound layer <- metabolomics.
+    # Vectors prefer a logFC column from stat_results, else fall back to a
+    # group-mean difference from normalized_data. Matrices (multi.state) use
+    # mean-centered per-group columns from normalized_data.
+    pv_pick_feature_names <- function(analysis, flavor) {
+      feats <- analysis$features %||% rownames(analysis$normalized_data)
+      if (is.null(feats)) return(NULL)
+      acc <- analysis$accession_ids
+      if (!is.null(acc) && length(acc) == length(feats) && mean(!is.na(acc)) > 0.5) {
+        if (identical(flavor, "cpd")) {
+          score <- function(x) mean(grepl("^[CGD][0-9]{5}$|^HMDB|^CHEBI:|^LM|^CID", x %||% ""), na.rm = TRUE)
+          if (score(acc) >= score(feats)) return(as.character(acc))
+        } else {
+          return(as.character(acc))
+        }
+      }
+      as.character(feats)
+    }
+    pv_layer_vector <- function(analysis, flavor) {
+      sr <- analysis$stat_results
+      if (!is.null(sr) && is.data.frame(sr) && "Feature" %in% colnames(sr)) {
+        fc_col <- grep("Log2FC|logFC|log2FoldChange", colnames(sr), value = TRUE)[1]
+        if (!is.na(fc_col)) {
+          vals <- suppressWarnings(as.numeric(sr[[fc_col]]))
+          keep <- !is.na(vals) & !is.na(sr$Feature) & nzchar(as.character(sr$Feature))
+          if (sum(keep) > 0) {
+            o <- order(abs(vals[keep]), decreasing = TRUE)
+            nm0 <- as.character(sr$Feature[keep])[o]
+            vv0 <- vals[keep][o]
+            ded <- !duplicated(nm0)
+            nm <- nm0[ded]
+            vv <- vv0[ded]
+            # Names follow feature order; accessions (if any) parallel it, so
+            # remap positionally rather than by equality.
+            feats0 <- analysis$features %||% rownames(analysis$normalized_data)
+            feat_names <- pv_pick_feature_names(analysis, flavor)
+            if (!is.null(feat_names) && !is.null(feats0) &&
+                length(feat_names) == length(feats0)) {
+              pos <- match(nm0[ded], feats0)
+              alt <- feat_names[pos]
+              nm[!is.na(alt)] <- alt[!is.na(alt)]
+            }
+            return(setNames(as.numeric(vv), nm))
+          }
+        }
+      }
+      # Fallback: group-mean difference from normalized data (assumes log scale).
+      mat <- analysis$normalized_data
+      grps <- analysis$groups
+      if (is.null(mat) || is.null(grps)) return(NULL)
+      mat <- suppressWarnings(as.matrix(mat))
+      if (!is.numeric(mat)) return(NULL)
+      ug <- unique(as.character(grps))[!is.na(unique(as.character(grps)))]
+      if (length(ug) < 2) return(NULL)
+      mA <- rowMeans(mat[, grps == ug[1], drop = FALSE], na.rm = TRUE)
+      mB <- rowMeans(mat[, grps == ug[2], drop = FALSE], na.rm = TRUE)
+      v <- as.numeric(mA - mB)
+      nm <- pv_pick_feature_names(analysis, flavor)
+      if (is.null(nm) || length(nm) != length(v)) return(NULL)
+      setNames(v, nm)
+    }
+    pv_layer_matrix <- function(analysis, flavor) {
+      mat <- analysis$normalized_data
+      grps <- analysis$groups
+      if (is.null(mat) || is.null(grps)) return(NULL)
+      mat <- suppressWarnings(as.matrix(mat))
+      if (!is.numeric(mat)) return(NULL)
+      ug <- unique(as.character(grps))
+      ug <- ug[!is.na(ug)]
+      if (length(ug) < 2) return(NULL)
+      M <- sapply(ug, function(g) rowMeans(mat[, grps == g, drop = FALSE], na.rm = TRUE))
+      M <- sweep(M, 1, rowMeans(M, na.rm = TRUE), "-")  # center: slices show deviation
+      nm <- pv_pick_feature_names(analysis, flavor)
+      if (is.null(nm) || length(nm) != nrow(M)) return(NULL)
+      rownames(M) <- nm
+      colnames(M) <- ug
+      M
+    }
+    pv_detect_cpd_idtype <- function(ids) {
+      ids <- ids[!is.na(ids)]
+      if (length(ids) == 0) return("kegg")
+      # pathview maps KEGG accessions directly; other types must match
+      # tolower(names(rn.list)), e.g. "hmdb accession". ChEBI/PubChem are
+      # NOT mappable by pathview -- those need KEGG accessions instead.
+      frac <- function(pat) mean(grepl(pat, ids))
+      if (frac("^CHEBI:") > 0.5 || frac("^CID[0-9]+$") > 0.5) {
+        showNotification(paste0("Compound IDs look like ChEBI/PubChem, which pathview cannot map. ",
+                                "Use KEGG accessions (or the accession-ID column) for full mapping."),
+                         type = "warning", duration = 8)
+        return("kegg")
+      }
+      det <- "kegg"
+      if (frac("^HMDB") > 0.5) det <- "hmdb accession"
+      else if (frac("^[0-9]+-[0-9]+-[0-9]+$") > 0.5) det <- "cas registry number"
+      else if (frac("^DB[0-9]+$") > 0.5) det <- "drugbank accession"
+      else if (frac("^LM") > 0.5) det <- "lipid maps instance accession"
+      else if (frac("^[CGD][0-9]{5}$") > 0.5) det <- "kegg"
+      valid <- tryCatch({
+        if (!exists("rn.list", envir = .GlobalEnv))
+          utils::data("rn.list", package = "pathview", envir = .GlobalEnv)
+        c("kegg", tolower(names(get("rn.list", envir = .GlobalEnv))))
+      }, error = function(e) "kegg")
+      if (det %in% valid) det else "kegg"
+    }
+    # Resolve both pathview layers. Returns NULL (after notifying) when unusable.
+    pv_prepare_layers <- function(gene_current, gene_source, cpd_source,
+                                  gene_idtype_ui, cpd_idtype_ui, multi_state,
+                                  organism, saved_list) {
+      res <- list(gene_data = gene_current, gene_idtype = "entrez",
+                  cpd_data = NULL, cpd_idtype = "kegg", multi_state = FALSE)
+      # --- gene layer ---
+      if (!identical(gene_source, "current")) {
+        ga <- saved_list[[gene_source]]
+        if (is.null(ga)) {
+          showNotification(paste("Saved analysis not found:", gene_source), type = "error")
+          return(NULL)
+        }
+        if (isTRUE(multi_state)) {
+          gm <- pv_layer_matrix(ga, "gene")
+          if (is.null(gm)) {
+            showNotification("Multi-sample mode needs a saved analysis with 2+ groups.", type = "warning")
+            return(NULL)
+          }
+          res$gene_data <- gm
+          res$multi_state <- TRUE
+        } else {
+          gv <- pv_layer_vector(ga, "gene")
+          if (is.null(gv) || length(gv) == 0) {
+            showNotification("No usable gene values in the selected saved analysis.", type = "warning")
+            return(NULL)
+          }
+          res$gene_data <- gv[!is.na(gv)]
+        }
+        if (identical(gene_idtype_ui, "auto")) {
+          nn <- if (is.matrix(res$gene_data)) rownames(res$gene_data) else names(res$gene_data)
+          if (all(grepl("^[0-9]+$", nn[!is.na(nn)]))) {
+            res$gene_idtype <- "entrez"
+          } else if (requireNamespace("clusterProfiler", quietly = TRUE)) {
+            conv <- tryCatch({
+              orgdb <- get_orgdb(organism)
+              if (is.null(orgdb)) return(NULL)
+              clusterProfiler::bitr(nn, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = orgdb)
+            }, error = function(e) NULL)
+            if (!is.null(conv) && nrow(conv) > 0) {
+              mp <- setNames(conv$ENTREZID, conv$SYMBOL)
+              if (is.matrix(res$gene_data)) {
+                keep <- nn %in% names(mp)
+                gd <- res$gene_data[keep, , drop = FALSE]
+                ez <- mp[nn[keep]]
+                o2 <- order(abs(rowMeans(gd, na.rm = TRUE)), decreasing = TRUE)
+                gd <- gd[o2, , drop = FALSE]
+                ez <- ez[o2]
+                gd <- gd[!duplicated(ez), , drop = FALSE]
+                rownames(gd) <- ez[!duplicated(ez)]
+                res$gene_data <- gd
+              } else {
+                keep <- nn %in% names(mp)
+                res$gene_data <- res$gene_data[keep]
+                names(res$gene_data) <- mp[nn[keep]]
+              }
+              res$gene_idtype <- "entrez"
+            } else {
+              res$gene_idtype <- "symbol"  # pathview maps symbols internally
+            }
+          } else {
+            res$gene_idtype <- "symbol"
+          }
+        } else {
+          res$gene_idtype <- gene_idtype_ui
+        }
+      } else {
+        if (isTRUE(multi_state)) {
+          showNotification("Multi-sample mode needs a saved gene-layer analysis; using current vector.", type = "warning")
+        }
+        if (!identical(gene_idtype_ui, "auto")) res$gene_idtype <- gene_idtype_ui
+      }
+      # --- compound layer ---
+      if (!identical(cpd_source, "none")) {
+        ca <- saved_list[[cpd_source]]
+        if (is.null(ca)) {
+          showNotification(paste("Saved analysis not found:", cpd_source), type = "error")
+          return(NULL)
+        }
+        use_matrix <- isTRUE(multi_state) && isTRUE(res$multi_state)
+        cv <- if (use_matrix) pv_layer_matrix(ca, "cpd") else pv_layer_vector(ca, "cpd")
+        if (is.null(cv)) {
+          showNotification("No usable metabolite values in the selected saved analysis.", type = "warning")
+          return(NULL)
+        }
+        if (is.matrix(cv)) {
+          cv <- cv[stats::complete.cases(cv), , drop = FALSE]
+        } else {
+          cv <- cv[!is.na(cv)]
+        }
+        if (length(cv) == 0) {
+          showNotification("No usable metabolite values in the selected saved analysis.", type = "warning")
+          return(NULL)
+        }
+        res$cpd_data <- cv
+        cids <- if (is.matrix(cv)) rownames(cv) else names(cv)
+        res$cpd_idtype <- if (identical(cpd_idtype_ui, "auto")) pv_detect_cpd_idtype(cids) else cpd_idtype_ui
+      }
+      res
+    }
+
+    # Keep pathview layer dropdowns in sync with saved analyses (same store as
+    # the multi-omics tab). Gene layer: transcriptomics/proteomics; compound
+    # layer: metabolomics/lipidomics/glycomics; "other" is offered for both.
+    observe({
+      saved_analyses$counter
+      alist <- saved_analyses$analyses_list
+      gene_choices <- c("Current enrichment data" = "current")
+      cpd_choices <- c("None (genes only)" = "none")
+      if (!is.null(alist)) {
+        for (nm in names(alist)) {
+          ot <- alist[[nm]]$omics_type %||% "other"
+          if (ot %in% c("transcriptomics", "proteomics", "other")) gene_choices[[nm]] <- nm
+          if (ot %in% c("metabolomics", "lipidomics", "glycomics", "other")) cpd_choices[[nm]] <- nm
+        }
+      }
+      cur_gene <- input$pathview_gene_source %||% "current"
+      if (!cur_gene %in% gene_choices) cur_gene <- "current"
+      cur_cpd <- input$pathview_cpd_source %||% "none"
+      if (!cur_cpd %in% cpd_choices) cur_cpd <- "none"
+      updateSelectInput(session, "pathview_gene_source", choices = gene_choices, selected = cur_gene)
+      updateSelectInput(session, "pathview_cpd_source", choices = cpd_choices, selected = cur_cpd)
+    })
+
     observeEvent(input$generate_pathview, {
       req(input$pathview_pathway_select)
       req(values$proteomics_results)
@@ -36621,6 +38407,13 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       withProgress(message = "Generating pathview visualization...", {
+        # pathview renders into getwd() regardless of kegg.dir: run the whole
+        # block with wd set to the per-session temp dir. Placed OUTSIDE tryCatch
+        # so on.exit() reliably targets this observer on every exit path.
+        pv_dir <- get_pathview_dir()
+        pv_old_wd <- getwd()
+        setwd(pv_dir)
+        on.exit(setwd(pv_old_wd), add = TRUE)
         tryCatch({
           # Reset any previously stored pathview outputs
           proteomics_values$pathview_image_path <- NULL
@@ -36655,20 +38448,33 @@ get_legend_grid_layout <- function(n_items) {
           }
           
           # Load pathview data including bods object
-          # pathview may look for `bods` via normal symbol lookup, so load into .GlobalEnv
+          # pathview may look for `bods` via normal symbol lookup, so load into .GlobalEnv.
+          # NOTE: the app calls pathview via pathview::pathview (namespace loaded, not
+          # attached), so bare data() calls inside pathview cannot find its datasets.
+          # Preloading into .GlobalEnv works around that.
           tryCatch({
             utils::data("bods", package = "pathview", envir = .GlobalEnv)
           }, error = function(e) {
             cat("Note: Could not load pathview::bods dataset:", e$message, "\n")
-          }, res = UI_PLOT_RES)
+          })
 
-          # Some pathview internals (Graphviz route) expect KEGGgraph datasets via symbol lookup
+          # Graphviz route (kegg.native=FALSE) labels compound nodes via
+          # pathview::cpdkegg2name(), which needs rn.list/cpd.names/kegg.met.
+          # Without these preloaded, Graphviz fails with "object 'rn.list' not found"
+          # while KEGG Native (which skips that branch) works fine.
           if (!is.null(input$pathview_engine) && input$pathview_engine == "graphviz") {
             tryCatch({
               utils::data("KEGGEdgeSubtype", package = "KEGGgraph", envir = .GlobalEnv)
             }, error = function(e) {
               cat("Note: Could not load KEGGgraph::KEGGEdgeSubtype dataset:", e$message, "\n")
-            }, res = UI_PLOT_RES)
+            })
+            for (pv_ds in c("rn.list", "cpd.names", "kegg.met", "gene.idtype.list", "cpd.accs")) {
+              tryCatch({
+                utils::data(list = pv_ds, package = "pathview", envir = .GlobalEnv)
+              }, error = function(e) {
+                cat("Note: Could not load pathview::", pv_ds, " dataset:", e$message, "\n", sep = "")
+              })
+            }
           }
           
           # Get gene data for pathview - use cached Entrez-formatted data
@@ -36817,9 +38623,47 @@ get_legend_grid_layout <- function(n_items) {
             }
           }
           
+          # --- Multi-omics layers from saved analyses (helpers above) ---
+          # Mirrors the multi-omics tab: each dataset is loaded, analyzed and
+          # saved in the Data tab; here the user picks which saved analysis
+          # feeds the gene layer and which feeds the compound layer.
+          # Compound layer only when the overlay is enabled; otherwise the
+          # cpd controls stay hidden and must not affect the render.
+          pv_cpd_source <- if (isTRUE(input$pathview_enable_cpd)) {
+            input$pathview_cpd_source %||% "none"
+          } else {
+            "none"
+          }
+          pv <- pv_prepare_layers(
+            gene_data,
+            input$pathview_gene_source %||% "current",
+            pv_cpd_source,
+            input$pathview_gene_idtype %||% "auto",
+            input$pathview_cpd_idtype %||% "auto",
+            isTRUE(input$pathview_multi_state),
+            input$proteomics_organism,
+            saved_analyses$analyses_list
+          )
+          if (is.null(pv)) return()
+          gene_data <- pv$gene_data
+          cpd_data <- pv$cpd_data
+          pv_gene_idtype <- pv$gene_idtype
+          pv_cpd_idtype <- pv$cpd_idtype
+          pv_multi_state <- pv$multi_state
+
+          if (is.matrix(gene_data)) {
+            # Multi-sample mode: matrices need row IDs only; pathview slices nodes.
+            if (is.null(rownames(gene_data)) || nrow(gene_data) == 0) {
+              showNotification("No valid gene expression data for pathview.", type = "warning")
+              return()
+            }
+            gene_data <- gene_data[stats::complete.cases(gene_data), , drop = FALSE]
+            cat("Multi-sample gene matrix for pathview:", nrow(gene_data), "genes x",
+                ncol(gene_data), "groups\n")
+          } else {
           # Remove any NA values
           gene_data <- gene_data[!is.na(gene_data)]
-          
+
           if (length(gene_data) == 0) {
             showNotification("No valid gene expression data for pathview.", type = "warning")
             return()
@@ -36832,6 +38676,16 @@ get_legend_grid_layout <- function(n_items) {
           cat("Has names:", !is.null(names(gene_data)), "\n")
           cat("Names are Entrez IDs:", all(grepl("^[0-9]+$", names(gene_data)[!is.na(names(gene_data))])), "\n")
           
+          }  # end matrix branch; below is single-vector only
+          if (!is.matrix(gene_data) && !identical(pv_gene_idtype, "entrez")) {
+            # Non-Entrez ID types pass through to pathview's own mapper.
+            if (is.null(names(gene_data)) ||
+                all(is.na(names(gene_data)) | !nzchar(names(gene_data)))) {
+              showNotification("Gene data lacks usable IDs for pathview.", type = "error")
+              return()
+            }
+          }
+          if (!is.matrix(gene_data) && identical(pv_gene_idtype, "entrez")) {
           # Validate that gene names are valid Entrez IDs
           if (is.null(names(gene_data))) {
             showNotification("Gene data lacks proper gene IDs for pathview.", type = "error")
@@ -36848,6 +38702,7 @@ get_legend_grid_layout <- function(n_items) {
             cat("Filtering to", sum(valid_entrez_names), "genes with valid Entrez IDs\n")
             gene_data <- gene_data[valid_entrez_names]
           }
+          }  # end entrez validation (single-vector, entrez IDs only)
           
           # Set color scheme
           if (identical(input$pathview_colorscheme, "green_gray_red")) {
@@ -36893,18 +38748,35 @@ get_legend_grid_layout <- function(n_items) {
             do.call(pathview::pathview, args)
           }
           
-          # Call pathview function with cleaned arguments
+          # Call pathview function with cleaned arguments.
+          # Output goes to the per-session temp dir (auto-cleared on session end),
+          # never the app root (wd was switched to pv_dir above).
+          pv_trans_gene <- switch(input$pathview_trans_gene %||% "none",
+                                  abs = abs, NULL)
+          pv_trans_cpd <- switch(input$pathview_trans_cpd %||% "none",
+                                 abs = abs, NULL)
+          pv_bins_gene <- suppressWarnings(as.integer(input$pathview_bins_gene %||% 10))
+          if (is.na(pv_bins_gene) || pv_bins_gene < 2) pv_bins_gene <- 10
+          pv_bins_cpd <- suppressWarnings(as.integer(input$pathview_bins_cpd %||% 10))
+          if (is.na(pv_bins_cpd) || pv_bins_cpd < 2) pv_bins_cpd <- 10
           pathview_result <- safe_pathview(
             gene.data = gene_data,
+            cpd.data = cpd_data,
+            gene.idtype = pv_gene_idtype,
+            cpd.idtype = pv_cpd_idtype,
+            multi.state = pv_multi_state,
+            same.layer = isTRUE(input$pathview_same_layer),
+            node.sum = input$pathview_node_sum %||% "sum",
+            bins = list(gene = pv_bins_gene, cpd = pv_bins_cpd),
+            trans.fun = list(gene = pv_trans_gene, cpd = pv_trans_cpd),
             pathway.id = input$pathview_pathway_select,
             species = input$pathview_species,
-            limit = list(gene = input$pathview_limit, cpd = 1),
+            limit = list(gene = input$pathview_limit, cpd = input$pathview_cpd_limit %||% 1),
             low = list(gene = low_color, cpd = "blue"),
             mid = list(gene = mid_color, cpd = "gray"),
             high = list(gene = high_color, cpd = "yellow"),
             kegg.native = (input$pathview_engine == "kegg_native"),  # Use selected rendering engine
-            same.layer = FALSE,  # Helps with gene expression overlay
-            kegg.dir = getwd(),
+            kegg.dir = pv_dir,
             out.suffix = paste0("_", format(Sys.time(), "%Y%m%d_%H%M%S")),
             split.group = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_split_group) else NULL,
             expand.node = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_expand_node) else NULL
@@ -36912,15 +38784,28 @@ get_legend_grid_layout <- function(n_items) {
           
           setProgress(0.8, detail = "Processing results...")
           
-          # Find the generated PNG file
+          # Find the generated image, searching the session pathview dir only (so
+          # concurrent sessions can never pick up each other's files). Exclude
+          # pathview's reference downloads (e.g. hsa04110.png): otherwise the UI
+          # can display -- and the download can serve -- the non-overlaid KEGG
+          # original instead of the rendered overlay.
           expected_ext <- if (!is.null(input$pathview_engine) && input$pathview_engine == "graphviz") "pdf" else "png"
           primary_pattern <- paste0(input$pathview_pathway_select, ".*\\.", expected_ext, "$")
-          primary_files <- list.files(pattern = primary_pattern, full.names = TRUE)
+          primary_files <- list.files(path = pv_dir, pattern = primary_pattern, full.names = TRUE)
+          primary_files <- primary_files[basename(primary_files) !=
+                                           paste0(input$pathview_pathway_select, ".", expected_ext)]
 
-          # Fallback: some environments may only generate the other image format
-          fallback_ext <- if (expected_ext == "pdf") "png" else "pdf"
-          fallback_pattern <- paste0(input$pathview_pathway_select, ".*\\.", fallback_ext, "$")
-          fallback_files <- list.files(pattern = fallback_pattern, full.names = TRUE)
+          # Fallback within the same engine only: for a graphviz run, a png in
+          # this dir can only be a stale native render from an earlier run in
+          # this session -- serving it would mislabel native output as graphviz.
+          fallback_files <- list()
+          if (expected_ext != "pdf") {
+            fallback_ext <- "pdf"
+            fallback_pattern <- paste0(input$pathview_pathway_select, ".*\\.", fallback_ext, "$")
+            fallback_files <- list.files(path = pv_dir, pattern = fallback_pattern, full.names = TRUE)
+            fallback_files <- fallback_files[basename(fallback_files) !=
+                                               paste0(input$pathview_pathway_select, ".", fallback_ext)]
+          }
 
           selected_file <- NULL
           if (length(primary_files) > 0) {
@@ -36938,7 +38823,7 @@ get_legend_grid_layout <- function(n_items) {
           # If no image file was written yet, check if only the XML exists (common when Graphviz binaries are missing)
           if (is.null(proteomics_values$pathview_output_path)) {
             xml_pattern <- paste0(input$pathview_pathway_select, ".*\\.xml$")
-            xml_files <- list.files(pattern = xml_pattern, full.names = TRUE)
+            xml_files <- list.files(path = pv_dir, pattern = xml_pattern, full.names = TRUE)
             if (length(xml_files) > 0) {
               proteomics_values$pathview_output_path <- xml_files[which.max(file.mtime(xml_files))]
               proteomics_values$pathview_output_type <- "xml"
@@ -36984,7 +38869,26 @@ get_legend_grid_layout <- function(n_items) {
       })
     })
     
-    # Render pathview image
+    # Per-session temp dir for pathview output (KEGG xml/png/pdf). Previously
+  # pathview wrote into the app root (kegg.dir = getwd()), littering it with
+  # hsa* files shared across sessions. The dir is created on first use and
+  # wiped when the session ends.
+  get_pathview_dir <- function() {
+    d <- file.path(tempdir(), paste0("omics_pathview_", session$token))
+    if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+    if (is.null(session$userData$pathview_cleanup_registered)) {
+      session$userData$pathview_cleanup_registered <- TRUE
+      session$onSessionEnded(function() {
+        tryCatch({
+          unlink(d, recursive = TRUE, force = TRUE)
+          cat("Cleaned up session pathview dir:", d, "\n")
+        }, error = function(e) NULL)
+      })
+    }
+    d
+  }
+
+  # Render pathview image
     output$pathview_image_output <- renderImage({
       # If we have a PNG, show it
       if (!is.null(proteomics_values$pathview_image_path) &&
@@ -37052,7 +38956,7 @@ get_legend_grid_layout <- function(n_items) {
       # Set available plots based on the tool used
       proteomics_values$plots_available <- switch(input$proteomics_tool,
                                                   "gprofiler" = c("manhattan", "barplot"),
-                                                  "clusterprofiler" = c("dotplot", "barplot", "heatplot", "treeplot", "enrichmap", "cnetplot", "upsetplot", "gseaplot2"),
+                                                  "clusterprofiler" = c("dotplot", "barplot", "heatplot", "treeplot", "enrichmap", "cnetplot", "upsetplot", "gseaplot2", "chord"),
                                                   "enrichr" = c("barplot", "dotplot", "enrichplot"),
                                                   "reactomepa" = c("dotplot", "barplot", "enrichmap", "cnetplot", "pathview"),
                                                   "topgo" = c("barplot", "gograph"),
@@ -37160,6 +39064,7 @@ get_legend_grid_layout <- function(n_items) {
     proteomics_values$input_summary_message <- NULL
     proteomics_values$sample_genes <- NULL
     proteomics_values$enrichment_results <- NULL
+    proteomics_values$enrichment_results_original <- NULL
     proteomics_values$plots_available <- NULL
     proteomics_values$current_plots <- list()
     proteomics_values$network_plots <- list()
@@ -37324,6 +39229,24 @@ get_legend_grid_layout <- function(n_items) {
           break
         }
       }
+
+      # Auto-detect t-statistic / stat column (e.g. DESeq2 'stat', limma 't').
+      # Exact 'stat' match first so 'statistic' settings columns are not picked.
+      stat_column <- NULL
+      exact_stat <- which(tolower(col_names) == "stat")
+      if (length(exact_stat) > 0) {
+        stat_column <- col_names[exact_stat[1]]
+      } else {
+        stat_column_patterns <- c("t_stat", "tstat", "t-stat", "t\\.stat",
+                                  "wald", "statistic")
+        for (pattern in stat_column_patterns) {
+          matches <- grep(pattern, col_names, ignore.case = TRUE)
+          if (length(matches) > 0) {
+            stat_column <- col_names[matches[1]]
+            break
+          }
+        }
+      }
       
       # Update ID column dropdown
       updateSelectInput(session, "proteomics_manual_column",
@@ -37341,12 +39264,19 @@ get_legend_grid_layout <- function(n_items) {
       updateSelectInput(session, "proteomics_manual_foldchange_column",
                         choices = fc_choices,
                         selected = if (!is.null(fc_column)) fc_column else "")
+
+      # Update t-statistic column dropdown
+      stat_choices <- c("None" = "", col_names)
+      updateSelectInput(session, "proteomics_manual_stat_column",
+                        choices = stat_choices,
+                        selected = if (!is.null(stat_column)) stat_column else "")
       
       # Show notification about auto-detection
       auto_detected <- c()
       if (!is.null(id_column)) auto_detected <- c(auto_detected, paste("ID:", id_column))
       if (!is.null(pvalue_column)) auto_detected <- c(auto_detected, paste("P-value:", pvalue_column))
       if (!is.null(fc_column)) auto_detected <- c(auto_detected, paste("Fold Change:", fc_column))
+      if (!is.null(stat_column)) auto_detected <- c(auto_detected, paste("Stat:", stat_column))
       
       if (length(auto_detected) > 0) {
         showNotification(paste("Auto-detected columns:", paste(auto_detected, collapse = ", ")),
@@ -37374,7 +39304,8 @@ get_legend_grid_layout <- function(n_items) {
                              "Enrichment Map" = "enrichmap",
                              "Gene-Concept Network" = "cnetplot",
                              "UpSet Plot" = "upsetplot",
-                             "GSEA Plot 2" = "gseaplot2"
+                             "GSEA Plot 2" = "gseaplot2",
+                             "Chord Diagram" = "chord"
                            ),
                            "enrichr" = c(
                              "Bar Plot" = "barplot",
@@ -37783,9 +39714,10 @@ get_legend_grid_layout <- function(n_items) {
             all_genes <- all_genes[!is.na(all_genes) & all_genes != ""]
             full_gene_universe <- unique(all_genes)
             
-            # Check for p-value and fold change columns
+            # Check for p-value, fold change, and t-statistic columns
             pvalues <- NULL
             fold_changes <- NULL
+            tstats <- NULL
             analysis_type <- "ORA"
             
             if (!is.null(input$proteomics_manual_pvalue_column) &&
@@ -37803,9 +39735,17 @@ get_legend_grid_layout <- function(n_items) {
               fold_changes <- fold_changes[!is.na(all_genes) & all_genes != ""]
               fold_changes <- fold_changes[!duplicated(all_genes)]
             }
+
+            if (!is.null(input$proteomics_manual_stat_column) &&
+                input$proteomics_manual_stat_column != "" &&
+                input$proteomics_manual_stat_column %in% colnames(data)) {
+              tstats <- as.numeric(data[[input$proteomics_manual_stat_column]])
+              tstats <- tstats[!is.na(all_genes) & all_genes != ""]
+              tstats <- tstats[!duplicated(all_genes)]
+            }
             
-            # Determine analysis type
-            if (!is.null(pvalues) && !is.null(fold_changes)) {
+            # Determine analysis type (t-stat alone is sufficient for GSEA ranking)
+            if ((!is.null(pvalues) && !is.null(fold_changes)) || !is.null(tstats)) {
               analysis_type <- "GSEA"
             }
             
@@ -37813,6 +39753,7 @@ get_legend_grid_layout <- function(n_items) {
             genes <- full_gene_universe
             filtered_pvalues <- pvalues
             filtered_fold_changes <- fold_changes
+            filtered_tstats <- tstats
             
             if (analysis_type == "GSEA" && 
                 !is.null(input$proteomics_manual_apply_filters) &&
@@ -37833,16 +39774,19 @@ get_legend_grid_layout <- function(n_items) {
                 genes <- full_gene_universe[filter_idx]
                 filtered_pvalues <- pvalues[filter_idx]
                 filtered_fold_changes <- fold_changes[filter_idx]
+                filtered_tstats <- if (!is.null(tstats)) tstats[filter_idx] else NULL
               } else {
                 genes <- character(0)
                 filtered_pvalues <- numeric(0)
                 filtered_fold_changes <- numeric(0)
+                filtered_tstats <- if (!is.null(tstats)) numeric(0) else NULL
               }
             }
             
             # Store both filtered genes and full universe
             pvalues <- filtered_pvalues
             fold_changes <- filtered_fold_changes
+            tstats <- filtered_tstats
             
           } else if (identical(input$proteomics_manual_filetype, "tab")) {
             # Read as tab-delimited
@@ -37859,9 +39803,10 @@ get_legend_grid_layout <- function(n_items) {
             all_genes <- all_genes[!is.na(all_genes) & all_genes != ""]
             full_gene_universe <- unique(all_genes)
             
-            # Check for p-value and fold change columns
+            # Check for p-value, fold change, and t-statistic columns
             pvalues <- NULL
             fold_changes <- NULL
+            tstats <- NULL
             analysis_type <- "ORA"
             
             if (!is.null(input$proteomics_manual_pvalue_column) &&
@@ -37879,9 +39824,17 @@ get_legend_grid_layout <- function(n_items) {
               fold_changes <- fold_changes[!is.na(all_genes) & all_genes != ""]
               fold_changes <- fold_changes[!duplicated(all_genes)]
             }
+
+            if (!is.null(input$proteomics_manual_stat_column) &&
+                input$proteomics_manual_stat_column != "" &&
+                input$proteomics_manual_stat_column %in% colnames(data)) {
+              tstats <- as.numeric(data[[input$proteomics_manual_stat_column]])
+              tstats <- tstats[!is.na(all_genes) & all_genes != ""]
+              tstats <- tstats[!duplicated(all_genes)]
+            }
             
-            # Determine analysis type
-            if (!is.null(pvalues) && !is.null(fold_changes)) {
+            # Determine analysis type (t-stat alone is sufficient for GSEA ranking)
+            if ((!is.null(pvalues) && !is.null(fold_changes)) || !is.null(tstats)) {
               analysis_type <- "GSEA"
             }
             
@@ -37889,6 +39842,7 @@ get_legend_grid_layout <- function(n_items) {
             genes <- full_gene_universe
             filtered_pvalues <- pvalues
             filtered_fold_changes <- fold_changes
+            filtered_tstats <- tstats
             
             if (analysis_type == "GSEA" && 
                 !is.null(input$proteomics_manual_apply_filters) &&
@@ -37909,16 +39863,19 @@ get_legend_grid_layout <- function(n_items) {
                 genes <- full_gene_universe[filter_idx]
                 filtered_pvalues <- pvalues[filter_idx]
                 filtered_fold_changes <- fold_changes[filter_idx]
+                filtered_tstats <- if (!is.null(tstats)) tstats[filter_idx] else NULL
               } else {
                 genes <- character(0)
                 filtered_pvalues <- numeric(0)
                 filtered_fold_changes <- numeric(0)
+                filtered_tstats <- if (!is.null(tstats)) numeric(0) else NULL
               }
             }
             
             # Store both filtered genes and full universe
             pvalues <- filtered_pvalues
             fold_changes <- filtered_fold_changes
+            tstats <- filtered_tstats
           }
           
           if (length(genes) == 0) {
@@ -37940,6 +39897,9 @@ get_legend_grid_layout <- function(n_items) {
                 "Found %d genes/proteins (filtered from %d total; p-value ≤ %.3g, |log2FC| ≥ %.2f). Full universe available for background. %s",
                 length(genes), length(full_gene_universe), pval_cutoff, fc_cutoff, validation$message
               )
+            } else if (exists("tstats") && !is.null(tstats)) {
+              message_text <- sprintf("Found %d genes/proteins with t-statistics (GSEA compatible). %s",
+                                      length(genes), validation$message)
             } else {
               message_text <- sprintf("Found %d genes/proteins with p-values and fold changes (GSEA compatible). %s",
                                       length(genes), validation$message)
@@ -37952,6 +39912,7 @@ get_legend_grid_layout <- function(n_items) {
           return(list(genes = genes,
                       pvalues = pvalues,
                       fold_changes = fold_changes,
+                      tstats = if (exists("tstats")) tstats else NULL,
                       full_gene_universe = if(exists("full_gene_universe")) full_gene_universe else NULL,
                       analysis_type = analysis_type,
                       message = message_text))
@@ -38207,6 +40168,7 @@ get_legend_grid_layout <- function(n_items) {
           ggplot(top_results, aes(x = reorder(term_label, -log10(p_value)), y = -log10(p_value), fill = source)) +
             geom_bar(stat = "identity") +
             coord_flip() +
+            scale_x_discrete(labels = wrap_enrichment_labels) +
             labs(
               title = "Top Enriched Terms",
               x = "Term",
@@ -38278,7 +40240,8 @@ get_legend_grid_layout <- function(n_items) {
           # Barplot visualization
           clusterProfiler::barplot(result_to_plot,
                                    showCategory = as.numeric(input$proteomics_top_terms),
-                                   title = paste("Top Enriched Terms"))
+                                   title = paste("Top Enriched Terms")) +
+            scale_y_discrete(labels = wrap_enrichment_labels)
           
         } else if (identical(input$proteomics_plot_type, "enrichmap")) {
           # Enrichment map (network of similar terms)
@@ -38395,7 +40358,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_df_check <- as.data.frame(proteomics_values$enrichment_results)
               is_gsea <- "NES" %in% colnames(enrichment_df_check)
               requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
               should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
               
               if (should_use_fold_change) {
@@ -38430,25 +40393,42 @@ get_legend_grid_layout <- function(n_items) {
           plot.new()
           text(0.5, 0.6, "Pathway visualization files are being generated...", cex = 1.5)
           text(0.5, 0.5, paste("Top pathway:", top_pathway), cex = 1.2)
-          text(0.5, 0.4, "Check the app's working directory for pathway images", cex = 1.2)
+          text(0.5, 0.4, "Use View Pathway above to render it (saved to a temp folder, cleaned on exit)", cex = 1.2)
           
-          # Generate pathview in background
+          # Generate pathview in background (rendered files land in the session
+          # temp dir; pathview renders into getwd() regardless of kegg.dir).
+          # setwd/restore wraps the whole try() so the working directory is
+          # always restored -- on.exit() is unreliable inside try().
+          pv_bg_old_wd <- getwd()
+          setwd(get_pathview_dir())
           try({
             # Load pathview data including bods object
-            # pathview may look for `bods` via normal symbol lookup, so load into .GlobalEnv
+            # pathview may look for `bods` via normal symbol lookup, so load into .GlobalEnv.
+            # The app uses pathview::pathview (namespace loaded, not attached), so bare
+            # data() calls inside pathview cannot find its datasets otherwise.
             tryCatch({
               utils::data("bods", package = "pathview", envir = .GlobalEnv)
             }, error = function(e) {
               cat("Note: Could not load pathview::bods dataset:", e$message, "\n")
-            }, res = UI_PLOT_RES)
+            })
 
             # Graphviz mode relies on KEGGgraph helpers/data (e.g., KEGGEdgeSubtype)
+            # plus pathview compound datasets (rn.list/cpd.names/kegg.met) used by
+            # cpdkegg2name() to label compound nodes; without them Graphviz fails
+            # with "object 'rn.list' not found" while KEGG Native works.
             if (!is.null(input$pathview_engine) && input$pathview_engine == "graphviz") {
               tryCatch({
                 utils::data("KEGGEdgeSubtype", package = "KEGGgraph", envir = .GlobalEnv)
               }, error = function(e) {
                 cat("Note: Could not load KEGGgraph::KEGGEdgeSubtype dataset:", e$message, "\n")
-              }, res = UI_PLOT_RES)
+              })
+              for (pv_ds in c("rn.list", "cpd.names", "kegg.met", "gene.idtype.list", "cpd.accs")) {
+                tryCatch({
+                  utils::data(list = pv_ds, package = "pathview", envir = .GlobalEnv)
+                }, error = function(e) {
+                  cat("Note: Could not load pathview::", pv_ds, " dataset:", e$message, "\n", sep = "")
+                })
+              }
             }
             
             # Reuse safe wrapper in proteomics context with enhanced cleaning
@@ -38464,7 +40444,7 @@ get_legend_grid_layout <- function(n_items) {
                   x$na.rm <- NULL
                 }
                 return(x)
-              }, res = UI_PLOT_RES)
+              })
               do.call(pathview::pathview, args)
             }
             safe_pathview(
@@ -38473,10 +40453,12 @@ get_legend_grid_layout <- function(n_items) {
               species = gsub("hsapiens", "hsa", input$proteomics_organism),
               kegg.native = (input$pathview_engine == "kegg_native"),
               same.layer = FALSE,
+              kegg.dir = get_pathview_dir(),
               split.group = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_split_group) else NULL,
               expand.node = if (identical(input$pathview_engine, "graphviz")) isTRUE(input$graphviz_expand_node) else NULL
             )
           }, silent = TRUE)
+          setwd(pv_bg_old_wd)
         }, res = UI_PLOT_RES)
       }
       
@@ -38546,6 +40528,7 @@ get_legend_grid_layout <- function(n_items) {
               
               ggplot(barplot_data, aes(x = StatValue, y = reorder(Term, StatValue))) +
                 geom_bar(stat = "identity", fill = "steelblue") +
+                scale_y_discrete(labels = wrap_enrichment_labels) +
                 labs(title = paste("Top Enriched GO Terms -",
                                    input$proteomics_topgo_ontology),
                      subtitle = paste("Statistic:", used_statistic),
@@ -38576,16 +40559,29 @@ get_legend_grid_layout <- function(n_items) {
         }, res = UI_PLOT_RES)
       }
       
-      # Record and cache the generated plot for topGO
+      # Record and cache the generated plot for topGO. NOTE: this observe has no
+      # `cache_key` in scope (that name belongs to the main renderPlot above), so
+      # build a dedicated key — storing under a stale key would poison the shared
+      # plot cache and replay this plot for unrelated configurations.
       tryCatch({
         recorded_plot <- recordPlot()
         if (!is.null(recorded_plot)) {
-          store_proteomics_plot_in_cache(cache_key, recorded_plot)
+          topgo_cache_key <- create_proteomics_plot_cache_key(
+            tool = "topgo",
+            plot_type = paste0("topgo_", input$proteomics_plot_type %||% "barplot"),
+            enrichment_results = proteomics_values$enrichment_results,
+            num_terms = 20,
+            fold_change_data = NULL,
+            color_theme = input$proteomics_plot_color %||% "default",
+            highlight_terms = NULL,
+            extra = get_enrichment_plot_cache_extra(input$proteomics_plot_type, for_download = FALSE)
+          )
+          store_proteomics_plot_in_cache(topgo_cache_key, recorded_plot)
           cat("Successfully cached topGO plot\n")
         }
       }, error = function(e) {
         cat("Failed to cache topGO plot:", e$message, "\n")
-      }, res = UI_PLOT_RES)
+      })
     }
   })
   
@@ -38700,13 +40696,13 @@ get_legend_grid_layout <- function(n_items) {
       # Check if we have enrichment results
       if (!is.null(proteomics_values$enrichment_results)) {
         tryCatch({
-          # Get available terms from results - handle both g:Profiler and ClusterProfiler formats
+          # Get available terms from results - handle both g:Profiler and ClusterProfiler formats.
+          # NOTE: use the safe accessor -- a stale S4 object from another tool
+          # throws on `$result` instead of returning NULL (see helper above).
           results_df <- NULL
-          
-          if (!is.null(proteomics_values$enrichment_results$result)) {
-            # g:Profiler format
-            results_df <- proteomics_values$enrichment_results$result
-          } else if (inherits(proteomics_values$enrichment_results, "enrichResult")) {
+
+          results_df <- safe_gprofiler_result_df(proteomics_values$enrichment_results)
+          if (is.null(results_df) && inherits(proteomics_values$enrichment_results, "enrichResult")) {
             # ClusterProfiler format
             results_df <- as.data.frame(proteomics_values$enrichment_results)
           }
@@ -39193,6 +41189,8 @@ get_legend_grid_layout <- function(n_items) {
       }
       
       # Create cache key for download plot (different from display plot due to different dimensions/DPI)
+      # NOTE: every input that changes the file bytes must join the key or every
+      # download after the first re-serves the first file (stale-download bug).
       download_cache_key <- create_proteomics_plot_cache_key(
         tool = paste0(input$proteomics_tool, "_download"),
         plot_type = input$proteomics_plot_type,
@@ -39200,7 +41198,8 @@ get_legend_grid_layout <- function(n_items) {
         num_terms = num_terms,
         fold_change_data = proteomics_values$fold_change_data,
         color_theme = paste0(input$proteomics_plot_color %||% "default", "_dpi", dpi),
-        highlight_terms = proteomics_values$highlight_terms
+        highlight_terms = proteomics_values$highlight_terms,
+        extra = get_enrichment_plot_cache_extra(input$proteomics_plot_type, for_download = TRUE)
       )
       
       # Check if we have this download in cache
@@ -39246,14 +41245,14 @@ get_legend_grid_layout <- function(n_items) {
             top_n <- min(as.numeric(input$proteomics_top_terms %||% 15), nrow(gost_results))
             top_results <- gost_results[order(gost_results$p_value)[1:top_n], ]
             
-            # Create term labels
+            # Create term labels (long names wrap via scale_x_discrete below)
             top_results$term_label <- paste(top_results$term_id, top_results$term_name, sep = ": ")
-            top_results$term_label <- substr(top_results$term_label, 1, 60)
             
             # Create bar plot - EXACTLY matching the backup implementation
             p <- ggplot(top_results, aes(x = reorder(term_label, -log10(p_value)), y = -log10(p_value), fill = source)) +
               geom_bar(stat = "identity") +
               coord_flip() +
+              scale_x_discrete(labels = wrap_enrichment_labels) +
               labs(
                 title = "Top Enriched Terms",
                 x = "Term",
@@ -39353,6 +41352,7 @@ get_legend_grid_layout <- function(n_items) {
                   p <- ggplot(enrichment_df, aes(x = NES, y = reorder(Description, abs(NES)), fill = neg_log_padj)) +
                     geom_bar(stat = "identity") +
                     scale_fill_gradient(low = "lightblue", high = "darkred", name = "-log10(P.adj)") +
+                    scale_y_discrete(labels = wrap_enrichment_labels) +
                     labs(title = "GSEA Enrichment Analysis", x = "Normalized Enrichment Score (NES)", y = y_label) +
                     theme_bw() +
                     theme(
@@ -39372,6 +41372,7 @@ get_legend_grid_layout <- function(n_items) {
                   # For ORA results, use enrichplot::barplot
                   p <- barplot(enrichment_results, showCategory = num_terms) +
                     scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
+                    scale_y_discrete(labels = wrap_enrichment_labels) +
                     theme(
                       # Make all text black and bold
                       axis.text.x = element_text(size = axis_title_size, color = "black", face = "bold"),
@@ -39415,6 +41416,7 @@ get_legend_grid_layout <- function(n_items) {
                   p <- ggplot(enrichment_df, aes(x = NES, y = reorder(Description, abs(NES)), fill = neg_log_padj)) +
                     geom_bar(stat = "identity") +
                     scale_fill_gradient(low = "lightblue", high = "darkred", name = "-log10(P.adj)") +
+                    scale_y_discrete(labels = wrap_enrichment_labels) +
                     labs(title = "GSEA Enrichment Analysis", x = "Normalized Enrichment Score (NES)", y = y_label) +
                     theme_bw() +
                     theme(
@@ -39446,6 +41448,7 @@ get_legend_grid_layout <- function(n_items) {
                   
                   p <- ggplot(enrichment_df, aes(x = Count, y = reorder(Description, Count))) +
                     geom_bar(stat = "identity", fill = "steelblue") +
+                    scale_y_discrete(labels = wrap_enrichment_labels) +
                     labs(title = "Enrichment Analysis", x = "Gene Count", y = y_label) +
                     theme_bw() +
                     theme(
@@ -39463,6 +41466,7 @@ get_legend_grid_layout <- function(n_items) {
                   # Fallback for other formats
                   p <- ggplot(enrichment_df, aes(x = Count, y = reorder(Description, Count))) +
                     geom_bar(stat = "identity", fill = "steelblue") +
+                    scale_y_discrete(labels = wrap_enrichment_labels) +
                     labs(title = "Enrichment Analysis", x = "Gene Count", y = "Pathway") +
                     theme_bw() +
                     theme(
@@ -39494,7 +41498,7 @@ get_legend_grid_layout <- function(n_items) {
             
             # For GSEA, only use fold change data if the ranking metric requires fold change
             requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
             should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
             
             if (should_use_fold_change) {
@@ -39550,7 +41554,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_df_check <- as.data.frame(enrichment_results)
               is_gsea <- "NES" %in% colnames(enrichment_df_check)
               requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
               should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
               
               # For GSEA, use fold change data only if the ranking metric requires it
@@ -39600,7 +41604,7 @@ get_legend_grid_layout <- function(n_items) {
               enrichment_df_check <- as.data.frame(enrichment_results)
               is_gsea <- "NES" %in% colnames(enrichment_df_check)
               requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+                input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
               should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
               
               if(should_use_fold_change) {
@@ -39659,7 +41663,7 @@ get_legend_grid_layout <- function(n_items) {
             enrichment_df_check <- as.data.frame(enrichment_results)
             is_gsea <- "NES" %in% colnames(enrichment_df_check)
             requires_fold_change <- is_gsea && !is.null(input$proteomics_gsea_ranking_metric) &&
-              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval")
+              input$proteomics_gsea_ranking_metric %in% c("log2fc", "signed_pval", "tstat")
             should_use_fold_change <- requires_fold_change && !is.null(proteomics_values$fold_change_data)
             
             if (should_use_fold_change) {
@@ -39670,26 +41674,62 @@ get_legend_grid_layout <- function(n_items) {
             }
             ggsave(file, plot = p, width = 12, height = 10, dpi = dpi, device = resolve_ggsave_device(image_format))
           }
-          else if (identical(input$proteomics_plot_type, "upsetplot")) {
-            # Generate UpSet plot for ClusterProfiler results - EXACTLY matching UI
+          else if (identical(input$proteomics_plot_type, "chord")) {
+            # Chord diagram download - EXACTLY matching UI (base graphics, not ggsave).
+            if (!requireNamespace("circlize", quietly = TRUE)) {
+              png(file, width = 12 * dpi, height = 10 * dpi, res = dpi)
+              plot.new()
+              text(0.5, 0.5, "Chord diagram requires the 'circlize' package.", cex = 1.2, adj = 0.5)
+              dev.off()
+              return()
+            }
+            chord_data <- build_chord_pairs(enrichment_results, num_terms,
+                                              max_genes = input$proteomics_chord_max_genes %||% 10,
+                                              color_mode = input$proteomics_chord_colors %||% "single",
+                                              term_color = input$proteomics_chord_term_color %||% "#4DAF4A",
+                                              palette = input$proteomics_chord_palette %||% "rainbow",
+                                              label_top_genes = chord_label_top_n(input$proteomics_chord_gene_labels))
+            if (is.null(chord_data)) {
+              png(file, width = 12 * dpi, height = 10 * dpi, res = dpi)
+              plot.new()
+              text(0.5, 0.5, "No term-gene links available for chord diagram.", cex = 1.2, adj = 0.5)
+              dev.off()
+              return()
+            }
+            if (identical(image_format, "pdf")) {
+              pdf(file, width = 12, height = 10)
+            } else {
+              png(file, width = 12 * dpi, height = 10 * dpi, res = dpi)
+            }
             tryCatch({
-              # For upsetplot to show expression box plots, we need to use the original enrichment results
-              # before any ID mapping modifications, as upsetplot relies on the internal GSEA structure
-              
-              # Check if we have the original enrichment results stored somewhere
-              # If the enrichment_results has been modified for display, we need the original version
-              if (exists("enrichment_results_original") && !is.null(enrichment_results_original)) {
-                # Use the original enrichment results with ENTREZ IDs and embedded expression data
-                p <- enrichplot::upsetplot(enrichment_results_original, n = min(num_terms, 20))
-                ggsave(file, plot = p, width = 12, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
-                return()
-              } else {
-                # If no original version is available, use the current enrichment_results
-                # This should work if the enrichment_results hasn't been modified
-                p <- enrichplot::upsetplot(enrichment_results, n = min(num_terms, 20))
-                ggsave(file, plot = p, width = 12, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
-                return()
-              }
+              circlize::circos.clear()
+              draw_chord_diagram(chord_data$pairs, chord_data$gene_colors,
+                                 label_facing = input$proteomics_chord_labels %||% "radial",
+                                 term_cex = input$proteomics_chord_term_cex %||% 0.9,
+                                 gene_cex = input$proteomics_chord_gene_cex %||% 0.7,
+                                 rotation = input$proteomics_chord_rotation %||% 90,
+                                 labeled_genes = chord_data$labeled_genes)
+            }, error = function(e) {
+              plot.new()
+              text(0.5, 0.5, paste("Error generating chord diagram:\n", e$message), cex = 1, adj = 0.5)
+            }, finally = {
+              tryCatch(circlize::circos.clear(), error = function(e2) NULL)
+              dev.off()
+            })
+          }
+          else if (identical(input$proteomics_plot_type, "upsetplot")) {
+            # Generate UpSet plot for ClusterProfiler results - EXACTLY matching UI.
+            # Boxplots on top require the pre-ID-mapping gseaResult (same object
+            # the display uses); the mapped copy draws an empty top panel.
+            upset_source <- enrichment_results
+            if (inherits(enrichment_results, "gseaResult") &&
+                !is.null(proteomics_values$enrichment_results_original)) {
+              upset_source <- proteomics_values$enrichment_results_original
+            }
+            tryCatch({
+              p <- enrichplot::upsetplot(upset_source, n = min(num_terms, 20))
+              ggsave(file, plot = p, width = 12, height = 8, dpi = dpi, device = resolve_ggsave_device(image_format))
+              return()
             }, error = function(e) {
               # Fallback to a custom UpSet plot if enrichplot version doesn't support it
               tryCatch({
@@ -39999,6 +42039,7 @@ get_legend_grid_layout <- function(n_items) {
               p <- ggplot(top_results, aes(x = -log10(Adjusted.P.value),
                                            y = reorder(Term, -log10(Adjusted.P.value)))) +
                 geom_bar(stat = "identity", fill = "steelblue") +
+                scale_y_discrete(labels = wrap_enrichment_labels) +
                 labs(title = paste("Enrichr Bar Plot:", db_name),
                      x = "-log10(Adjusted P-value)",
                      y = "Term") +
@@ -40082,6 +42123,7 @@ get_legend_grid_layout <- function(n_items) {
               p <- ggplot(top_results, aes(x = -log10(Adjusted.P.value),
                                            y = reorder(Term, -log10(Adjusted.P.value)))) +
                 geom_bar(stat = "identity", fill = "steelblue") +
+                scale_y_discrete(labels = wrap_enrichment_labels) +
                 labs(title = paste("Enrichr Bar Plot:", db_name),
                      x = "-log10(Adjusted P-value)",
                      y = "Term") +
@@ -40165,6 +42207,7 @@ get_legend_grid_layout <- function(n_items) {
               
               p <- ggplot(barplot_data, aes(x = StatValue, y = reorder(Term, StatValue))) +
                 geom_bar(stat = "identity", fill = "steelblue") +
+                scale_y_discrete(labels = wrap_enrichment_labels) +
                 labs(title = paste("Top GO Terms -", input$proteomics_topgo_ontology),
                      subtitle = paste("Algorithm:", input$proteomics_topgo_algorithm, "| Statistic:", used_statistic),
                      x = y_label,
@@ -41974,12 +44017,8 @@ get_legend_grid_layout <- function(n_items) {
             
             if (length(groups) > 1) {
               # Multiple groups - create separate pie charts with consistent colors
-              if (!requireNamespace("gridExtra", quietly = TRUE)) {
-                install.packages("gridExtra")
-              }
-              if (!requireNamespace("cowplot", quietly = TRUE)) {
-                install.packages("cowplot")
-              }
+              require_pkg_or_fail("gridExtra", bioc = FALSE, "multi-panel plots")
+              require_pkg_or_fail("cowplot", bioc = FALSE, "multi-panel plots")
               
               # First pass: collect all categories across all groups to ensure consistent colors
               all_categories_in_pies <- unique(unlist(lapply(groups, function(group) {
@@ -46587,12 +48626,8 @@ get_legend_grid_layout <- function(n_items) {
           
           if(length(groups) > 1) {
             # Multiple groups - extract a shared legend from the first plot, then hide all individual legends
-            if (!requireNamespace("gridExtra", quietly = TRUE)) {
-              install.packages("gridExtra")
-            }
-            if (!requireNamespace("cowplot", quietly = TRUE)) {
-              install.packages("cowplot")
-            }
+            require_pkg_or_fail("gridExtra", bioc = FALSE, "multi-panel plots")
+            require_pkg_or_fail("cowplot", bioc = FALSE, "multi-panel plots")
             
             # Create all pies without legends
             pie_plots <- list()
@@ -46794,9 +48829,7 @@ get_legend_grid_layout <- function(n_items) {
           })
         }
         else if (plot_type_var == "heatmap") {
-          if (!requireNamespace("reshape2", quietly = TRUE)) {
-            install.packages("reshape2")
-          }
+          require_pkg_or_fail("reshape2", bioc = FALSE, "glycan heatmaps")
           library(reshape2)
           
           # Create heatmap showing glycan type distribution across groups
@@ -46872,9 +48905,7 @@ get_legend_grid_layout <- function(n_items) {
         }
         else if (plot_type_var == "radar") {
           # Create a superimposed radar chart using the fmsb package
-          if (!requireNamespace("fmsb", quietly = TRUE)) {
-            install.packages("fmsb")
-          }
+          require_pkg_or_fail("fmsb", bioc = FALSE, "radar charts")
           
           groups <- unique(all_distributions$Group)
           categories <- unique(all_distributions$Category)
@@ -47461,9 +49492,7 @@ get_legend_grid_layout <- function(n_items) {
             })
             
             # Ensure gridExtra is available
-            if (!requireNamespace("gridExtra", quietly = TRUE)) {
-              install.packages("gridExtra")
-            }
+            require_pkg_or_fail("gridExtra", bioc = FALSE, "combined plots")
             
             # Combine plots
             gridExtra::grid.arrange(
@@ -47862,6 +49891,20 @@ get_legend_grid_layout <- function(n_items) {
             use_ttest_for_all <- any(group_counts < 5)
             test_method_name <- ifelse(use_ttest_for_all, "t-test", "Wilcoxon test")
             
+            # Collect every type x pair test first: BH adjustment needs the
+            # full family (raw p < 0.05 stars across many types would be
+            # mostly false discoveries). Row-list accumulation: single bind
+            # after the loops (incremental rbind is O(n^2)).
+            all_test_rows <- list()
+            all_test_i <- 0L
+            all_tests <- data.frame(
+              Type = character(),
+              Group1 = character(),
+              Group2 = character(),
+              PValue = numeric(),
+              stringsAsFactors = FALSE
+            )
+            
             # Calculate significance for each type across groups
             for (type in unique(all_sample_percentages$Type)) {
               type_data <- subset(all_sample_percentages, Type == type)
@@ -47887,26 +49930,44 @@ get_legend_grid_layout <- function(n_items) {
                   test_result <- wilcox.test(group1_data, group2_data)
                 }
                 
-                p_value <- test_result$p.value
+                all_test_i <- all_test_i + 1L
+                all_test_rows[[all_test_i]] <- data.frame(
+                  Type = type,
+                  Group1 = group1,
+                  Group2 = group2,
+                  PValue = test_result$p.value,
+                  stringsAsFactors = FALSE
+                )
+              }
+            }
+            
+            # BH-adjust across the whole family, then mark FDR-significant hits
+            if (length(all_test_rows) > 0) {
+              all_tests <- do.call(rbind, all_test_rows)
+            }
+            if (nrow(all_tests) > 0) {
+              all_tests$AdjPValue <- p.adjust(all_tests$PValue, method = "BH")
+              
+              for (r in seq_len(nrow(all_tests))) {
+                p_value <- all_tests$AdjPValue[r]
+                if (is.na(p_value) || p_value >= 0.05) next
                 
-                # Add significance marker if significant
-                if (p_value < 0.05) {
-                  sig_star <- if (p_value < 0.001) "***" else if (p_value < 0.01) "**" else "*"
-                  
-                  # Get max value for positioning
-                  type_max <- max(plot_data$Percentage[plot_data$Type == type] +
-                                    plot_data$SD[plot_data$Type == type], na.rm = TRUE)
-                  
-                  sig_data <- rbind(sig_data, data.frame(
-                    Type = type,
-                    Group1 = group1,
-                    Group2 = group2,
-                    Y = type_max * 1.1,
-                    Label = sig_star,
-                    TestUsed = test_method_name,
-                    stringsAsFactors = FALSE
-                  ))
-                }
+                type <- all_tests$Type[r]
+                sig_star <- if (p_value < 0.001) "***" else if (p_value < 0.01) "**" else "*"
+                
+                # Get max value for positioning
+                type_max <- max(plot_data$Percentage[plot_data$Type == type] +
+                                  plot_data$SD[plot_data$Type == type], na.rm = TRUE)
+                
+                sig_data <- rbind(sig_data, data.frame(
+                  Type = type,
+                  Group1 = all_tests$Group1[r],
+                  Group2 = all_tests$Group2[r],
+                  Y = type_max * 1.1,
+                  Label = sig_star,
+                  TestUsed = test_method_name,
+                  stringsAsFactors = FALSE
+                ))
               }
             }
             
@@ -48265,10 +50326,8 @@ get_legend_grid_layout <- function(n_items) {
           # Create a radar chart comparing glycan types across groups
           
           # First make sure fmsb package is available
-          if (!requireNamespace("fmsb", quietly = TRUE)) {
-            install.packages("fmsb")
-            library(fmsb)
-          }
+          require_pkg_or_fail("fmsb", bioc = FALSE, "radar charts")
+          library(fmsb)
           
           # Reshape data for radar chart - ensure we use the Percentage column
           if (!"Percentage" %in% colnames(all_type_summaries)) {
@@ -48595,7 +50654,11 @@ get_legend_grid_layout <- function(n_items) {
         
         # Add significance testing if requested
         if (input$glyco_show_significance_glycan && length(values$unique_groups) >= 2) {
-          # Perform significance testing for each glycan
+          # Perform significance testing for each glycan.
+          # Row-list accumulation with a single bind (incremental rbind is
+          # O(n^2) over glycans x pairs).
+          sig_result_rows <- list()
+          sig_result_i <- 0L
           sig_results <- data.frame()
           
           # Determine test method based on sample sizes
@@ -48636,23 +50699,30 @@ get_legend_grid_layout <- function(n_items) {
                   }
                   
                   # Store result
-                  sig_results <- rbind(sig_results, data.frame(
+                  sig_result_i <- sig_result_i + 1L
+                  sig_result_rows[[sig_result_i]] <- data.frame(
                     Glycan = glycan_id,
                     Group1 = group1,
                     Group2 = group2,
                     PValue = p_value,
                     TestUsed = test_method_name,
                     stringsAsFactors = FALSE
-                  ))
+                  )
                 }
               }
             }
           }
           
-          # Add significance labels
-          sig_results$Label <- ifelse(sig_results$PValue < 0.001, "***",
-                                      ifelse(sig_results$PValue < 0.01, "**",
-                                             ifelse(sig_results$PValue < 0.05, "*", "ns")))
+          # Add significance labels from BH-adjusted p-values: dozens of
+          # glycan x pair tests run here, so raw p < 0.05 stars would be
+          # mostly false discoveries
+          if (length(sig_result_rows) > 0) {
+            sig_results <- do.call(rbind, sig_result_rows)
+          }
+          sig_results$AdjPValue <- p.adjust(sig_results$PValue, method = "BH")
+          sig_results$Label <- ifelse(sig_results$AdjPValue < 0.001, "***",
+                                       ifelse(sig_results$AdjPValue < 0.01, "**",
+                                              ifelse(sig_results$AdjPValue < 0.05, "*", "ns")))
           
           # Store significance results for summary
           glyco_values$sig_results_glycan <- sig_results
@@ -49278,11 +51348,23 @@ get_legend_grid_layout <- function(n_items) {
         batch_column_options <- meta_columns[tolower(meta_columns) != "sampleid"]
       }
       
+      # Mapping-modal design role wins when the user declared a batch column
+      declared_batch <- tryCatch(values$design_roles$batch, error = function(e) NULL)
+      if (!is.null(declared_batch) && nzchar(as.character(declared_batch)[1]) &&
+          as.character(declared_batch)[1] %in% batch_column_options) {
+        batch_selected <- as.character(declared_batch)[1]
+      } else if ("batch" %in% tolower(batch_column_options)) {
+        batch_selected <- batch_column_options[grep("batch", tolower(batch_column_options))[1]]
+      } else if (length(batch_column_options) > 0) {
+        batch_selected <- batch_column_options[1]
+      } else {
+        batch_selected <- NULL
+      }
+
       # Update all metadata-related dropdowns with the column names
       updateSelectInput(session, "batch_column",
                         choices = batch_column_options,
-                        selected = if("batch" %in% tolower(batch_column_options))
-                          batch_column_options[grep("batch", tolower(batch_column_options))[1]] else if(length(batch_column_options) > 0) batch_column_options[1] else NULL)
+                        selected = batch_selected)
       
       updateSelectInput(session, "internal_standards_column",
                         choices = meta_columns,
@@ -49415,7 +51497,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Identify QC samples based on selected method
       method <- input$qc_identification_method %||% "auto"
-      pattern <- input$qc_sample_pattern %||% "QC|[Pp]ool|[Pp]ooled|NIST|[Bb]lank"
+      pattern <- input$qc_sample_pattern %||% "(^|[^A-Za-z0-9])(qc|pool|pooled|blank|nist)([^A-Za-z]|$)"
       
       if (method == "metadata" && !is.null(values$metadata) && !is.null(input$qc_sample_column)) {
         metadata_col <- values$metadata[[input$qc_sample_column]]
@@ -49547,6 +51629,19 @@ get_legend_grid_layout <- function(n_items) {
         )
       ),
       tags$hr(style = "margin: 10px 0;"),
+      {
+        qc_names <- values$qc_sample_names %||% character(0)
+        if (length(qc_names) > 0) {
+          shown <- head(qc_names, 10)
+          div(style = "font-size: 12px; color: #555; margin-bottom: 8px; word-break: break-all;",
+              tags$strong("Matched QC samples: "),
+              paste(shown, collapse = ", "),
+              if (length(qc_names) > 10) sprintf(" (+%d more)", length(qc_names) - 10) else NULL)
+        } else {
+          div(style = "font-size: 12px; color: #888; margin-bottom: 8px;",
+              "No QC samples matched yet — check that QC names follow the pattern above.")
+        }
+      },
       if (!qc_sufficient) {
         div(class = "alert alert-warning", style = "margin: 0; padding: 8px;",
             icon("exclamation-triangle"),
@@ -50532,24 +52627,17 @@ get_legend_grid_layout <- function(n_items) {
         return(mat)
       }
       else if (method == "knn") {
-        # Try to load required library
+        # Try to load required library (fall back to row means if unavailable)
         if (!requireNamespace("impute", quietly = TRUE)) {
-          message("Installing impute package for k-nearest neighbors imputation...")
-          if (!requireNamespace("BiocManager", quietly = TRUE)) {
-            install.packages("BiocManager", quiet = TRUE)
-          }
-          BiocManager::install("impute", update = FALSE)
-          if (!requireNamespace("impute", quietly = TRUE)) {
-            warning("Failed to install impute package. Falling back to row means.")
-            # Fall back to mean imputation if package installation fails
-            for (i in 1:nrow(mat)) {
-              na_indices <- which(is.na(mat[i, ]))
-              if (length(na_indices) > 0) {
-                mat[i, na_indices] <- mean(mat[i, -na_indices], na.rm = TRUE)
-              }
+          warning("Package 'impute' is required for k-nearest neighbors imputation. Install it with BiocManager::install('impute'), then retry. Falling back to row means.")
+          # Fall back to mean imputation when the package is unavailable
+          for (i in 1:nrow(mat)) {
+            na_indices <- which(is.na(mat[i, ]))
+            if (length(na_indices) > 0) {
+              mat[i, na_indices] <- mean(mat[i, -na_indices], na.rm = TRUE)
             }
-            return(mat)
           }
+          return(mat)
         }
         
         # Get parameters
@@ -50638,19 +52726,15 @@ get_legend_grid_layout <- function(n_items) {
       else if (method == "mice") {
         # MICE (Multivariate Imputation by Chained Equations)
         if (!requireNamespace("mice", quietly = TRUE)) {
-          message("Installing mice package for multivariate imputation...")
-          install.packages("mice", quiet = TRUE)
-          if (!requireNamespace("mice", quietly = TRUE)) {
-            warning("Failed to install mice package. Falling back to row means.")
-            # Fall back to mean imputation if package installation fails
-            for (i in 1:nrow(mat)) {
-              na_indices <- which(is.na(mat[i, ]))
-              if (length(na_indices) > 0) {
-                mat[i, na_indices] <- mean(mat[i, -na_indices], na.rm = TRUE)
-              }
+          warning("Package 'mice' is required for multivariate imputation. Install it with install.packages('mice'), then retry. Falling back to row means.")
+          # Fall back to mean imputation when the package is unavailable
+          for (i in 1:nrow(mat)) {
+            na_indices <- which(is.na(mat[i, ]))
+            if (length(na_indices) > 0) {
+              mat[i, na_indices] <- mean(mat[i, -na_indices], na.rm = TRUE)
             }
-            return(mat)
           }
+          return(mat)
         }
         
         # MICE works better on transposed matrix for omics data
@@ -50953,12 +53037,13 @@ get_legend_grid_layout <- function(n_items) {
   # Disable bootstrap option for incompatible methods and provide guidance
   observe({
     if (!is.null(input$sig_method) && !is.null(input$bootstrap_enabled)) {
-      incompatible_methods <- c("rots", "limma", "deseq2", "limma_voom")
+      incompatible_methods <- c("rots", "limma", "deseq2", "limma_voom", "lmm")
       method_messages <- c(
         "rots" = "ROTS already includes permutation-based resampling (controlled by the 'B' parameter). Bootstrap analysis has been automatically disabled.",
         "limma" = "Limma analysis does not require bootstrap resampling. Bootstrap analysis has been automatically disabled.",
         "deseq2" = "DESeq2 analysis includes built-in statistical modeling. Bootstrap analysis has been automatically disabled.",
-        "limma_voom" = "Limma-voom analysis includes robust statistical modeling with voom transformation. Bootstrap analysis has been automatically disabled."
+        "limma_voom" = "Limma-voom analysis includes robust statistical modeling with voom transformation. Bootstrap analysis has been automatically disabled.",
+        "lmm" = "Linear mixed-effects analysis already models sample correlation via random effects. Bootstrap analysis has been automatically disabled."
       )
       
       if (input$sig_method %in% incompatible_methods && input$bootstrap_enabled == "yes") {
@@ -50972,7 +53057,7 @@ get_legend_grid_layout <- function(n_items) {
   # Disable bootstrap UI when incompatible methods are selected
   observe({
     if (!is.null(input$sig_method)) {
-      incompatible_methods <- c("rots", "limma", "deseq2", "limma_voom")
+      incompatible_methods <- c("rots", "limma", "deseq2", "limma_voom", "lmm")
       if (input$sig_method %in% incompatible_methods) {
         shinyjs::disable("bootstrap_enabled")
       } else {
@@ -51586,10 +53671,10 @@ get_legend_grid_layout <- function(n_items) {
       
       # Load packages as needed
       if (input$feature_selection_method == "lasso" && !requireNamespace("glmnet", quietly = TRUE)) {
-        install.packages("glmnet")
+        require_pkg_or_fail("glmnet", bioc = FALSE, "LASSO feature selection")
       }
       if (input$feature_selection_method == "rf" && !requireNamespace("randomForest", quietly = TRUE)) {
-        install.packages("randomForest")
+        require_pkg_or_fail("randomForest", bioc = FALSE, "random forest feature selection")
       }
       
       # Initialize mlfs with filtered data
@@ -52036,22 +54121,25 @@ get_legend_grid_layout <- function(n_items) {
       # Optionally scale/center
       if (isTRUE(input$feature_selection_scale)) {
         X <- scale(X)
+        # Reuse TRAINING center/scale for the held-out split. Scaling the test
+        # set independently leaks the test distribution into preprocessing and
+        # evaluates the model on a different scale than it trained on.
+        train_center <- attr(X, "scaled:center")
+        train_scale <- attr(X, "scaled:scale")
         # Convert back to data.frame with proper column names
         X <- as.data.frame(X)
         colnames(X) <- feature_names
         
         # Also scale train/test data if split is enabled
         if (!is.null(values$ml_train_X)) {
-          values$ml_train_X <- scale(values$ml_train_X)
-          values$ml_train_X <- as.data.frame(values$ml_train_X)
+          values$ml_train_X <- as.data.frame(scale(values$ml_train_X, center = train_center, scale = train_scale))
           colnames(values$ml_train_X) <- feature_names
           cat("Scaled train data and updated column names\n")
         }
         if (!is.null(values$ml_test_X)) {
-          values$ml_test_X <- scale(values$ml_test_X)
-          values$ml_test_X <- as.data.frame(values$ml_test_X)
+          values$ml_test_X <- as.data.frame(scale(values$ml_test_X, center = train_center, scale = train_scale))
           colnames(values$ml_test_X) <- feature_names
-          cat("Scaled test data and updated column names\n")
+          cat("Scaled test data with training center/scale and updated column names\n")
         }
       }
       
@@ -52075,10 +54163,8 @@ get_legend_grid_layout <- function(n_items) {
         }
         
         # Load required packages
-        if (!requireNamespace("glmnet", quietly = TRUE)) {
-          install.packages("glmnet")
-          library(glmnet)
-        }
+        require_pkg_or_fail("glmnet", bioc = FALSE, "LASSO feature selection")
+        library(glmnet)
         
         tryCatch({
           # Prepare parameters - Handle alpha autotuning
@@ -53617,8 +55703,8 @@ get_legend_grid_layout <- function(n_items) {
         })
       } else if (identical(input$feature_selection_method, "permutation")) {
         # Permutation Importance using randomForest and iml
-        if (!requireNamespace("iml", quietly = TRUE)) install.packages("iml")
-        if (!requireNamespace("randomForest", quietly = TRUE)) install.packages("randomForest")
+        require_pkg_or_fail("iml", bioc = FALSE, "permutation importance")
+        require_pkg_or_fail("randomForest", bioc = FALSE, "permutation importance")
         
         tryCatch({
           # Get user-configurable parameters or use defaults
@@ -53869,8 +55955,8 @@ get_legend_grid_layout <- function(n_items) {
           # Set up parallel processing if requested
           if (use_parallel && n_cores > 1) {
             # Set up parallel backend for iml package
-            if (!requireNamespace("parallel", quietly = TRUE)) install.packages("parallel")
-            if (!requireNamespace("doParallel", quietly = TRUE)) install.packages("doParallel")
+            require_pkg_or_fail("parallel", bioc = FALSE, "parallel permutation importance")
+            require_pkg_or_fail("doParallel", bioc = FALSE, "parallel permutation importance")
             
             tryCatch({
               library(doParallel)
@@ -54000,8 +56086,8 @@ get_legend_grid_layout <- function(n_items) {
             })
           })
       } else if (identical(input$feature_selection_method, "boruta")) {
-        if (!requireNamespace("Boruta", quietly = TRUE)) install.packages("Boruta")
-        if (!requireNamespace("ranger", quietly = TRUE)) install.packages("ranger")
+        require_pkg_or_fail("Boruta", bioc = FALSE, "Boruta feature selection")
+        require_pkg_or_fail("ranger", bioc = FALSE, "Boruta feature selection")
         
         tryCatch({
           # Extract Boruta parameters from UI
@@ -54532,13 +56618,13 @@ get_legend_grid_layout <- function(n_items) {
         })
       } else if (identical(input$feature_selection_method, "rfe")) {
         # Enhanced Recursive Feature Elimination
-        if (!requireNamespace("caret", quietly = TRUE)) install.packages("caret")
+        require_pkg_or_fail("caret", bioc = FALSE, "recursive feature elimination")
         
         tryCatch({
           # Setup parallel processing if enabled
           if (input$rfe_parallel) {
-            if (!requireNamespace("doParallel", quietly = TRUE)) install.packages("doParallel")
-            if (!requireNamespace("foreach", quietly = TRUE)) install.packages("foreach")
+            require_pkg_or_fail("doParallel", bioc = FALSE, "parallel RFE")
+            require_pkg_or_fail("foreach", bioc = FALSE, "parallel RFE")
             
             # Register parallel backend
             cl <- parallel::makeCluster(input$rfe_n_cores)
@@ -54834,10 +56920,8 @@ get_legend_grid_layout <- function(n_items) {
             return()
           }
           
-          # Auto-install randomForest package if needed
-          if (!requireNamespace("randomForest", quietly = TRUE)) {
-            try(utils::install.packages("randomForest"), silent = TRUE)
-          }
+          # Require randomForest package (fail fast with install instructions)
+          require_pkg_or_fail("randomForest", bioc = FALSE, "RFE with random forest")
           
           # Diagnostics prior to RFE
           cat("[RFE Debug] Samples=", nrow(X), " Features=", ncol(X), "\n", sep = "")
@@ -58180,7 +60264,7 @@ get_legend_grid_layout <- function(n_items) {
       paste0("enhanced_stability_results_", Sys.Date(), ".xlsx")
     },
     content = function(file) {
-      if (!requireNamespace("openxlsx", quietly = TRUE)) install.packages("openxlsx")
+      require_pkg_or_fail("openxlsx", bioc = FALSE, "Excel downloads")
       
       wb <- openxlsx::createWorkbook()
       
@@ -58590,7 +60674,7 @@ get_legend_grid_layout <- function(n_items) {
       paste0("validation_results_", Sys.Date(), ".xlsx")
     },
     content = function(file) {
-      if (!requireNamespace("openxlsx", quietly = TRUE)) install.packages("openxlsx")
+      require_pkg_or_fail("openxlsx", bioc = FALSE, "Excel downloads")
       
       wb <- openxlsx::createWorkbook()
       
@@ -59217,7 +61301,7 @@ get_legend_grid_layout <- function(n_items) {
       paste0("rfe_analysis_results_", Sys.Date(), ".xlsx")
     },
     content = function(file) {
-      if (!requireNamespace("openxlsx", quietly = TRUE)) install.packages("openxlsx")
+      require_pkg_or_fail("openxlsx", bioc = FALSE, "Excel downloads")
       
       wb <- openxlsx::createWorkbook()
       
@@ -60290,38 +62374,7 @@ get_legend_grid_layout <- function(n_items) {
     )
   })
   
-  # Feature count indicator for Distribution Analysis
-  output$distribution_feature_count <- renderUI({
-    req(values$cleaned_molecules)
-    
-    # Get available features based on the selected source
-    available_features <- get_available_feature_names(input$dist_feature_source %||% "all", "All Groups")
-    
-    total_features <- length(values$cleaned_molecules)
-    selected_features <- length(available_features)
-    
-    # Create a visual indicator
-    if (selected_features == total_features) {
-      badge_class <- "badge-secondary"
-      icon_type <- "list"
-    } else if (selected_features == 0) {
-      badge_class <- "badge-danger"
-      icon_type <- "exclamation-triangle"
-    } else {
-      badge_class <- "badge-success"
-      icon_type <- "filter"
-    }
-    
-    tags$span(
-      style = "font-size: 0.9rem;",
-      tags$span(
-        class = paste("badge", badge_class),
-        style = "padding: 8px 12px; border-radius: 20px; font-weight: 500;",
-        icon(icon_type, style = "margin-right: 5px;"),
-        paste(selected_features, "/", total_features)
-      )
-    )
-  })
+  # (Duplicate feature-count indicator removed; single definition above.)
   
   output$diff_feature_set_status <- renderUI({
     input$diff_feature_source
@@ -60911,7 +62964,7 @@ get_legend_grid_layout <- function(n_items) {
       paste0("rfe_analysis_results_", Sys.Date(), ".xlsx")
     },
     content = function(file) {
-      if (!requireNamespace("openxlsx", quietly = TRUE)) install.packages("openxlsx")
+      require_pkg_or_fail("openxlsx", bioc = FALSE, "Excel downloads")
       
       wb <- openxlsx::createWorkbook()
       
@@ -61680,262 +63733,10 @@ get_legend_grid_layout <- function(n_items) {
   })
   
   # Helper to get status text for the selected feature used or not
-  get_feature_set_status <- function(source_input = "all") {
-    if (is.null(source_input)) {
-      return("<b>Using:</b> All Features")
-    }
-    
-    tryCatch({
-      switch(source_input,
-             "all" = "<b>Using:</b> All Features",
-             "pca" = {
-               # Use centralized function to check PCA availability
-               if (is.null(values$cleaned_molecules)) {
-                 return("<b>Using:</b> All Features (Data not loaded)")
-               }
-               
-               feature_indices <- get_feature_indices_by_source("pca", "All Groups")
-               total_features <- length(values$cleaned_molecules)
-               
-               if (length(feature_indices) < total_features && length(feature_indices) > 0) {
-                 paste0("<b>Using:</b> Top ", length(feature_indices), " PCA Features")
-               } else {
-                 "<b>Using:</b> All Features (PCA not available)"
-               }
-             },
-             "ml" = {
-               # Use centralized function to check ML availability
-               if (is.null(values$cleaned_molecules)) {
-                 return("<b>Using:</b> All Features (Data not loaded)")
-               }
-               
-               feature_indices <- get_feature_indices_by_source("ml", "All Groups")
-               total_features <- length(values$cleaned_molecules)
-               
-               if (length(feature_indices) < total_features && length(feature_indices) > 0) {
-                 paste0("<b>Using:</b> ", length(feature_indices), " ML-Selected Features")
-               } else {
-                 "<b>Using:</b> All Features (ML not available)"
-               }
-             },
-             "<b>Using:</b> All Features"
-      )  }, error = function(e) {
-        return("<b>Using:</b> All Features (Error checking status)")
-      })
-  }
+  # (Duplicate diff/intersection/roc/proteomics status outputs removed here; originals kept above.)
   
-  # Render the status box for each tab
-  output$heatmap_feature_set_status <- renderUI({
-    input$heatmap_feature_source
-    input$pca_top_features
-    input$pca_feature_ranking
-    values$pca_top_features
-    values$selected_features  # Add reactive dependency on selected features
-    HTML(get_feature_set_status(input$heatmap_feature_source))
-  })
-  
-  output$distribution_feature_set_status <- renderUI({
-    input$dist_feature_source
-    input$pca_top_features
-    input$pca_feature_ranking
-    values$pca_top_features
-    values$selected_features  # Add reactive dependency on selected features
-    HTML(get_feature_set_status(input$dist_feature_source))
-  })
-  
-  output$distribution_feature_count <- renderUI({
-    req(values$cleaned_molecules)
-    
-    # Get available features based on the selected source
-    available_features <- get_available_feature_names(input$dist_feature_source %||% "all", "All Groups")
-    
-    total_features <- length(values$cleaned_molecules)
-    selected_features <- length(available_features)
-    
-    # Create a visual indicator
-    if (selected_features == total_features) {
-      badge_class <- "badge-secondary"
-      icon_type <- "list"
-    } else if (selected_features == 0) {
-      badge_class <- "badge-danger"
-      icon_type <- "exclamation-triangle"
-    } else {
-      badge_class <- "badge-success"
-      icon_type <- "filter"
-    }
-    
-    tags$span(
-      style = "font-size: 0.9rem;",
-      tags$span(
-        class = paste("badge", badge_class),
-        style = "padding: 8px 12px; border-radius: 20px; font-weight: 500;",
-        icon(icon_type, style = "margin-right: 5px;"),
-        paste(selected_features, "/", total_features)
-      )
-    )
-  })
-  
-  # Feature count indicator for Distribution Analysis
-  output$distribution_feature_count <- renderUI({
-    req(values$cleaned_molecules)
-    
-    # Get available features based on the selected source
-    available_features <- get_available_feature_names(input$dist_feature_source %||% "all", "All Groups")
-    
-    total_features <- length(values$cleaned_molecules)
-    selected_features <- length(available_features)
-    
-    # Create a visual indicator
-    if (selected_features == total_features) {
-      badge_class <- "badge-secondary"
-      icon_type <- "list"
-    } else if (selected_features == 0) {
-      badge_class <- "badge-danger"
-      icon_type <- "exclamation-triangle"
-    } else {
-      badge_class <- "badge-success"
-      icon_type <- "filter"
-    }
-    
-    tags$span(
-      style = "font-size: 0.9rem;",
-      tags$span(
-        class = paste("badge", badge_class),
-        style = "padding: 8px 12px; border-radius: 20px; font-weight: 500;",
-        icon(icon_type, style = "margin-right: 5px;"),
-        paste(selected_features, "/", total_features)
-      )
-    )
-  })
-  
-  output$diff_feature_set_status <- renderUI({
-    input$diff_feature_source
-    input$pca_top_features
-    input$pca_feature_ranking
-    values$pca_top_features
-    values$selected_features  # Add reactive dependency on selected features
-    HTML(get_feature_set_status(input$diff_feature_source))
-  })
-  
-  output$intersection_feature_set_status <- renderUI({
-    input$intersection_feature_source
-    input$pca_top_features
-    input$pca_feature_ranking
-    values$pca_top_features
-    values$selected_features  # Add reactive dependency on selected features
-    HTML(get_feature_set_status(input$intersection_feature_source))
-  })
-  
-  output$roc_feature_set_status <- renderUI({
-    input$roc_feature_source
-    input$pca_top_features
-    input$pca_feature_ranking
-    values$pca_top_features
-    values$selected_features  # Add reactive dependency on selected features
-    HTML(get_feature_set_status(input$roc_feature_source))
-  })
-  
-  output$proteomics_feature_set_status <- renderUI({
-    input$proteomics_feature_source
-    input$pca_top_features
-    input$pca_feature_ranking
-    values$pca_top_features
-    values$selected_features
-    HTML(get_feature_set_status(input$proteomics_feature_source))
-  })
-  
-  # Reset button logic
-  observeEvent(input$reset_feature_selection, {
-    values$selected_features$features <- NULL
-    values$selected_features$source <- NULL
-    
-    # Reset all tab-specific feature sources to "all"
-    updateSelectInput(session, "heatmap_feature_source", selected = "all")
-    updateSelectInput(session, "dist_feature_source", selected = "all")
-    updateSelectInput(session, "diff_feature_source", selected = "all")
-    updateSelectInput(session, "intersection_feature_source", selected = "all")
-    updateSelectInput(session, "roc_feature_source", selected = "all")
-    updateSelectInput(session, "proteomics_feature_source", selected = "all")
-    showNotification("Feature selection reset to all features.", type = "message")
-  })
-  
-  # Download PCA Grid (dedicated handler)
-  output$downloadPCAGridBtn <- downloadHandler(
-    filename = function() {
-      format <- get_safe_global_image_format()
-      paste0("PCA_Grid_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".", format)
-    },
-    content = function(file) {
-      tryCatch({
-        # More lenient validation - check that basic data is available
-        if (is.null(values$normalized_data) || is.null(values$unique_groups)) {
-          showNotification("Please process data first before downloading PCA plots.", type = "error")
-          return()
-        }
-        
-        # Check if we have the plot object stored from the UI
-        if (is.null(values$pca_grid_obj)) {
-          showNotification("No PCA plot available to download. Please generate PCA plots first.", type = "error")
-          return()
-        }
-        
-        # Get the user-specified DPI or use 300 as default
-        dpi <- ifelse(is.null(input$global_dpi), 300, input$global_dpi)
-        format <- get_safe_global_image_format()
-        
-        # Use the exact same plot object that's displayed in the UI
-        grid_plot <- values$pca_grid_obj
-        
-        # Calculate appropriate canvas size for the download
-        # For pairwise plots, use grid dimensions
-        if (identical(input$pcaType, "pairwise")) {
-          # Use actual pairwise comparison count (not all-possible-pairs from unique_groups)
-          n_plots <- if (!is.null(values$current_pairwise_combinations)) {
-            max(1, nrow(values$current_pairwise_combinations))
-          } else {
-            n_groups <- length(values$unique_groups) %||% 0
-            if (n_groups < 2) 1 else n_groups * (n_groups - 1) / 2
-          }
-          grid_cols <- input$pcaGridCols %||% 2
-          n_rows <- ceiling(n_plots / grid_cols)
-          grid_width <- input$pcaGridWidth %||% 400
-          grid_height <- input$pcaGridHeight %||% 400
-          
-          raw_w <- min(49, max(6, (grid_width * grid_cols) / 100))
-          raw_h <- min(49, max(6, (grid_height * n_rows) / 100))
-          ggsave(file,
-                 plot = grid_plot,
-                 width = raw_w,
-                 height = raw_h,
-                 dpi = dpi,
-                 device = resolve_ggsave_device(format),
-                 units = "in",
-                 limitsize = FALSE)
-        } else {
-          # For all groups, use the dedicated width/height controls
-          plot_width <- input$pcaAllWidth %||% 600
-          plot_height <- input$pcaAllHeight %||% 600
-          
-          raw_w <- min(49, max(6, plot_width / 100))
-          raw_h <- min(49, max(6, plot_height / 100))
-          ggsave(file,
-                 plot = grid_plot,
-                 width = raw_w,
-                 height = raw_h,
-                 dpi = dpi,
-                 device = resolve_ggsave_device(format),
-                 units = "in",
-                 limitsize = FALSE)
-        }
-        
-        showNotification("PCA plot downloaded successfully!", type = "message")
-        
-      }, error = function(e) {
-        showNotification(paste("Error downloading PCA plot:", e$message), type = "error")
-      })
-    }
-  )
-  
+  # (Duplicate reset observer + PCA-grid download handler removed here; originals kept above.)
+
   # =============================================================================
   # sPCA (Sparse PCA) Server Logic using mixOmics
   # =============================================================================
@@ -62669,13 +64470,7 @@ get_legend_grid_layout <- function(n_items) {
       
       # Check if mixOmics is available
       if (!requireNamespace("mixOmics", quietly = TRUE)) {
-        showNotification("mixOmics package is required for sPCA analysis. Installing...", type = "warning")
-        # Try to install mixOmics from Bioconductor
-        if (!requireNamespace("BiocManager", quietly = TRUE)) {
-          install.packages("BiocManager")
-        }
-        BiocManager::install("mixOmics")
-        
+        showNotification("mixOmics package is required for sPCA analysis. Install it with BiocManager::install('mixOmics'), then retry.", type = "error")
         if (!requireNamespace("mixOmics", quietly = TRUE)) {
           showNotification("Failed to install mixOmics package", type = "error")
           return()
@@ -63651,7 +65446,8 @@ get_legend_grid_layout <- function(n_items) {
       
       # Run sPCA on all groups data
       all_groups_spca_data <- t(values$normalized_data)
-      all_groups_groups <- create_proper_group_labels(values$unique_groups, values$group_column_indices)
+      all_groups_groups <- create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                                        nrow(all_groups_spca_data))
       
       # Prepare keepX values
       keepX_values <- c(input$spca_keepX_pc1 %||% 50, input$spca_keepX_pc2 %||% 50)
@@ -64445,24 +66241,46 @@ get_legend_grid_layout <- function(n_items) {
       jibosky_file_summaries(NULL)
       return()
     }
-    summarize_table <- function(dat) {
+    summarize_table <- function(dat, n_total_rows = NULL) {
       if (is.null(dat) || ncol(dat) == 0) return(c("  No columns detected"))
       col_names <- names(dat)
+      n_rows <- if (!is.null(n_total_rows)) n_total_rows else nrow(dat)
       # Identify numeric vs non-numeric columns
       numeric_cols <- col_names[sapply(dat, is.numeric)]
       non_numeric_cols <- setdiff(col_names, numeric_cols)
+      # Overall missingness
+      total_cells <- nrow(dat) * max(ncol(dat), 1)
+      n_na <- sum(is.na(dat))
       # Heuristics for sample/ID and group/condition columns
       id_candidates <- grep("(^id$|sample|subject|specimen|patient|replicate)", col_names, ignore.case = TRUE, value = TRUE)
       group_candidates <- grep("group|condition|class|phenotype|treatment|status|time|batch", col_names, ignore.case = TRUE, value = TRUE)
       lines <- c(
-        sprintf("  Columns: %d total | numeric: %d | non-numeric: %d", length(col_names), length(numeric_cols), length(non_numeric_cols)),
-        sprintf("  Sample columns (first 8): %s", paste(head(col_names, 8), collapse = ", "))
+        sprintf("  Rows: %d total | Columns: %d total | numeric: %d | non-numeric: %d", n_rows, length(col_names), length(numeric_cols), length(non_numeric_cols)),
+        sprintf("  Missing values: %d cells (%.1f%%)", n_na, if (total_cells > 0) 100 * n_na / total_cells else 0),
+        sprintf("  Column names (first 8): %s", paste(head(col_names, 8), collapse = ", "))
       )
+      if (length(col_names) > 8) {
+        lines <- c(lines, sprintf("  ... %d more columns omitted", length(col_names) - 8))
+      }
       if (length(id_candidates) > 0) {
         lines <- c(lines, sprintf("  Likely ID/sample columns: %s", paste(id_candidates, collapse = ", ")))
       }
       if (length(group_candidates) > 0) {
         lines <- c(lines, sprintf("  Likely group/metadata columns: %s", paste(group_candidates, collapse = ", ")))
+      }
+      # Numeric ranges (capped to bound context size)
+      if (length(numeric_cols) > 0) {
+        shown <- head(numeric_cols, 10)
+        rng_lines <- vapply(shown, function(cn) {
+          v <- suppressWarnings(as.numeric(dat[[cn]]))
+          v <- v[is.finite(v)]
+          if (length(v) == 0) return(sprintf("%s: no finite values", cn))
+          sprintf("%s: min=%.4g, max=%.4g, mean=%.4g", cn, min(v), max(v), mean(v))
+        }, character(1))
+        lines <- c(lines, "  Numeric ranges:", paste0("    ", rng_lines))
+        if (length(numeric_cols) > 10) {
+          lines <- c(lines, sprintf("    ... %d more numeric columns omitted", length(numeric_cols) - 10))
+        }
       }
       if (length(numeric_cols) > 0 && length(non_numeric_cols) > 0) {
         lines <- c(lines, "  Looks like metadata + numeric matrix structure")
@@ -64480,7 +66298,7 @@ get_legend_grid_layout <- function(n_items) {
       file_path <- files$datapath[i]
       ext <- tolower(tools::file_ext(file_name))
 
-      summary_lines <- c(sprintf("File: %s", file_name))
+      summary_lines <- c(sprintf("File: %s (attached in chat — not loaded into the app)", file_name))
       parsed <- FALSE
 
       # Excel workbooks
@@ -64489,8 +66307,8 @@ get_legend_grid_layout <- function(n_items) {
           sheets <- readxl::excel_sheets(file_path)
           summary_lines <- c(summary_lines, sprintf("  Type: Excel workbook (%d sheets)", length(sheets)))
           for (sheet in head(sheets, 3)) {
-            dat <- readxl::read_excel(file_path, sheet = sheet, n_max = 50)
-            summary_lines <- c(summary_lines, sprintf("  Sheet '%s': %d cols", sheet, ncol(dat)))
+            dat <- as.data.frame(readxl::read_excel(file_path, sheet = sheet))
+            summary_lines <- c(summary_lines, sprintf("  Sheet '%s': %d rows x %d cols", sheet, nrow(dat), ncol(dat)))
             summary_lines <- c(summary_lines, summarize_table(dat))
             # Capture candidate ID values for linkage
             if (is.null(file_meta[[file_name]])) file_meta[[file_name]] <- list()
@@ -64517,11 +66335,12 @@ get_legend_grid_layout <- function(n_items) {
       if (!parsed && ext %in% c("csv", "tsv", "txt")) {
         tryCatch({
           if (ext == "csv") {
-            dat <- utils::read.csv(file_path, nrows = 50)
+            dat <- utils::read.csv(file_path, check.names = FALSE)
           } else {
-            dat <- utils::read.delim(file_path, nrows = 50)
+            dat <- utils::read.delim(file_path, check.names = FALSE)
           }
-          summary_lines <- c(summary_lines, sprintf("  Type: %s (%d cols)", toupper(ext), ncol(dat)))
+          dat <- as.data.frame(dat)
+          summary_lines <- c(summary_lines, sprintf("  Type: %s (%d rows x %d cols)", toupper(ext), nrow(dat), ncol(dat)))
           summary_lines <- c(summary_lines, summarize_table(dat))
           # Capture candidate ID values for linkage
           if (is.null(file_meta[[file_name]])) file_meta[[file_name]] <- list()
@@ -64590,13 +66409,184 @@ get_legend_grid_layout <- function(n_items) {
   
   # ===== MULTI-PROVIDER AI CONFIGURATION =====
   # API Keys for multiple providers (fallback system)
-  # All keys read from environment variables
-  claude_api_key <- Sys.getenv("ANTHROPIC_API_KEY")
-  gemini_api_key <- Sys.getenv("GEMINI_API_KEY")
-  openrouter_api_key <- Sys.getenv("OPENROUTER_API_KEY")
+  # Keys can come from environment variables OR the in-app AI Setup panel (no terminal needed).
+  # In-app entries override env vars for the current session and are never written unless
+  # the user ticks "Remember on this machine".
+  ai_cfg <- reactiveValues(
+    claude_key = Sys.getenv("ANTHROPIC_API_KEY"),
+    gemini_key = Sys.getenv("GEMINI_API_KEY"),
+    openrouter_key = Sys.getenv("OPENROUTER_API_KEY"),
+    ollama_key = Sys.getenv("OLLAMA_API_KEY"),
+    groq_key = Sys.getenv("GROQ_API_KEY"),
+    claude_model = "claude-opus-5",
+    gemini_model = "gemini-2.5-flash",
+    openrouter_model = "auto",
+    ollama_model = "qwen3:30b-cloud",
+    groq_model = "llama-3.3-70b-versatile",
+    ai_order = c("claude", "gemini", "ollama", "openrouter", "groq")
+  )
+
+  get_ai_key <- function(provider) {
+    # isolate(): chatbot answers run inside later() with no reactive context
+    key <- isolate(switch(provider,
+      claude = ai_cfg$claude_key,
+      gemini = ai_cfg$gemini_key,
+      openrouter = ai_cfg$openrouter_key,
+      ollama = ai_cfg$ollama_key,
+      groq = ai_cfg$groq_key,
+      ""
+    ))
+    if (is.null(key)) return("")
+    trimws(as.character(key))
+  }
+
+  get_ai_model <- function(provider) {
+    # isolate(): see get_ai_key
+    model <- isolate(switch(provider,
+      claude = ai_cfg$claude_model,
+      gemini = ai_cfg$gemini_model,
+      openrouter = ai_cfg$openrouter_model,
+      ollama = ai_cfg$ollama_model,
+      groq = ai_cfg$groq_model,
+      ""
+    ))
+    if (is.null(model) || !nzchar(trimws(as.character(model)))) {
+      return(switch(provider,
+        claude = "claude-opus-5",
+        gemini = "gemini-2.5-flash",
+        openrouter = "openrouter/auto",
+        ollama = "qwen3:30b-cloud",
+        groq = "llama-3.3-70b-versatile",
+        ""
+      ))
+    }
+    model <- trimws(as.character(model))
+    if (provider == "openrouter" && model == "auto") return("openrouter/auto")
+    model
+  }
+
+  ai_provider_status <- function() {
+    vapply(c("claude", "gemini", "ollama", "openrouter", "groq"),
+           function(p) nzchar(get_ai_key(p)), logical(1))
+  }
+
+  # Keys that passed a connection test (green dot only after a proven test)
+  ai_tested_keys <- reactiveValues()
+
+  ai_provider_tested <- function(provider) {
+    key <- get_ai_key(provider)
+    tested <- ai_tested_keys[[provider]]
+    nzchar(key) && !is.null(tested) && identical(as.character(tested), key)
+  }
+
+  # Live Claude model list (Anthropic Models API) fetched with the user's own key;
+  # falls back to the static list below when no key is set.
+  claude_live_models <- reactiveVal(NULL)
+
+  fetch_claude_models <- function(api_key) {
+    api_key <- trimws(as.character(api_key %||% ""))
+    if (!nzchar(api_key)) return(NULL)
+    tryCatch({
+      resp <- httr::GET("https://api.anthropic.com/v1/models?limit=50",
+                        httr::add_headers("x-api-key" = api_key,
+                                          "anthropic-version" = "2023-06-01"),
+                        httr::timeout(10))
+      if (httr::status_code(resp) != 200) return(NULL)
+      result <- httr::content(resp, "parsed")
+      df <- vapply(result$data, function(m) {
+        id <- as.character(m$id)
+        label <- as.character(m$display_name %||% id)
+        c(id = id, label = label)
+      }, character(2))
+      ids <- as.character(df["id", ])
+      labels <- as.character(df["label", ])
+      stats::setNames(ids, labels)
+    }, error = function(e) NULL)
+  }
+
+  claude_model_choices <- function() {
+    live <- claude_live_models()
+    current <- get_ai_model("claude")
+    if (!is.null(live) && length(live) > 0) {
+      if (!current %in% live) live <- c(stats::setNames(current, current), live)
+      return(live)
+    }
+    ai_model_choices$claude
+  }
+
+  # Live OpenRouter model list (public endpoint, no key needed) fetched when an
+  # OpenRouter key is set; falls back to the static list below otherwise.
+  openrouter_live_models <- reactiveVal(NULL)
+
+  fetch_openrouter_models <- function() {
+    tryCatch({
+      resp <- httr::GET("https://openrouter.ai/api/v1/models", httr::timeout(10))
+      if (httr::status_code(resp) != 200) return(NULL)
+      result <- httr::content(resp, "parsed")
+      safe_str <- function(x) {
+        tryCatch({ if (is.null(x)) "" else as.character(x)[1] },
+                 error = function(e) "", warning = function(w) "")
+      }
+      ids <- vapply(result$data, function(m) safe_str(m$id), character(1))
+      labels <- vapply(result$data, function(m) safe_str(m$name), character(1))
+      is_text <- vapply(result$data, function(m) {
+        om <- tryCatch(unlist(m$architecture$output_modalities), error = function(e) "text")
+        if (length(om) == 0) return(TRUE)
+        "text" %in% om
+      }, logical(1))
+      keep <- nzchar(ids) & is_text & !grepl(":batch$", ids)
+      ids <- ids[keep]; labels <- labels[keep]
+      labels[!nzchar(labels)] <- ids[!nzchar(labels)]
+      is_free <- grepl(":free$", ids)
+      ord <- order(!is_free, labels)
+      stats::setNames(ids[ord], labels[ord])
+    }, error = function(e) NULL)
+  }
+
+  openrouter_model_choices <- function() {
+    live <- openrouter_live_models()
+    current <- get_ai_model("openrouter")
+    auto_opt <- c("Auto (recommended)" = "auto")
+    if (!is.null(live) && length(live) > 0) {
+      if (current != "auto" && !current %in% live) live <- c(stats::setNames(current, current), live)
+      return(c(auto_opt, live))
+    }
+    ai_model_choices$openrouter
+  }
+
+  # Live Groq model list (https://api.groq.com/openai/v1/models) fetched with the
+  # user's own key; falls back to the static list below when no key is set.
+  groq_live_models <- reactiveVal(NULL)
+
+  fetch_groq_models <- function(api_key) {
+    api_key <- trimws(as.character(api_key %||% ""))
+    if (!nzchar(api_key)) return(NULL)
+    tryCatch({
+      resp <- httr::GET("https://api.groq.com/openai/v1/models",
+                        httr::add_headers("Authorization" = paste("Bearer", api_key)),
+                        httr::timeout(10))
+      if (httr::status_code(resp) != 200) return(NULL)
+      result <- httr::content(resp, "parsed")
+      ids <- vapply(result$data, function(m) as.character(m$id), character(1))
+      ids <- ids[!grepl("whisper|tts|audio|guard", ids, ignore.case = TRUE)]
+      sort(unique(ids))
+    }, error = function(e) NULL)
+  }
+
+  groq_model_choices <- function() {
+    live <- groq_live_models()
+    current <- get_ai_model("groq")
+    if (!is.null(live) && length(live) > 0) {
+      if (!current %in% live) live <- c(current, live)
+      return(stats::setNames(live, live))
+    }
+    ai_model_choices$groq
+  }
   
   # Function to call Claude API
   call_claude <- function(messages, context_info = NULL) {
+    claude_api_key <- get_ai_key("claude")
+    claude_model <- get_ai_model("claude")
     if (claude_api_key == "") {
       return(list(success = FALSE, content = "", provider = "claude"))
     }
@@ -64625,6 +66615,9 @@ You have SUPERPOWERS - advanced analytical capabilities activated via the Superp
 5. When generating code (Pipeline/Batch), produce complete, runnable, well-commented R scripts
 6. When generating reports, write in formal scientific style with proper sections
 Always format responses with clear headers, bullet points, and emphasis on key findings.
+You may freely use ### sub-headers, bullet lists, markdown tables, and fenced code blocks — all render nicely in chat.
+
+HOW-TO-RUN-IT RULE: Whenever you recommend an analysis, plot, or preprocessing step that exists in OmicsStack (see the APP GUIDE and UI reference below), end that recommendation with a one-line 'Run it here:' giving the exact tab name and control names (e.g. 'Run it here: Data tab, Statistical Testing card, Test Method = Linear Mixed-Effects (lme4)'). Use ONLY names from the APP GUIDE. Never invent tab or control names — if the exact location is not in the guide, say the analysis concept without fake click paths.
 
 === COMPREHENSIVE DATA TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from data_tab_docs.txt]
@@ -64662,6 +66655,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
 === COMPREHENSIVE K-MEANS CLUSTERING TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from kmeans_docs.txt]
 
+=== COMPREHENSIVE WGCNA NETWORK ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+[content loaded from wgcna_docs.txt]
+
 === COMPREHENSIVE FEATURE CORRELATION TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from feature_correlation_docs.txt]
 
@@ -64670,6 +66666,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
 
 === COMPREHENSIVE GLYCOMICS TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from glycomics_docs.txt]
+
+=== OMICSSTACK APP GUIDE ===
+[content loaded from app_guide.txt]
 
 "
       # Replace Multi-Omics placeholders in Claude system prompt
@@ -64733,6 +66732,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         docs_kmeans <- paste(readLines(docs_kmeans_path, warn = FALSE), collapse = "\n")
         system_prompt <- sub("[content loaded from kmeans_docs.txt]", docs_kmeans, system_prompt, fixed = TRUE)
       }
+      docs_wgcna_path <- file.path("www", "jibosky_assets", "wgcna_docs.txt")
+      if (file.exists(docs_wgcna_path)) {
+        docs_wgcna <- paste(readLines(docs_wgcna_path, warn = FALSE), collapse = "\n")
+        system_prompt <- sub("[content loaded from wgcna_docs.txt]", docs_wgcna, system_prompt, fixed = TRUE)
+      }
       docs_corr_path <- file.path("www", "jibosky_assets", "feature_correlation_docs.txt")
       if (file.exists(docs_corr_path)) {
         docs_corr <- paste(readLines(docs_corr_path, warn = FALSE), collapse = "\n")
@@ -64748,6 +66752,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         docs_glycomics <- paste(readLines(docs_glycomics_path, warn = FALSE), collapse = "\n")
         system_prompt <- sub("[content loaded from glycomics_docs.txt]", docs_glycomics, system_prompt, fixed = TRUE)
       }
+      docs_appguide_path <- file.path("www", "jibosky_assets", "app_guide.txt")
+      if (file.exists(docs_appguide_path)) {
+        docs_appguide <- paste(readLines(docs_appguide_path, warn = FALSE), collapse = "\n")
+        system_prompt <- sub("[content loaded from app_guide.txt]", docs_appguide, system_prompt, fixed = TRUE)
+      }
       if (!is.null(context_info) && context_info != "") {
         system_prompt <- paste0(system_prompt, "\n\n=== CURRENT ANALYSIS STATE ===\n", context_info)
       } else {
@@ -64759,18 +66768,23 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         list(role = msg$role, content = msg$content)
       })
       
-      # Call Claude API
+      # Call Claude API (prompt caching enabled: long system/docs block is cached)
       response <- httr::POST(
         url = "https://api.anthropic.com/v1/messages",
         httr::add_headers(
           "x-api-key" = claude_api_key,
           "anthropic-version" = "2023-06-01",
+          "anthropic-beta" = "prompt-caching-2024-07-31",
           "content-type" = "application/json"
         ),
         body = jsonlite::toJSON(list(
-          model = "claude-sonnet-4-20250514",
+          model = claude_model,
           max_tokens = 2048,
-          system = system_prompt,
+          system = list(list(
+            type = "text",
+            text = system_prompt,
+            cache_control = list(type = "ephemeral")
+          )),
           messages = api_messages
         ), auto_unbox = TRUE),
         encode = "json"
@@ -64789,7 +66803,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       return(list(
         success = TRUE,
         content = result$content[[1]]$text,
-        provider = "claude"
+        provider = "claude",
+        model = claude_model
       ))
       
     }, error = function(e) {
@@ -64803,6 +66818,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
   
   # Function to call Google Gemini API
   call_gemini <- function(messages, context_info = NULL) {
+    gemini_api_key <- get_ai_key("gemini")
+    gemini_model <- get_ai_model("gemini")
     if (gemini_api_key == "") {
       return(list(success = FALSE, content = "", provider = "gemini"))
     }
@@ -64831,6 +66848,9 @@ You have SUPERPOWERS - advanced analytical capabilities activated via the Superp
 5. When generating code (Pipeline/Batch), produce complete, runnable, well-commented R scripts
 6. When generating reports, write in formal scientific style with proper sections
 Always format responses with clear headers, bullet points, and emphasis on key findings.
+You may freely use ### sub-headers, bullet lists, markdown tables, and fenced code blocks — all render nicely in chat.
+
+HOW-TO-RUN-IT RULE: Whenever you recommend an analysis, plot, or preprocessing step that exists in OmicsStack (see the APP GUIDE and UI reference below), end that recommendation with a one-line 'Run it here:' giving the exact tab name and control names (e.g. 'Run it here: Data tab, Statistical Testing card, Test Method = Linear Mixed-Effects (lme4)'). Use ONLY names from the APP GUIDE. Never invent tab or control names — if the exact location is not in the guide, say the analysis concept without fake click paths.
 
 === COMPREHENSIVE DATA TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from data_tab_docs.txt]
@@ -64868,6 +66888,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
 === COMPREHENSIVE K-MEANS CLUSTERING TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from kmeans_docs.txt]
 
+=== COMPREHENSIVE WGCNA NETWORK ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+[content loaded from wgcna_docs.txt]
+
 === COMPREHENSIVE FEATURE CORRELATION TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from feature_correlation_docs.txt]
 
@@ -64876,6 +66899,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
 
 === COMPREHENSIVE GLYCOMICS TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from glycomics_docs.txt]
+
+=== OMICSSTACK APP GUIDE ===
+[content loaded from app_guide.txt]
 
 "
       
@@ -64940,6 +66966,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         docs_kmeans <- paste(readLines(docs_kmeans_path, warn = FALSE), collapse = "\n")
         system_prompt <- sub("[content loaded from kmeans_docs.txt]", docs_kmeans, system_prompt, fixed = TRUE)
       }
+      docs_wgcna_path <- file.path("www", "jibosky_assets", "wgcna_docs.txt")
+      if (file.exists(docs_wgcna_path)) {
+        docs_wgcna <- paste(readLines(docs_wgcna_path, warn = FALSE), collapse = "\n")
+        system_prompt <- sub("[content loaded from wgcna_docs.txt]", docs_wgcna, system_prompt, fixed = TRUE)
+      }
       docs_corr_path <- file.path("www", "jibosky_assets", "feature_correlation_docs.txt")
       if (file.exists(docs_corr_path)) {
         docs_corr <- paste(readLines(docs_corr_path, warn = FALSE), collapse = "\n")
@@ -64954,6 +66985,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       if (file.exists(docs_glycomics_path)) {
         docs_glycomics <- paste(readLines(docs_glycomics_path, warn = FALSE), collapse = "\n")
         system_prompt <- sub("[content loaded from glycomics_docs.txt]", docs_glycomics, system_prompt, fixed = TRUE)
+      }
+      docs_appguide_path <- file.path("www", "jibosky_assets", "app_guide.txt")
+      if (file.exists(docs_appguide_path)) {
+        docs_appguide <- paste(readLines(docs_appguide_path, warn = FALSE), collapse = "\n")
+        system_prompt <- sub("[content loaded from app_guide.txt]", docs_appguide, system_prompt, fixed = TRUE)
       }
       if (!is.null(context_info) && context_info != "") {
         system_prompt <- paste0(system_prompt, "\n\n=== CURRENT ANALYSIS STATE ===\n", context_info)
@@ -64985,7 +67021,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       # Call Gemini API
       response <- httr::POST(
-        url = paste0("https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=", gemini_api_key),
+        url = paste0("https://generativelanguage.googleapis.com/v1/models/", gemini_model, ":generateContent?key=", gemini_api_key),
         httr::add_headers("Content-Type" = "application/json"),
         body = jsonlite::toJSON(list(
           contents = gemini_contents,
@@ -65005,7 +67041,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       if (!is.null(result$candidates) && length(result$candidates) > 0) {
         content <- result$candidates[[1]]$content$parts[[1]]$text
-        return(list(success = TRUE, content = content, provider = "gemini"))
+        return(list(success = TRUE, content = content, provider = "gemini", model = gemini_model))
       }
       
       return(list(success = FALSE, content = "Gemini returned no content", provider = "gemini"))
@@ -65017,6 +67053,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
   
   # Function to call OpenRouter API
   call_openrouter <- function(messages, context_info = NULL) {
+    openrouter_api_key <- get_ai_key("openrouter")
+    openrouter_model <- get_ai_model("openrouter")
     if (openrouter_api_key == "") {
       return(list(success = FALSE, content = "", provider = "openrouter"))
     }
@@ -65045,6 +67083,9 @@ You have SUPERPOWERS - advanced analytical capabilities activated via the Superp
 5. When generating code (Pipeline/Batch), produce complete, runnable, well-commented R scripts
 6. When generating reports, write in formal scientific style with proper sections
 Always format responses with clear headers, bullet points, and emphasis on key findings.
+You may freely use ### sub-headers, bullet lists, markdown tables, and fenced code blocks — all render nicely in chat.
+
+HOW-TO-RUN-IT RULE: Whenever you recommend an analysis, plot, or preprocessing step that exists in OmicsStack (see the APP GUIDE and UI reference below), end that recommendation with a one-line 'Run it here:' giving the exact tab name and control names (e.g. 'Run it here: Data tab, Statistical Testing card, Test Method = Linear Mixed-Effects (lme4)'). Use ONLY names from the APP GUIDE. Never invent tab or control names — if the exact location is not in the guide, say the analysis concept without fake click paths.
 
 === COMPREHENSIVE DATA TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from data_tab_docs.txt]
@@ -65082,6 +67123,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
 === COMPREHENSIVE K-MEANS CLUSTERING TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from kmeans_docs.txt]
 
+=== COMPREHENSIVE WGCNA NETWORK ANALYSIS TAB UI ELEMENTS AND OPTIONS ===
+[content loaded from wgcna_docs.txt]
+
 === COMPREHENSIVE FEATURE CORRELATION TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from feature_correlation_docs.txt]
 
@@ -65090,6 +67134,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
 
 === COMPREHENSIVE GLYCOMICS TAB UI ELEMENTS AND OPTIONS ===
 [content loaded from glycomics_docs.txt]
+
+=== OMICSSTACK APP GUIDE ===
+[content loaded from app_guide.txt]
 
 "
       
@@ -65154,6 +67201,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         docs_kmeans <- paste(readLines(docs_kmeans_path, warn = FALSE), collapse = "\n")
         system_prompt <- sub("[content loaded from kmeans_docs.txt]", docs_kmeans, system_prompt, fixed = TRUE)
       }
+      docs_wgcna_path <- file.path("www", "jibosky_assets", "wgcna_docs.txt")
+      if (file.exists(docs_wgcna_path)) {
+        docs_wgcna <- paste(readLines(docs_wgcna_path, warn = FALSE), collapse = "\n")
+        system_prompt <- sub("[content loaded from wgcna_docs.txt]", docs_wgcna, system_prompt, fixed = TRUE)
+      }
       docs_corr_path <- file.path("www", "jibosky_assets", "feature_correlation_docs.txt")
       if (file.exists(docs_corr_path)) {
         docs_corr <- paste(readLines(docs_corr_path, warn = FALSE), collapse = "\n")
@@ -65168,6 +67220,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       if (file.exists(docs_glycomics_path)) {
         docs_glycomics <- paste(readLines(docs_glycomics_path, warn = FALSE), collapse = "\n")
         system_prompt <- sub("[content loaded from glycomics_docs.txt]", docs_glycomics, system_prompt, fixed = TRUE)
+      }
+      docs_appguide_path <- file.path("www", "jibosky_assets", "app_guide.txt")
+      if (file.exists(docs_appguide_path)) {
+        docs_appguide <- paste(readLines(docs_appguide_path, warn = FALSE), collapse = "\n")
+        system_prompt <- sub("[content loaded from app_guide.txt]", docs_appguide, system_prompt, fixed = TRUE)
       }
       if (!is.null(context_info) && context_info != "") {
         system_prompt <- paste0(system_prompt, "\n\n=== CURRENT ANALYSIS STATE ===\n", context_info)
@@ -65191,8 +67248,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           "X-Title" = "Omics Analysis App"
         ),
         body = jsonlite::toJSON(list(
-          #   model = "anthropic/claude-3.5-sonnet",  # You can change this to other models
-          model = "openai/gpt-4o",
+          model = openrouter_model,
           messages = api_messages,
           max_tokens = 2048,
           temperature = 0.7
@@ -65208,7 +67264,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       if (!is.null(result$choices) && length(result$choices) > 0) {
         content <- result$choices[[1]]$message$content
-        return(list(success = TRUE, content = content, provider = "openrouter"))
+        return(list(success = TRUE, content = content, provider = "openrouter", model = openrouter_model))
       }
       
       return(list(success = FALSE, content = "OpenRouter returned no content", provider = "openrouter"))
@@ -65218,48 +67274,650 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     })
   }
   
-  # Master function to call AI with automatic fallback
+  # Function to call Ollama Cloud API (OpenAI-compatible chat format via ollama.com)
+  call_ollama <- function(messages, context_info = NULL) {
+    ollama_api_key <- get_ai_key("ollama")
+    ollama_model <- get_ai_model("ollama")
+    if (ollama_api_key == "") {
+      return(list(success = FALSE, content = "", provider = "ollama"))
+    }
+
+    tryCatch({
+      jibosky_short_system <- paste0("You are Jibosky, a helpful AI research assistant for omics data analysis. ",
+        "Be concise, clear, and scientifically accurate. ",
+        "Format with ### sub-headers, bullets, and markdown tables where helpful. ",
+        "When you suggest an analysis the app can perform, say exactly where to run it: tab name plus control names. ",
+        "Top tabs: Data, Dimensionality Reduction (PCA), ML Feature Selection, Heatmaps, Distribution Analysis, ",
+        "Differential Analysis (Volcano Plot), K-Means Clustering, Feature Correlation, Network Analysis, ",
+        "Intersection Analysis, ROC/PR Analysis, Enrichment Analysis, Glycomics, Metabolomics, Multi-Omics Integration, Power Analysis. ",
+        "Data tab cards: Missing Value Handling, Normalization card with Sample Normalization (Sum/Median/Quantile/PQN/VSN/Cyclic Loess/None) + Log2 Transformation (None/x/x+1) + optional Feature Scaling (None/Mean-centering/Z-score/Pareto, applied last), ",
+        "Batch & QC Correction, Statistical Testing (Wilcoxon, T-test with Welch/Student's/Paired variants, ANOVA, Kruskal-Wallis, Linear Mixed-Effects lme4, Limma, Limma-voom, ROTS, DESeq2, edgeR), ",
+        "Bootstrap Analysis; then the Process Data button.")
+      api_messages <- list(list(role = "system", content = jibosky_short_system))
+      if (!is.null(context_info) && nzchar(as.character(context_info))) {
+        api_messages[[1]]$content <- paste0(api_messages[[1]]$content, "\n\n=== CURRENT ANALYSIS STATE ===\n", context_info)
+      }
+      for (msg in messages) {
+        api_messages[[length(api_messages) + 1]] <- list(role = msg$role, content = msg$content)
+      }
+
+      response <- httr::POST(
+        url = "https://ollama.com/api/chat",
+        httr::add_headers(
+          "Authorization" = paste("Bearer", ollama_api_key),
+          "Content-Type" = "application/json"
+        ),
+        body = jsonlite::toJSON(list(
+          model = ollama_model,
+          messages = api_messages,
+          stream = FALSE
+        ), auto_unbox = TRUE),
+        encode = "json"
+      )
+
+      if (httr::status_code(response) != 200) {
+        return(list(success = FALSE, content = paste0("Ollama API error: ", httr::status_code(response)), provider = "ollama"))
+      }
+
+      result <- httr::content(response, "parsed")
+      content <- NULL
+      if (!is.null(result$message$content)) content <- result$message$content
+      if (is.null(content) || !nzchar(as.character(content))) {
+        return(list(success = FALSE, content = "Ollama returned no content", provider = "ollama"))
+      }
+      return(list(success = TRUE, content = as.character(content), provider = "ollama", model = ollama_model))
+    }, error = function(e) {
+      return(list(success = FALSE, content = paste0("Ollama error: ", e$message), provider = "ollama"))
+    })
+  }
+
+  # Function to call Groq API (OpenAI-compatible)
+  call_groq <- function(messages, context_info = NULL) {
+    groq_api_key <- get_ai_key("groq")
+    groq_model <- get_ai_model("groq")
+    if (groq_api_key == "") {
+      return(list(success = FALSE, content = "", provider = "groq"))
+    }
+
+    tryCatch({
+      jibosky_short_system <- paste0("You are Jibosky, a helpful AI research assistant for omics data analysis. ",
+        "Be concise, clear, and scientifically accurate. ",
+        "Format with ### sub-headers, bullets, and markdown tables where helpful. ",
+        "When you suggest an analysis the app can perform, say exactly where to run it: tab name plus control names. ",
+        "Top tabs: Data, Dimensionality Reduction (PCA), ML Feature Selection, Heatmaps, Distribution Analysis, ",
+        "Differential Analysis (Volcano Plot), K-Means Clustering, Feature Correlation, Network Analysis, ",
+        "Intersection Analysis, ROC/PR Analysis, Enrichment Analysis, Glycomics, Metabolomics, Multi-Omics Integration, Power Analysis. ",
+        "Data tab cards: Missing Value Handling, Normalization card with Sample Normalization (Sum/Median/Quantile/PQN/VSN/Cyclic Loess/None) + Log2 Transformation (None/x/x+1) + optional Feature Scaling (None/Mean-centering/Z-score/Pareto, applied last), ",
+        "Batch & QC Correction, Statistical Testing (Wilcoxon, T-test with Welch/Student's/Paired variants, ANOVA, Kruskal-Wallis, Linear Mixed-Effects lme4, Limma, Limma-voom, ROTS, DESeq2, edgeR), ",
+        "Bootstrap Analysis; then the Process Data button.")
+      api_messages <- list(list(role = "system", content = jibosky_short_system))
+      if (!is.null(context_info) && nzchar(as.character(context_info))) {
+        api_messages[[1]]$content <- paste0(api_messages[[1]]$content, "\n\n=== CURRENT ANALYSIS STATE ===\n", context_info)
+      }
+      for (msg in messages) {
+        api_messages[[length(api_messages) + 1]] <- list(role = msg$role, content = msg$content)
+      }
+
+      response <- httr::POST(
+        url = "https://api.groq.com/openai/v1/chat/completions",
+        httr::add_headers(
+          "Authorization" = paste("Bearer", groq_api_key),
+          "Content-Type" = "application/json"
+        ),
+        body = jsonlite::toJSON(list(
+          model = groq_model,
+          messages = api_messages,
+          max_tokens = 2048,
+          temperature = 0.7
+        ), auto_unbox = TRUE),
+        encode = "json"
+      )
+
+      if (httr::status_code(response) != 200) {
+        return(list(success = FALSE, content = paste0("Groq API error: ", httr::status_code(response)), provider = "groq"))
+      }
+
+      result <- httr::content(response, "parsed")
+      if (!is.null(result$choices) && length(result$choices) > 0) {
+        content <- result$choices[[1]]$message$content
+        return(list(success = TRUE, content = content, provider = "groq", model = groq_model))
+      }
+      return(list(success = FALSE, content = "Groq returned no content", provider = "groq"))
+    }, error = function(e) {
+      return(list(success = FALSE, content = paste0("Groq error: ", e$message), provider = "groq"))
+    })
+  }
+
+  # Shared plain-language reading of a provider error (used in setup tests and chat)
+  ai_describe_error <- function(content) {
+    msg <- as.character(content %||% "")
+    if (grepl("401|403", msg)) {
+      "invalid or missing key — double-check the key and save it again."
+    } else if (grepl("402", msg)) {
+      "out of credits or payment required — add credits, or switch to a free model."
+    } else if (grepl("404", msg)) {
+      "model or endpoint not found — the model may be retired; pick another model."
+    } else if (grepl("429", msg)) {
+      "rate limited — wait a minute and try again, or try another provider."
+    } else if (grepl("50[0-9]|503|timeout|timed out|could not resolve|failed to connect", msg, ignore.case = TRUE)) {
+      "provider looks temporarily down or unreachable — check your internet and try again later."
+    } else {
+      paste0("unexpected problem (", substr(msg, 1, 160), ").")
+    }
+  }
+
+  # Master function to call AI with automatic fallback in user-chosen order
   call_ai_with_fallback <- function(messages, context_info = NULL) {
-    # Try providers in order: OpenRouter -> Gemini -> Claude
-    providers <- list(
-      list(name = "OpenRouter", func = call_openrouter),
-      list(name = "Gemini (Google)", func = call_gemini),
-      list(name = "Claude (Anthropic)", func = call_claude)
+    # Default order: Claude -> Gemini -> Ollama -> OpenRouter -> Groq (user can reorder in AI Setup)
+    # isolate(): fallback runs inside later() with no reactive context
+    order <- isolate(ai_cfg$ai_order) %||% c("claude", "gemini", "ollama", "openrouter", "groq")
+    order <- intersect(as.character(order), c("claude", "gemini", "ollama", "openrouter", "groq"))
+    if (length(order) == 0) order <- c("claude", "gemini", "ollama", "openrouter", "groq")
+    registry <- list(
+      claude = list(name = "Claude (Anthropic)", func = call_claude),
+      gemini = list(name = "Gemini (Google)", func = call_gemini),
+      ollama = list(name = "Ollama Cloud", func = call_ollama),
+      openrouter = list(name = "OpenRouter", func = call_openrouter),
+      groq = list(name = "Groq", func = call_groq)
     )
-    
+    providers <- lapply(order, function(p) registry[[p]])
+
     last_error <- NULL
-    
+    tried_names <- c()
+
     for (provider in providers) {
+      tried_names <- c(tried_names, provider$name)
       response <- provider$func(messages, context_info)
-      
+
       if (isTRUE(response$success)) {
         # Add provider info to successful response
         response$provider_name <- provider$name
         return(response)
       }
-      
+
       # Store error for later
       if (!is.null(response$content) && response$content != "") {
         last_error <- response$content
       }
     }
-    
+
     # All providers failed
     return(list(
       success = FALSE,
       content = paste0(
         "⚠️ All AI providers unavailable. Jibosky cannot respond right now.\n\n",
-        "Tried: OpenRouter, Gemini (Google), Claude (Anthropic)\n\n",
-        "Last error: ", last_error %||% "Unknown error", "\n\n",
-        "Please check your API keys or try again later."
+        "Tried: ", paste(tried_names, collapse = ", "), "\n\n",
+        "Likely cause: ", ai_describe_error(last_error), "\n\n",
+        "Click the ⚙ AI Setup button in the Jibosky header to check keys and test each provider."
       ),
       provider = "none"
     ))
   }
-  
+
+  # ==============================================================================
+  # JIBOSKY AI SETUP PANEL (no terminal needed)
+  # ==============================================================================
+  ai_model_choices <- list(
+    claude = c(
+      "Claude Opus 5" = "claude-opus-5",
+      "Claude Fable 5.1" = "claude-fable-5-1",
+      "Claude Sonnet 5" = "claude-sonnet-5",
+      "Claude Haiku 4.5" = "claude-haiku-4-5",
+      "Claude Sonnet 4" = "claude-sonnet-4-20250514",
+      "Claude Opus 4.1" = "claude-opus-4-1-20250805",
+      "Claude 3.5 Sonnet" = "claude-3-5-sonnet-20241022",
+      "Claude 3.5 Haiku" = "claude-3-5-haiku-20241022"
+    ),
+    gemini = c(
+      "Gemini 3.8 Flash" = "gemini-3.8-flash",
+      "Gemini 3.7 Flash" = "gemini-3.7-flash",
+      "Gemini 3.6 Flash" = "gemini-3.6-flash",
+      "Gemini 3.5 Flash" = "gemini-3.5-flash",
+      "Gemini 3.5 Flash-Lite" = "gemini-3.5-flash-lite",
+      "Gemini 3 Flash" = "gemini-3-flash-preview",
+      "Gemini 3.1 Flash-Lite" = "gemini-3.1-flash-lite",
+      "Gemini 3.1 Pro" = "gemini-3.1-pro-preview",
+      "Gemini 2.5 Flash (free)" = "gemini-2.5-flash",
+      "Gemini 2.5 Flash-Lite (free)" = "gemini-2.5-flash-lite",
+      "Gemini 2.5 Pro" = "gemini-2.5-pro",
+      "Gemini 1.5 Pro" = "gemini-1.5-pro"
+    ),
+    ollama = c(
+      "Qwen 3 30B (free)" = "qwen3:30b-cloud",
+      "Llama 3.3 70B (free)" = "llama3.3:70b-cloud",
+      "Gemma 4 31B (free)" = "gemma4:31b-cloud",
+      "GPT-OSS 120B (free)" = "gpt-oss:120b-cloud",
+      "GPT-OSS 20B (free)" = "gpt-oss:20b-cloud",
+      "Nemotron 3 Nano 30B (free)" = "nemotron-3-nano:30b-cloud",
+      "Nemotron 3 Super (free)" = "nemotron-3-super:cloud",
+      "Nemotron 3 Ultra (free)" = "nemotron-3-ultra:cloud",
+      "Qwen 3 235B" = "qwen3:235b-cloud",
+      "DeepSeek V3.1 671B" = "deepseek-v3.1:671b-cloud",
+      "DeepSeek V4 Flash" = "deepseek-v4-flash:cloud",
+      "DeepSeek V4 Pro" = "deepseek-v4-pro:cloud",
+      "Kimi K2.6" = "kimi-k2.6:cloud",
+      "Qwen 3.8" = "qwen3.8:cloud",
+      "GLM 5.3" = "glm-5.3:cloud",
+      "GLM 5.3 Flash" = "glm-5.3-flash:cloud",
+      "MedGemma 27B" = "medgemma:27b-cloud"
+    ),
+    openrouter = c(
+      "Auto (recommended)" = "auto",
+      "Llama 3.3 70B (free)" = "meta-llama/llama-3.3-70b-instruct:free",
+      "Qwen 3 235B (free)" = "qwen/qwen3-235b-a22b:free",
+      "DeepSeek V3 (free)" = "deepseek/deepseek-chat-v3-0324:free",
+      "GPT-5" = "openai/gpt-5",
+      "GPT-5 mini" = "openai/gpt-5-mini",
+      "GPT-4o" = "openai/gpt-4o",
+      "GPT-4 Turbo" = "openai/gpt-4-turbo",
+      "GPT-4o mini" = "openai/gpt-4o-mini",
+      "GPT-3.5 Turbo Instruct" = "openai/gpt-3.5-turbo-instruct",
+      "Claude Sonnet 4" = "anthropic/claude-sonnet-4",
+      "Claude 3 Haiku" = "anthropic/claude-3-haiku",
+      "Gemini 2.5 Pro" = "google/gemini-2.5-pro",
+      "Mistral Large" = "mistralai/mistral-large",
+      "Mixtral 8x22B" = "mistralai/mixtral-8x22b-instruct",
+      "WizardLM-2 8x22B" = "microsoft/wizardlm-2-8x22b",
+      "Llama 3.3 70B" = "meta-llama/llama-3.3-70b-instruct"
+    ),
+    groq = c(
+      "Llama 3.3 70B (free)" = "llama-3.3-70b-versatile",
+      "Llama 3.1 8B Instant (free)" = "llama-3.1-8b-instant",
+      "Qwen QwQ 32B (free)" = "qwen-qwq-32b",
+      "DeepSeek R1 Distill 70B (free)" = "deepseek-r1-distill-llama-70b",
+      "GPT-OSS 120B (free)" = "openai/gpt-oss-120b",
+      "GPT-OSS 20B (free)" = "openai/gpt-oss-20b",
+      "Kimi K2 (free)" = "moonshotai/kimi-k2-instruct",
+      "Llama 4 Scout (free)" = "meta-llama/llama-4-scout-17b-16e-instruct",
+      "Llama 4 Maverick (free)" = "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "Mixtral 8x7B" = "mixtral-8x7b-32768"
+    )
+  )
+
+  ai_setup_card <- function(id_prefix, title, accent, icon_name, key_input, model_input,
+                            models, placeholder, help_text, test_input) {
+    div(class = "ai-setup-card",
+        style = sprintf("background-color: %s14; border-left: 4px solid %s; height: 100%%;", accent, accent),
+        div(style = "display: flex; align-items: center; gap: 6px; margin-bottom: 4px;",
+            icon(icon_name, style = sprintf("color: %s;", accent)),
+            tags$span(tags$strong(title), title = help_text,
+                      style = "cursor: help; font-size: 13px;"),
+            tags$span("●",
+                      title = if (ai_provider_tested(id_prefix)) "Connection test passed" else "Press the plug button to test",
+                      style = sprintf("font-size: 11px; color: %s; cursor: help;",
+                                      if (ai_provider_tested(id_prefix)) "#15803d" else "#c3c8d1")),
+            actionButton(test_input, NULL, icon = icon("plug"), title = "Test this provider",
+                         class = "btn-secondary",
+                         style = "margin-left: auto; font-size: 11px; padding: 1px 8px;")
+        ),
+        fluidRow(style = "margin-left: -4px; margin-right: -4px;",
+          column(5, style = "padding-left: 4px; padding-right: 4px;",
+            passwordInput(key_input, tags$small("Key"), value = get_ai_key(id_prefix),
+                          placeholder = placeholder, width = "100%")),
+          column(7, style = "padding-left: 4px; padding-right: 4px;",
+            selectInput(model_input, tags$small("Model"), choices = models,
+                        selected = get_ai_model(id_prefix), width = "100%"))
+        )
+    )
+  }
+
+  show_ai_setup_modal <- function() {
+    # Refresh live model lists with saved keys (if any) before building
+    if (nzchar(get_ai_key("claude"))) {
+      live <- fetch_claude_models(get_ai_key("claude"))
+      if (!is.null(live)) claude_live_models(live)
+    }
+    if (nzchar(get_ai_key("groq"))) {
+      live <- fetch_groq_models(get_ai_key("groq"))
+      if (!is.null(live)) groq_live_models(live)
+    }
+    if (nzchar(get_ai_key("openrouter"))) {
+      live <- fetch_openrouter_models()
+      if (!is.null(live)) openrouter_live_models(live)
+    }
+    showModal(modalDialog(
+      title = tags$div(style = "display: flex; align-items: center; gap: 8px; width: 100%;",
+        tags$span(tagList(icon("gear"), "Jibosky AI Setup")),
+        tags$button(type = "button", class = "btn btn-link btn-sm",
+                    style = "margin-left: auto; font-size: 12px; padding: 2px 6px;",
+                    onclick = "Shiny.setInputValue('ai_keys_help', Date.now());",
+                    title = "Where to get a key for each provider",
+                    tagList(icon("circle-question"), "How to get API keys"))
+      ),
+      div(
+        fluidRow(
+          column(6, ai_setup_card("claude", "Claude (Anthropic)", "#d97706", "brain",
+                        "ai_key_claude", "ai_model_claude", claude_model_choices(),
+                        "sk-ant-…", "console.anthropic.com · prompt caching on · list refreshes from your key", "ai_test_claude")),
+          column(6, ai_setup_card("gemini", "Gemini (Google)", "#2563eb", "bolt",
+                        "ai_key_gemini", "ai_model_gemini", ai_model_choices$gemini,
+                        "AIza…", "aistudio.google.com · free tier available", "ai_test_gemini"))
+        ),
+        fluidRow(
+          column(6, ai_setup_card("ollama", "Ollama Cloud", "#0d9488", "cloud",
+                        "ai_key_ollama", "ai_model_ollama", ai_model_choices$ollama,
+                        "Paste Ollama Cloud key…", "ollama.com · free models default", "ai_test_ollama")),
+          column(6, ai_setup_card("groq", "Groq", "#dc2626", "gauge-high",
+                        "ai_key_groq", "ai_model_groq", groq_model_choices(),
+                        "gsk_…", "console.groq.com · free, very fast · list refreshes from your key", "ai_test_groq"))
+        ),
+        fluidRow(
+          column(6, ai_setup_card("openrouter", "OpenRouter", "#7c3aed", "shuffle",
+                        "ai_key_openrouter", "ai_model_openrouter", openrouter_model_choices(),
+                        "sk-or-…", "openrouter.ai · “Auto” free-first routing · list refreshes live", "ai_test_openrouter"))
+        ),
+        selectizeInput("ai_provider_order",
+                       tags$span("Provider order ",
+                                 tags$span(title = "First available provider in this order answers. Drag items to reorder.",
+                                           icon("question-circle", style = "color: #667eea; font-size: 12px; cursor: help;"))),
+                       choices = c("Claude" = "claude", "Gemini" = "gemini", "Ollama" = "ollama",
+                                   "OpenRouter" = "openrouter", "Groq" = "groq"),
+                       selected = ai_cfg$ai_order, multiple = TRUE,
+                       options = list(plugins = list("remove_button", "drag_drop")),
+                       width = "100%"),
+        div(style = "white-space: nowrap; font-size: 13px;",
+            checkboxInput("ai_remember_keys",
+                          tags$span("Remember on this machine ",
+                                    tags$span(title = "Keys stay in your session. Only tick the box to persist them locally.",
+                                              icon("question-circle", style = "color: #667eea; font-size: 12px; cursor: help;"))),
+                          value = FALSE)),
+        hr(),
+        actionButton("ai_clear_keys", "Clear session keys", icon = icon("trash"), width = "100%", class = "btn-secondary")
+      ),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("ai_save_keys", "Save keys", icon = icon("check"), class = "btn-primary")
+      ),
+      size = "l", easyClose = TRUE
+    ))
+  }
+
+  observeEvent(input$jibosky_open_setup, { show_ai_setup_modal() })
+  observeEvent(input$ai_keys_help_back, { show_ai_setup_modal() })
+
+  observeEvent(input$ai_keys_help, {
+    showModal(modalDialog(
+      title = tagList(icon("circle-question"), "How to get API keys"),
+      div(
+        tags$p("You only need ", tags$b("one"), " key — paste it in AI Setup, pick a model, and Save."),
+        tags$ol(
+          tags$li(tags$b("Claude (Anthropic): "), "Sign up at ",
+                  tags$a(href = "https://console.anthropic.com/", target = "_blank", "console.anthropic.com"),
+                  ", open API Keys, create a key starting with ", tags$code("sk-ant-"), ", and add billing."),
+          tags$li(tags$b("Gemini (Google): "), "Go to ",
+                  tags$a(href = "https://aistudio.google.com/", target = "_blank", "aistudio.google.com"),
+                  ", sign in, open Get API Key, and copy the key starting with ", tags$code("AIza"), "."),
+          tags$li(tags$b("Ollama Cloud: "), "Sign in at ",
+                  tags$a(href = "https://ollama.com/", target = "_blank", "ollama.com"),
+                  ", open your account API keys page, and create a key."),
+          tags$li(tags$b("OpenRouter: "), "Sign up at ",
+                  tags$a(href = "https://openrouter.ai/", target = "_blank", "openrouter.ai"),
+                  ", open Keys, and create a key starting with ", tags$code("sk-or-"),
+                  ". Keep the model on “Auto” to let it route for you."),
+          tags$li(tags$b("Groq: "), "Sign up at ",
+                  tags$a(href = "https://console.groq.com/", target = "_blank", "console.groq.com"),
+                  ", open API Keys, and copy the key starting with ", tags$code("gsk_"), ".")
+        ),
+        div(class = "alert alert-warning", style = "padding: 8px 12px;",
+            "Treat keys like passwords. Never paste them into chat or commit them to git.")
+      ),
+      footer = tagList(
+        actionButton("ai_keys_help_back", "Back to AI Setup", icon = icon("arrow-left"), class = "btn-primary")
+      ),
+      size = "m", easyClose = TRUE
+    ))
+  })
+
+  write_ai_keys_renviron <- function(keys) {
+    tryCatch({
+      renviron_path <- file.path(getwd(), ".Renviron")
+      existing <- character(0)
+      if (file.exists(renviron_path)) existing <- readLines(renviron_path, warn = FALSE)
+      var_names <- c("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "OLLAMA_API_KEY",
+                     "OPENROUTER_API_KEY", "GROQ_API_KEY")
+      existing <- existing[!grepl(paste0("^(", paste(var_names, collapse = "|"), ")="), existing)]
+      new_lines <- sprintf("%s=%s", var_names, unlist(keys[var_names]))
+      writeLines(c(existing, new_lines), renviron_path)
+      TRUE
+    }, error = function(e) FALSE)
+  }
+
+  observeEvent(input$ai_save_keys, {
+    ai_cfg$claude_key <- trimws(as.character(input$ai_key_claude %||% ""))
+    ai_cfg$gemini_key <- trimws(as.character(input$ai_key_gemini %||% ""))
+    ai_cfg$ollama_key <- trimws(as.character(input$ai_key_ollama %||% ""))
+    ai_cfg$openrouter_key <- trimws(as.character(input$ai_key_openrouter %||% ""))
+    ai_cfg$groq_key <- trimws(as.character(input$ai_key_groq %||% ""))
+    ai_cfg$claude_model <- input$ai_model_claude %||% "claude-opus-5"
+    ai_cfg$gemini_model <- input$ai_model_gemini %||% "gemini-2.5-flash"
+    ai_cfg$ollama_model <- input$ai_model_ollama %||% "qwen3:30b-cloud"
+    ai_cfg$openrouter_model <- input$ai_model_openrouter %||% "auto"
+    ai_cfg$groq_model <- input$ai_model_groq %||% "llama-3.3-70b-versatile"
+    order_input <- input$ai_provider_order %||% ai_cfg$ai_order
+    order_input <- intersect(as.character(order_input),
+                             c("claude", "gemini", "ollama", "openrouter", "groq"))
+    if (length(order_input) > 0) ai_cfg$ai_order <- order_input
+
+    # Make keys visible to any code path using Sys.getenv in this session
+    do.call(Sys.setenv, list(
+      ANTHROPIC_API_KEY = ai_cfg$claude_key,
+      GEMINI_API_KEY = ai_cfg$gemini_key,
+      OLLAMA_API_KEY = ai_cfg$ollama_key,
+      OPENROUTER_API_KEY = ai_cfg$openrouter_key,
+      GROQ_API_KEY = ai_cfg$groq_key
+    ))
+
+    if (isTRUE(input$ai_remember_keys)) {
+      ok <- write_ai_keys_renviron(list(
+        ANTHROPIC_API_KEY = ai_cfg$claude_key,
+        GEMINI_API_KEY = ai_cfg$gemini_key,
+        OLLAMA_API_KEY = ai_cfg$ollama_key,
+        OPENROUTER_API_KEY = ai_cfg$openrouter_key,
+        GROQ_API_KEY = ai_cfg$groq_key
+      ))
+      showNotification(if (ok) "AI keys saved for this session and to .Renviron." else "Saved for session, but .Renviron write failed.",
+                       type = if (ok) "message" else "warning")
+    } else {
+      showNotification("AI keys saved for this session.", type = "message")
+    }
+    removeModal()
+  })
+
+  observeEvent(input$ai_clear_keys, {
+    ai_cfg$claude_key <- ""
+    ai_cfg$gemini_key <- ""
+    ai_cfg$ollama_key <- ""
+    ai_cfg$openrouter_key <- ""
+    ai_cfg$groq_key <- ""
+    do.call(Sys.setenv, list(
+      ANTHROPIC_API_KEY = "", GEMINI_API_KEY = "", OLLAMA_API_KEY = "",
+      OPENROUTER_API_KEY = "", GROQ_API_KEY = ""
+    ))
+    showNotification("Session AI keys cleared. Env-var keys will apply on restart.", type = "message")
+    removeModal()
+  })
+
+  # Sync the key/model currently typed in the setup modal into the session (no modal close)
+  sync_ai_inputs_to_cfg <- function() {
+    if (!is.null(input$ai_key_claude)) ai_cfg$claude_key <- trimws(as.character(input$ai_key_claude))
+    if (!is.null(input$ai_key_gemini)) ai_cfg$gemini_key <- trimws(as.character(input$ai_key_gemini))
+    if (!is.null(input$ai_key_ollama)) ai_cfg$ollama_key <- trimws(as.character(input$ai_key_ollama))
+    if (!is.null(input$ai_key_openrouter)) ai_cfg$openrouter_key <- trimws(as.character(input$ai_key_openrouter))
+    if (!is.null(input$ai_key_groq)) ai_cfg$groq_key <- trimws(as.character(input$ai_key_groq))
+    if (!is.null(input$ai_model_claude)) ai_cfg$claude_model <- input$ai_model_claude
+    if (!is.null(input$ai_model_gemini)) ai_cfg$gemini_model <- input$ai_model_gemini
+    if (!is.null(input$ai_model_ollama)) ai_cfg$ollama_model <- input$ai_model_ollama
+    if (!is.null(input$ai_model_openrouter)) ai_cfg$openrouter_model <- input$ai_model_openrouter
+    if (!is.null(input$ai_model_groq)) ai_cfg$groq_model <- input$ai_model_groq
+    do.call(Sys.setenv, list(
+      ANTHROPIC_API_KEY = ai_cfg$claude_key,
+      GEMINI_API_KEY = ai_cfg$gemini_key,
+      OLLAMA_API_KEY = ai_cfg$ollama_key,
+      OPENROUTER_API_KEY = ai_cfg$openrouter_key,
+      GROQ_API_KEY = ai_cfg$groq_key
+    ))
+  }
+
+  # Translate raw provider errors into user-friendly guidance
+  ai_friendly_error <- function(label, content) {
+    paste0(label, ": ", ai_describe_error(content), " Press Test again after fixing it.")
+  }
+
+  # Friendly model label for an id (static lists first, then live lists)
+  ai_model_label <- function(provider, model_id) {
+    model_id <- as.character(model_id %||% "")
+    if (!nzchar(model_id)) return("")
+    if (provider == "openrouter" && model_id == "openrouter/auto") return("Auto (recommended)")
+    candidates <- list()
+    if (!is.null(ai_model_choices[[provider]])) {
+      candidates <- c(candidates, list(ai_model_choices[[provider]]))
+    }
+    live <- isolate(switch(provider,
+      claude = claude_live_models(),
+      groq = groq_live_models(),
+      openrouter = openrouter_live_models(),
+      NULL))
+    if (!is.null(live) && length(live) > 0) candidates <- c(candidates, list(live))
+    for (vec in candidates) {
+      hit <- which(vec == model_id)
+      if (length(hit) > 0) {
+        nm <- names(vec)[hit[1]]
+        if (!is.null(nm) && nzchar(nm)) return(nm)
+      }
+    }
+    model_id
+  }
+
+  # Provider badge info including the exact model used
+  ai_provider_badge <- function(provider_key, provider_name, model_id) {
+    list(
+      name = provider_name,
+      icon = switch(provider_key,
+        "claude" = "🤖",
+        "gemini" = "✨",
+        "ollama" = "☁️",
+        "openrouter" = "🔀",
+        "groq" = "⚡",
+        "ℹ️"),
+      model = ai_model_label(provider_key, model_id)
+    )
+  }
+
+  # Per-provider test: uses the key/model currently typed in the modal
+  test_single_ai_provider <- function(provider, label, func) {
+    if (!nzchar(get_ai_key(provider)) && !is.null(input[[paste0("ai_key_", provider)]])) {
+      sync_ai_inputs_to_cfg()
+    } else {
+      sync_ai_inputs_to_cfg()
+    }
+    if (!nzchar(get_ai_key(provider))) {
+      showNotification(paste0(label, ": no key entered."), type = "warning", duration = 5)
+      return(invisible(NULL))
+    }
+    withProgress(message = paste0("Testing ", label, "..."), value = 0.4, {
+      res <- func(
+        list(list(role = "user", content = "Reply with exactly: Jibosky connection OK")),
+        context_info = "Connection test. No analysis context."
+      )
+    })
+    if (isTRUE(res$success)) {
+      ai_tested_keys[[provider]] <- get_ai_key(provider)
+      showNotification(paste0(label, ": connected (", get_ai_model(provider), ")."), type = "message", duration = 6)
+    } else {
+      showNotification(ai_friendly_error(label, res$content), type = "error", duration = 8)
+    }
+  }
+
+  observeEvent(input$ai_test_claude, {
+    sync_ai_inputs_to_cfg()
+    # Refresh the live model list from the typed key, then test
+    live <- fetch_claude_models(get_ai_key("claude"))
+    if (!is.null(live)) {
+      claude_live_models(live)
+      updateSelectInput(session, "ai_model_claude", choices = claude_model_choices(),
+                        selected = get_ai_model("claude"))
+    }
+    test_single_ai_provider("claude", "Claude", call_claude)
+  })
+  observeEvent(input$ai_test_gemini, { test_single_ai_provider("gemini", "Gemini", call_gemini) })
+  observeEvent(input$ai_test_ollama, { test_single_ai_provider("ollama", "Ollama", call_ollama) })
+  observeEvent(input$ai_test_openrouter, {
+    sync_ai_inputs_to_cfg()
+    # Refresh the live model list, then test
+    live <- fetch_openrouter_models()
+    if (!is.null(live)) {
+      openrouter_live_models(live)
+      updateSelectInput(session, "ai_model_openrouter", choices = openrouter_model_choices(),
+                        selected = get_ai_model("openrouter"))
+    }
+    test_single_ai_provider("openrouter", "OpenRouter", call_openrouter)
+  })
+  observeEvent(input$ai_test_groq, {
+    sync_ai_inputs_to_cfg()
+    # Refresh the live model list from the typed key, then test
+    live <- fetch_groq_models(get_ai_key("groq"))
+    if (!is.null(live)) {
+      groq_live_models(live)
+      updateSelectInput(session, "ai_model_groq", choices = groq_model_choices(),
+                        selected = get_ai_model("groq"))
+    }
+    test_single_ai_provider("groq", "Groq", call_groq)
+  })
+
   # ==============================================================================
   # JIBOSKY SUPERPOWER HELPER FUNCTIONS
   # ==============================================================================
+  # Shared column finder for statistical results tables. Handles both naming
+  # styles produced by the app: suffixed ("A vs B_AdjPValue", "Comparison_Log2FC")
+  # and bare limma-style ("AdjustedPValue", "FDR", "P.Value", "adj.P.Val").
+  # fdr is matched before p so adjusted columns win when both patterns hit.
+  find_stat_cols <- function(stat_df) {
+    cn <- colnames(stat_df)
+    if (is.null(cn)) return(list(p = character(0), fdr = character(0), fc = character(0)))
+    list(
+      p   = grep("pvalue|p\\.value|_p$|_pval", cn, value = TRUE, ignore.case = TRUE),
+      fdr = grep("fdr|qvalue|adj|padj", cn, value = TRUE, ignore.case = TRUE),
+      fc  = grep("log2fc|logfc|_fc$|_log2|fold", cn, value = TRUE, ignore.case = TRUE)
+    )
+  }
+
+  # Log-scale-aware pairwise fold change shared by all statistical engines.
+  # Log-scale data (log2 option, VSN): log2FC = difference of means; FC = 2^log2FC.
+  # Linear-scale data: FC = ratio of means; log2FC = log2(ratio).
+  # Returns list(fc, log2fc) with non-finite values cleaned to NA.
+  compute_fc_pair <- function(mean1, mean2, is_log) {
+    mean1 <- suppressWarnings(as.numeric(mean1)[1])
+    mean2 <- suppressWarnings(as.numeric(mean2)[1])
+    if (is.na(mean1) || is.na(mean2)) return(list(fc = NA_real_, log2fc = NA_real_))
+    if (isTRUE(is_log)) {
+      lfc <- mean2 - mean1
+      if (!is.finite(lfc)) lfc <- NA_real_
+      return(list(fc = if (is.na(lfc)) NA_real_ else 2^lfc, log2fc = lfc))
+    }
+    if (mean1 > 0 && mean2 >= 0) {
+      fc <- mean2 / mean1
+      lfc <- suppressWarnings(log2(fc))
+      if (!is.finite(lfc)) lfc <- NA_real_
+      return(list(fc = fc, log2fc = lfc))
+    }
+    list(fc = NA_real_, log2fc = NA_real_)
+  }
+
+  # T-test variants shared by all statistical engines. Welch (default) assumes
+  # nothing about variances; Student's assumes equal variances; Paired pairs
+  # samples by position and requires equal group sizes. Returns p-value or NA.
+  run_ttest_pair <- function(x, y, variant = "welch") {
+    x <- suppressWarnings(as.numeric(x)); y <- suppressWarnings(as.numeric(y))
+    x <- x[is.finite(x)]; y <- y[is.finite(y)]
+    variant <- variant %||% "welch"
+    if (variant == "paired" && length(x) != length(y)) return(NA_real_)
+    if (length(x) < 2 || length(y) < 2) return(NA_real_)
+    p <- tryCatch(suppressWarnings(stats::t.test(x, y,
+      paired = identical(variant, "paired"),
+      var.equal = identical(variant, "student"))$p.value),
+      error = function(e) NA_real_)
+    if (length(p) == 0 || is.na(p) || !is.finite(p)) NA_real_ else p
+  }
   
   # --- SP1: Data Quality Report ---
   sp_data_quality_report <- function() {
@@ -65616,8 +68274,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     # Compute effect sizes for top features
     if (!is.null(values$stat_results) && n_groups >= 2 && length(group_sizes) >= 2) {
       stat_df <- values$stat_results
-      fc_cols <- grep("Log2FC|log2fc|_FC$|fold|_log2", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-      p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
+      sc <- find_stat_cols(stat_df)
+      fc_cols <- sc$fc; p_cols <- sc$p
       
       if (length(fc_cols) > 0 && length(p_cols) > 0) {
         fc_col <- fc_cols[1]; p_col <- p_cols[1]
@@ -65776,9 +68434,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     # Statistical Results
     if (!is.null(values$stat_results) && nrow(values$stat_results) > 0) {
       stat_df <- values$stat_results
-      p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-      fdr_cols <- grep("_FDR$|_adj|_padj|_qvalue", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-      fc_cols <- grep("Log2FC|log2fc|_FC$|fold|_log2", colnames(stat_df), value = TRUE, ignore.case = TRUE)
+      sc <- find_stat_cols(stat_df)
+      p_cols <- sc$p; fdr_cols <- sc$fdr; fc_cols <- sc$fc
       
       sig_col <- if (length(fdr_cols) > 0) fdr_cols[1] else if (length(p_cols) > 0) p_cols[1] else NULL
       if (!is.null(sig_col)) {
@@ -65876,9 +68533,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     if (is.null(values$stat_results)) return("Run statistical analysis first to identify significant features for biological interpretation.")
     
     stat_df <- values$stat_results
-    p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-    fdr_cols <- grep("_FDR$|_adj|_padj|_qvalue", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-    fc_cols <- grep("Log2FC|log2fc|_FC$|fold|_log2", colnames(stat_df), value = TRUE, ignore.case = TRUE)
+    sc <- find_stat_cols(stat_df)
+    p_cols <- sc$p; fdr_cols <- sc$fdr; fc_cols <- sc$fc
     sig_col <- if (length(fdr_cols) > 0) fdr_cols[1] else if (length(p_cols) > 0) p_cols[1] else NULL
     
     if (!is.null(sig_col)) {
@@ -65931,8 +68587,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     
     stat_df <- values$stat_results
     n_feat <- nrow(stat_df)
-    p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-    fdr_cols <- grep("_FDR$|_adj|_padj|_qvalue", colnames(stat_df), value = TRUE, ignore.case = TRUE)
+    sc <- find_stat_cols(stat_df)
+    p_cols <- sc$p; fdr_cols <- sc$fdr
     
     if (length(p_cols) > 0) {
       raw_p <- stat_df[[p_cols[1]]]
@@ -66068,9 +68724,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     # Statistical results summary
     if (!is.null(values$stat_results) && nrow(values$stat_results) > 0) {
       stat_df <- values$stat_results
-      p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-      fdr_cols <- grep("_FDR$|_adj|_padj|_qvalue", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-      fc_cols <- grep("Log2FC|log2fc|_FC$|fold|_log2", colnames(stat_df), value = TRUE, ignore.case = TRUE)
+      sc <- find_stat_cols(stat_df)
+      p_cols <- sc$p; fdr_cols <- sc$fdr; fc_cols <- sc$fc
       sig_col <- if (length(fdr_cols) > 0) fdr_cols[1] else if (length(p_cols) > 0) p_cols[1] else NULL
       
       report_sections <- c(report_sections, sprintf("\nSTATISTICAL METHOD: %s", input$sig_method %||% "unknown"))
@@ -66241,8 +68896,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     # Statistical results for current comparison
     if (!is.null(values$stat_results) && nrow(values$stat_results) > 0) {
       stat_df <- values$stat_results
-      p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-      sig_col <- if (length(p_cols) > 0) p_cols[1] else NULL
+      sc <- find_stat_cols(stat_df)
+      p_cols <- sc$p; fdr_cols <- sc$fdr
+      sig_col <- if (length(fdr_cols) > 0) fdr_cols[1] else if (length(p_cols) > 0) p_cols[1] else NULL
       if (!is.null(sig_col)) {
         n_sig <- sum(stat_df[[sig_col]] < 0.05, na.rm = TRUE)
         parts <- c(parts, sprintf("\n[Current Comparison Results] %d significant features", n_sig))
@@ -66334,6 +68990,25 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           context_parts <- c(context_parts, sprintf("  %s: %d samples", grp, n_samples_in_group))
         }
       }
+      # Declared design roles (mapping modal): subject / batch / time
+      tryCatch({
+        dr <- values$design_roles
+        if (!is.null(dr)) {
+          role_lines <- c()
+          if (!is.null(dr$subject) && nzchar(as.character(dr$subject)[1])) {
+            role_lines <- c(role_lines, sprintf("Repeated unit (subject): %s", as.character(dr$subject)[1]))
+          }
+          if (!is.null(dr$batch) && nzchar(as.character(dr$batch)[1])) {
+            role_lines <- c(role_lines, sprintf("Batch/block: %s", as.character(dr$batch)[1]))
+          }
+          if (!is.null(dr$time) && nzchar(as.character(dr$time)[1])) {
+            role_lines <- c(role_lines, sprintf("Time/ordered facet: %s", as.character(dr$time)[1]))
+          }
+          if (length(role_lines) > 0) {
+            context_parts <- c(context_parts, "Design roles:", role_lines)
+          }
+        }
+      }, error = function(e) NULL)
     }
     
     # ===== CURRENT TAB =====
@@ -66344,7 +69019,10 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     # ===== PREPROCESSING SETTINGS =====
     context_parts <- c(context_parts, "\n=== PREPROCESSING ===")
     if (!is.null(input$normalization) && input$normalization != "") {
-      context_parts <- c(context_parts, sprintf("Normalization: %s", input$normalization))
+      context_parts <- c(context_parts, sprintf("Sample normalization: %s", input$normalization))
+    }
+    if (!is.null(input$feature_scaling) && input$feature_scaling != "" && input$feature_scaling != "none") {
+      context_parts <- c(context_parts, sprintf("Feature scaling (applied after Log2): %s", input$feature_scaling))
     }
     if (!is.null(input$imputation) && input$imputation != "") {
       context_parts <- c(context_parts, sprintf("Imputation: %s", input$imputation))
@@ -66355,7 +69033,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     
     # ===== USER-UPLOADED FILE SUMMARIES (JIBOSKY) =====
     if (!is.null(jibosky_file_summaries()) && nzchar(jibosky_file_summaries())) {
-      context_parts <- c(context_parts, "\n=== USER-UPLOADED FILES ===")
+      context_parts <- c(context_parts, "\n=== USER-UPLOADED FILES (attached in chat — NOT loaded into the app unless the user already uploaded them via Data Upload) ===")
       context_parts <- c(context_parts, jibosky_file_summaries())
     }
 
@@ -66396,8 +69074,16 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       analyses_completed <- c(analyses_completed, "Machine Learning Analysis")
     }
     
-    # Enrichment Analysis
-    if (!is.null(values$enrichment_results) && length(values$enrichment_results) > 0) {
+    # Enrichment Analysis. NOTE: the enrichment tab stores its results in
+    # proteomics_values$enrichment_results (values$enrichment_results is never
+    # assigned -- checking only it blinds Jibosky to visible results).
+    pv_er_n <- tryCatch(
+      get_enrichment_results_nrow(proteomics_values$enrichment_results,
+                                  input$proteomics_tool %||% ""),
+      error = function(e) 0
+    )
+    if ((!is.null(values$enrichment_results) && length(values$enrichment_results) > 0) ||
+        (!is.null(pv_er_n) && !is.na(pv_er_n) && pv_er_n > 0)) {
       analyses_completed <- c(analyses_completed, "Enrichment Analysis")
     }
     
@@ -66439,7 +69125,227 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     } else {
       context_parts <- c(context_parts, "No analyses completed yet")
     }
-    
+
+    # ===== EXTENDED RESULT SUMMARIES (compact, global) =====
+    # Covers analyses missing from the tab-gated sections below. Everything is
+    # capped and guarded so context generation can never fail and break chat.
+    tryCatch({
+      concise_vals <- function(x, n = 8) {
+        if (is.null(x)) return(NULL)
+        if (is.data.frame(x)) {
+          num <- vapply(x, function(cc) is.numeric(cc) && length(cc) > 0, logical(1))
+          out <- c()
+          for (cn in head(names(x)[num], n)) {
+            v <- suppressWarnings(as.numeric(x[[cn]]))
+            v <- v[is.finite(v)]
+            if (length(v) > 0) out <- c(out, sprintf("%s: median=%.4g, range=[%.4g, %.4g]", cn, median(v), min(v), max(v)))
+          }
+          if (length(out) == 0) return(NULL)
+          return(out)
+        }
+        if (is.atomic(x) && length(x) > 0) {
+          if (is.numeric(x)) {
+            v <- x[is.finite(x)]
+            if (length(v) == 0) return(NULL)
+            if (!is.null(names(v)) && length(v) <= n) {
+              return(paste(sprintf("%s=%.4g", names(v), v), collapse = "; "))
+            }
+            return(sprintf("median=%.4g, range=[%.4g, %.4g], n=%d", median(v), min(v), max(v), length(x)))
+          }
+          return(paste(head(as.character(x), n), collapse = ", "))
+        }
+        if (is.list(x) && !is.null(names(x))) return(paste(head(names(x), n), collapse = ", "))
+        NULL
+      }
+
+      # --- Bootstrap outcomes ---
+      if (!is.null(values$bootstrap_results) && is.data.frame(values$bootstrap_results) &&
+          nrow(values$bootstrap_results) > 0) {
+        br <- values$bootstrap_results
+        bp <- values$bootstrap_params
+        bl <- c("=== BOOTSTRAP ANALYSIS RESULTS ===",
+                sprintf("Features bootstrapped: %d", nrow(br)))
+        if ("Bootstrap_Significant" %in% names(br)) {
+          bl <- c(bl, sprintf("Bootstrap-significant (upper CI < 0.05): %d",
+                              sum(br$Bootstrap_Significant, na.rm = TRUE)))
+        }
+        if (!is.null(bp)) {
+          bl <- c(bl, sprintf("Replicates: %s | Strategy: %s | CI level: %s",
+                              bp$replicates %||% "?", bp$strategy %||% "?",
+                              bp$confidence_level %||% "?"))
+        }
+        context_parts <- c(context_parts, paste0("\n", paste(bl, collapse = "\n")))
+      }
+
+      # --- ML performance details ---
+      ml_bits <- c()
+      for (nm in c("ml_performance", "ml_train_performance", "ml_test_performance")) {
+        vv <- values[[nm]]
+        if (is.list(vv) && !is.data.frame(vv)) vv <- unlist(vv)
+        cv <- concise_vals(vv)
+        if (!is.null(cv)) ml_bits <- c(ml_bits, sprintf("%s: %s", nm, paste(cv, collapse = "; ")))
+      }
+      imp <- values$ml_importance
+      if (!is.null(imp)) {
+        if (is.data.frame(imp)) {
+          fn <- grep("feature|variable|name", names(imp), value = TRUE, ignore.case = TRUE)
+          iv <- grep("importance|score|coef", names(imp), value = TRUE, ignore.case = TRUE)
+          if (length(fn) > 0 && length(iv) > 0) {
+            o <- head(imp[order(-suppressWarnings(as.numeric(imp[[iv[1]]]))), ], 8)
+            ml_bits <- c(ml_bits, sprintf("Top important: %s", paste(
+              sprintf("%s (%.3f)", o[[fn[1]]], suppressWarnings(as.numeric(o[[iv[1]]]))),
+              collapse = ", ")))
+          } else {
+            ml_bits <- c(ml_bits, sprintf("Importance table: %d rows x %d cols", nrow(imp), ncol(imp)))
+          }
+        } else if (!is.null(names(imp))) {
+          o <- head(sort(suppressWarnings(as.numeric(imp)), decreasing = TRUE), 8)
+          ml_bits <- c(ml_bits, sprintf("Top important: %s",
+            paste(sprintf("%s (%.3f)", names(o), o), collapse = ", ")))
+        }
+      }
+      if (!is.null(values$boruta_stats)) {
+        b <- values$boruta_stats
+        if (is.data.frame(b) && "Decision" %in% names(b)) {
+          ml_bits <- c(ml_bits, sprintf("Boruta: confirmed=%d, tentative=%d, rejected=%d",
+            sum(b$Decision == "Confirmed"), sum(b$Decision == "Tentative"),
+            sum(b$Decision == "Rejected")))
+        } else {
+          ml_bits <- c(ml_bits, "Boruta results present")
+        }
+      }
+      if (!is.null(values$consensus_features)) {
+        ml_bits <- c(ml_bits, sprintf("Consensus features: %d", length(values$consensus_features)))
+      }
+      if (!is.null(values$stability_results)) ml_bits <- c(ml_bits, "Stability selection results present")
+      if (!is.null(values$rfe_detailed_results)) ml_bits <- c(ml_bits, "RFE detailed results present")
+      if (!is.null(values$ml_permutation_results)) ml_bits <- c(ml_bits, "Permutation importance results present")
+      if (length(ml_bits) > 0) {
+        context_parts <- c(context_parts, "\n=== ML PERFORMANCE DETAILS ===", ml_bits)
+      }
+
+      # --- Advanced differential models ---
+      adv <- c()
+      if (!is.null(values$deseq2_results)) adv <- c(adv, "DESeq2 results present")
+      if (!is.null(values$edger_qlf)) adv <- c(adv, "edgeR QLF results present")
+      if (!is.null(values$limma_voom_state)) adv <- c(adv, "limma-voom results present")
+      if (!is.null(values$lmrots_formula)) {
+        adv <- c(adv, sprintf("lmROTS formula: %s%s", values$lmrots_formula,
+          if (!is.null(values$lmrots_result)) " (fitted)" else " (not fitted)"))
+      }
+      if (!is.null(values$lmerots_formula)) {
+        adv <- c(adv, sprintf("lmeROTS formula: %s%s", values$lmerots_formula,
+          if (!is.null(values$lmerots_result)) " (fitted)" else " (not fitted)"))
+      }
+      if (!is.null(values$significant_features)) {
+        adv <- c(adv, sprintf("Significant features: %d", length(values$significant_features)))
+      }
+      if (!is.null(values$comparison_results)) {
+        cr <- values$comparison_results
+        adv <- c(adv, sprintf("Comparison results: %s",
+          if (is.data.frame(cr)) sprintf("%d rows x %d cols", nrow(cr), ncol(cr))
+          else if (!is.null(names(cr))) paste(head(names(cr), 6), collapse = ", ")
+          else paste(class(cr), collapse = "/")))
+      }
+      if (length(adv) > 0) {
+        context_parts <- c(context_parts, "\n=== ADVANCED DIFFERENTIAL MODELS ===", adv)
+      }
+
+      # --- Dual grouping ---
+      if (isTRUE(values$has_dual_grouping)) {
+        dg <- c("=== DUAL GROUPING (biological + experimental) ===",
+                sprintf("Biological groups: %s",
+                        paste(values$biological_unique_groups %||% "?", collapse = ", ")),
+                sprintf("Experimental groups: %s",
+                        paste(values$experimental_unique_groups %||% "?", collapse = ", ")))
+        if (!is.null(values$biological_stat_results)) {
+          dg <- c(dg, sprintf("Biological-level stats: %d rows", nrow(values$biological_stat_results)))
+        }
+        if (!is.null(values$experimental_stat_results)) {
+          dg <- c(dg, sprintf("Experimental-level stats: %d rows", nrow(values$experimental_stat_results)))
+        }
+        context_parts <- c(context_parts, paste0("\n", paste(dg, collapse = "\n")))
+      }
+
+      # --- Preprocessing provenance + metadata ---
+      pp <- c()
+      if (!is.null(values$imputation_stats)) {
+        cv <- concise_vals(values$imputation_stats)
+        if (!is.null(cv)) pp <- c(pp, sprintf("Imputation: %s", paste(cv, collapse = "; ")))
+      } else if (!is.null(values$imputation_method)) {
+        pp <- c(pp, sprintf("Imputation method: %s", as.character(values$imputation_method)))
+      }
+      for (nm in c("removed_features", "removed_empty_features", "removed_all_na_features")) {
+        vv <- values[[nm]]
+        if (!is.null(vv)) pp <- c(pp, sprintf("%s: %d", nm, length(vv)))
+      }
+      if (!is.null(values$duplicate_feature_names)) {
+        pp <- c(pp, sprintf("Duplicate feature names: %d", length(values$duplicate_feature_names)))
+      }
+      if (!is.null(values$batch_info)) {
+        bt <- head(table(as.character(values$batch_info)), 10)
+        pp <- c(pp, sprintf("Batches: %s",
+          paste(sprintf("%s (n=%d)", names(bt), as.integer(bt)), collapse = ", ")))
+      }
+      if (!is.null(values$drift_corrected_data)) pp <- c(pp, "QC drift correction applied")
+      if (!is.null(values$qc_rsd_before) || !is.null(values$qc_rsd_after)) {
+        pp <- c(pp, sprintf("QC RSD: before=[%s], after=[%s]",
+          paste(head(round(suppressWarnings(as.numeric(values$qc_rsd_before)), 2), 10), collapse = ","),
+          paste(head(round(suppressWarnings(as.numeric(values$qc_rsd_after)), 2), 10), collapse = ",")))
+      }
+      if (!is.null(values$raw_data)) {
+        pp <- c(pp, sprintf("Raw data: %d rows x %d cols", nrow(values$raw_data), ncol(values$raw_data)))
+      }
+      if (!is.null(values$metadata) && is.data.frame(values$metadata)) {
+        pp <- c(pp, sprintf("Sample metadata: %d rows x %d cols (%s)",
+          nrow(values$metadata), ncol(values$metadata),
+          paste(head(colnames(values$metadata), 10), collapse = ", ")))
+      }
+      if (length(pp) > 0) {
+        context_parts <- c(context_parts, "\n=== PREPROCESSING PROVENANCE ===", pp)
+      }
+
+      # --- WGCNA / network modules ---
+      if (!is.null(values$module_summary)) {
+        ms <- values$module_summary
+        context_parts <- c(context_parts, "\n=== WGCNA MODULES ===",
+          if (is.data.frame(ms)) sprintf("%d modules, first sizes: %s", nrow(ms),
+            paste(head(suppressWarnings(as.numeric(ms[[1]])), 10), collapse = ", "))
+          else if (!is.null(names(ms))) paste(head(names(ms), 10), collapse = ", ")
+          else paste(class(ms), collapse = "/"))
+      }
+
+      # --- Proteomics / glycan / pathway leftovers ---
+      if (!is.null(values$proteomics_results)) {
+        pr <- values$proteomics_results
+        context_parts <- c(context_parts, "\n=== PROTEOMICS RESULTS ===",
+          if (is.data.frame(pr)) sprintf("%d rows x %d cols", nrow(pr), ncol(pr))
+          else paste(class(pr), collapse = "/"))
+      }
+      if (!is.null(values$sig_results_glycan)) {
+        sg <- values$sig_results_glycan
+        context_parts <- c(context_parts, "\n=== GLYCAN SIGNIFICANCE ===",
+          if (is.data.frame(sg)) sprintf("%d rows x %d cols", nrow(sg), ncol(sg))
+          else sprintf("n=%d", length(sg)))
+      }
+      if (!is.null(values$diff_summary)) {
+        cv <- concise_vals(values$diff_summary)
+        if (!is.null(cv)) context_parts <- c(context_parts, "\n=== DIFFERENTIAL SUMMARY ===", cv)
+      }
+      if (!is.null(values$pathway_summary)) {
+        ps <- values$pathway_summary
+        context_parts <- c(context_parts, "\n=== PATHWAY SUMMARY ===",
+          if (is.data.frame(ps)) sprintf("%d pathways; top: %s", nrow(ps),
+            paste(head(as.character(ps[[1]]), 8), collapse = ", "))
+          else paste(head(as.character(unlist(ps)), 8), collapse = ", "))
+      }
+      if (!is.null(values$topgo_selected_terms)) {
+        context_parts <- c(context_parts, "\n=== TOPGO TERMS ===",
+          sprintf("%d selected: %s", length(values$topgo_selected_terms),
+                  paste(head(as.character(values$topgo_selected_terms), 8), collapse = ", ")))
+      }
+    }, error = function(e) NULL)
+
     # ===== STATISTICAL ANALYSIS SETTINGS =====
     if (!is.null(input$sig_method) && input$sig_method != "") {
       context_parts <- c(context_parts, "\n=== STATISTICAL ANALYSIS ===")
@@ -66468,10 +69374,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         # Column information
         context_parts <- c(context_parts, sprintf("Available columns: %s", paste(colnames(stat_df), collapse = ", ")))
         
-        # Find relevant columns
-        p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-        fdr_cols <- grep("_FDR$|_adj|_padj|_qvalue", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-        fc_cols <- grep("Log2FC|log2fc|_FC$|fold|_log2", colnames(stat_df), value = TRUE, ignore.case = TRUE)
+        # Find relevant columns (shared helper covers suffixed and limma-style names)
+        sc_ctx <- find_stat_cols(stat_df)
+        p_cols <- sc_ctx$p
+        fdr_cols <- sc_ctx$fdr
+        fc_cols <- sc_ctx$fc
         mean_cols <- grep("_mean$|_Mean$|_average", colnames(stat_df), value = TRUE, ignore.case = TRUE)
         
         # Report what we found
@@ -66524,6 +69431,25 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           }
         }
         
+        # Orient the primary FC column to Group1-positive ("A vs B": positive
+        # = higher in A), mirroring the volcano/table display layer. Stored
+        # columns run Group2-Group1, so negate when the app's own resolver
+        # flags this column as reversed for its comparison name.
+        fc_primary_reversed <- FALSE
+        fc_primary_comp <- NULL
+        if (!is.null(fc_col_primary)) {
+          fc_primary_comp <- sub("_(Log2FC|FoldChange)$", "", fc_col_primary)
+          fc_resolved <- tryCatch(get_foldchange_column(fc_primary_comp), error = function(e) NULL)
+          if (!is.null(fc_resolved) && identical(paste0("REVERSED:", fc_col_primary), fc_resolved)) {
+            fc_primary_reversed <- TRUE
+          }
+        }
+        orient_fc_primary <- function(v) {
+          v <- suppressWarnings(as.numeric(v))
+          if (isTRUE(fc_primary_reversed)) v <- -v
+          v
+        }
+        
         # Statistical summary
         sig_col <- if(length(fdr_cols) > 0) fdr_cols[1] else if(length(p_cols) > 0) p_cols[1] else NULL
         
@@ -66534,8 +69460,16 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           n_sig <- sum(sig_values < p_cutoff, na.rm = TRUE)
           n_total <- sum(!is.na(sig_values))
           
-          context_parts <- c(context_parts, sprintf("\nSignificant features (p < %.3f): %d out of %d (%.1f%%)",
-                                                    p_cutoff, n_sig, n_total, 100*n_sig/n_total))
+          # Label WHICH column this comes from: first columns are often the
+          # all-groups global test, not any pairwise comparison. Never let
+          # these counts be read as a specific pair's result.
+          sig_col_kind <- if (grepl("^Global|_Global_", sig_col)) {
+            "all-groups global test (NOT a pairwise comparison)"
+          } else {
+            "first listed comparison column"
+          }
+          context_parts <- c(context_parts, sprintf("\nSignificant features in %s [%s] (p < %.3f): %d out of %d (%.1f%%)",
+                                                    sig_col, sig_col_kind, p_cutoff, n_sig, n_total, 100*n_sig/n_total))
           
           # Distribution of p-values
           p_ranges <- c(
@@ -66564,9 +69498,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
               feature_info <- sprintf("%d. %s", i, display_name)
               feature_info <- paste0(feature_info, sprintf(" | p-value: %.2e", p_val))
               
-              # Add fold change
+              # Add fold change (oriented Group1-positive, like the plots)
               if (!is.null(fc_col_primary) && fc_col_primary %in% colnames(top_features)) {
-                fc_val <- suppressWarnings(as.numeric(top_features[[fc_col_primary]][i]))
+                fc_val <- orient_fc_primary(top_features[[fc_col_primary]][i])
                 if (!is.na(fc_val)) {
                   # Show fold change properly: positive values as increase, negative as decrease
                   fold_change_linear <- 2^fc_val
@@ -66590,31 +69524,48 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           }
         }
         
-        # Fold change summary - ONLY use the primary validated FC column
+        # Fold change summary - ONLY use the primary validated FC column,
+        # oriented Group1-positive (positive = higher in the FIRST group of
+        # the comparison in the header). Up/down counts are gated on the
+        # significance column above, not over all features.
         if (!is.null(fc_col_primary) && fc_col_primary %in% colnames(stat_df)) {
-          fc_values <- suppressWarnings(as.numeric(stat_df[[fc_col_primary]]))
+          fc_values <- orient_fc_primary(stat_df[[fc_col_primary]])
           fc_values <- fc_values[!is.na(fc_values)]
           if (length(fc_values) > 0) {
-            context_parts <- c(context_parts, sprintf("\n=== FOLD CHANGE SUMMARY (%s) ===", fc_col_primary))
-            context_parts <- c(context_parts, "NOTE: Positive log2FC values = UPREGULATION (feature higher in first group)")
-            context_parts <- c(context_parts, "      Negative log2FC values = DOWNREGULATION (feature lower in first group)")
+            sig_mask <- !is.na(sig_values) & sig_values < p_cutoff
+            # Align mask in case NA filtering dropped rows (both derive from stat_df rows)
+            if (length(sig_mask) != nrow(stat_df)) sig_mask <- rep(TRUE, nrow(stat_df))
+            fc_sig <- suppressWarnings(as.numeric(stat_df[[fc_col_primary]]))
+            if (isTRUE(fc_primary_reversed)) fc_sig <- -fc_sig
+            # Gate direction counts on significance when a usable column exists
+            sig_ok <- tryCatch(!is.null(sig_values) && length(sig_values) == nrow(stat_df),
+                               error = function(e) FALSE)
+            if (isTRUE(sig_ok)) {
+              gate <- !is.na(sig_values) & sig_values < p_cutoff
+              sig_fc <- fc_sig[!is.na(fc_sig) & gate]
+              gate_note <- sprintf(" passing p < %.3f", p_cutoff)
+            } else {
+              sig_fc <- fc_sig[!is.na(fc_sig)]
+              gate_note <- " (no significance column available; all features counted)"
+            }
+            context_parts <- c(context_parts, sprintf("\n=== FOLD CHANGE SUMMARY (%s, oriented: positive = higher in first group) ===", fc_col_primary))
             
-            n_upregulated <- sum(fc_values > 0)
-            n_downregulated <- sum(fc_values < 0)
+            n_upregulated <- sum(sig_fc > 0)
+            n_downregulated <- sum(sig_fc < 0)
             mean_fc <- mean(abs(fc_values))
             max_fc_up <- max(fc_values, na.rm = TRUE)
             max_fc_down <- min(fc_values, na.rm = TRUE)
             
-            context_parts <- c(context_parts, sprintf("UPREGULATED features: %d (max log2FC: %+.2f = %.2fx increase)",
-                                                      n_upregulated, max_fc_up, 2^max_fc_up))
-            context_parts <- c(context_parts, sprintf("DOWNREGULATED features: %d (min log2FC: %+.2f = %.2fx decrease)",
-                                                      n_downregulated, max_fc_down, 2^max_fc_down))
+            context_parts <- c(context_parts, sprintf("UPREGULATED features%s: %d (max log2FC: %+.2f = %.2fx increase)",
+                                                      gate_note, n_upregulated, max_fc_up, 2^max_fc_up))
+            context_parts <- c(context_parts, sprintf("DOWNREGULATED features%s: %d (min log2FC: %+.2f = %.2fx decrease)",
+                                                      gate_note, n_downregulated, max_fc_down, 2^max_fc_down))
             context_parts <- c(context_parts, sprintf("Average |log2FC|: %.2f", mean_fc))
             
             if (!is.null(input$fc_cutoff)) {
               fc_cutoff <- input$fc_cutoff
-              strong_up <- sum(fc_values > fc_cutoff)
-              strong_down <- sum(fc_values < -fc_cutoff)
+              strong_up <- sum(sig_fc > fc_cutoff)
+              strong_down <- sum(sig_fc < -fc_cutoff)
               context_parts <- c(context_parts, sprintf("Strong changes (|log2FC| > %.1f): %d upregulated, %d downregulated",
                                                         fc_cutoff, strong_up, strong_down))
             }
@@ -66714,11 +69665,12 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           context_parts <- c(context_parts, sprintf("Fold change threshold: |log2FC| > %.2f (shown as vertical lines)", input$fc_cutoff))
         }
         
-        # Find relevant columns
-        p_cols <- grep("_pvalue$|_p_value$|_P$|_pval", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-        fdr_cols <- grep("_FDR$|_adj|_padj|_qvalue", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-        fc_cols <- grep("Log2FC|log2fc|_FC$|fold|_log2", colnames(stat_df), value = TRUE, ignore.case = TRUE)
-        
+        # Find relevant columns (shared helper covers suffixed and limma-style names)
+        sc_ctx2 <- find_stat_cols(stat_df)
+        p_cols <- sc_ctx2$p
+        fdr_cols <- sc_ctx2$fdr
+        fc_cols <- sc_ctx2$fc
+
         sig_col <- if(length(fdr_cols) > 0) fdr_cols[1] else if(length(p_cols) > 0) p_cols[1] else NULL
         fc_col <- if(length(fc_cols) > 0) fc_cols[1] else NULL
         
@@ -66873,12 +69825,24 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         context_parts <- c(context_parts, sprintf("Organism: %s", input$proteomics_organism))
       }
       
-      # Enrichment Results
+      # Enrichment Results (proteomics tab store). Normalize S4
+      # (enrichResult/gseaResult) and gprofiler/topGO lists to a plain
+      # data.frame first: raw nrow()/colnames accessors throw on S4 objects.
       if (!is.null(proteomics_values$enrichment_results)) {
         tryCatch({
           enrich_df <- proteomics_values$enrichment_results
-          
-          if (nrow(enrich_df) > 0) {
+          if (!is.data.frame(enrich_df) && is.list(proteomics_values$enrichment_results)) {
+            cand <- tryCatch(proteomics_values$enrichment_results$result, error = function(e) NULL)
+            if (!is.data.frame(cand)) {
+              cand <- tryCatch(proteomics_values$enrichment_results$table, error = function(e) NULL)
+            }
+            if (is.data.frame(cand)) enrich_df <- cand
+          }
+          if (!is.data.frame(enrich_df)) {
+            enrich_df <- tryCatch(as.data.frame(enrich_df), error = function(e) NULL)
+          }
+
+          if (is.data.frame(enrich_df) && nrow(enrich_df) > 0) {
             context_parts <- c(context_parts, sprintf("\nTotal enriched terms found: %d", nrow(enrich_df)))
             
             # Find relevant columns
@@ -67641,16 +70605,21 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           }
         }
         
-        # Statistical test results
+        # Statistical test results (significance wording follows the Data tab cutoff)
         test_results <- values$dist_test_results
+        ctx_cutoff <- input$pvalue_cutoff %||% 0.05
         if (!is.null(test_results)) {
           context_parts <- c(context_parts, "\n=== STATISTICAL TEST RESULTS ===")
           context_parts <- c(context_parts, sprintf("Test method: %s", test_results$method))
           
-          # Overall test results
+          # Overall test results (threshold follows the Data tab cutoff)
           if (!is.null(test_results$overall$p.value)) {
             p_value <- test_results$overall$p.value
-            significant <- if (p_value < 0.05) "YES (p < 0.05)" else "NO (p ≥ 0.05)"
+            significant <- if (!is.na(p_value) && p_value < ctx_cutoff) {
+              paste0("YES (p < ", ctx_cutoff, ")")
+            } else {
+              paste0("NO (p >= ", ctx_cutoff, ")")
+            }
             context_parts <- c(context_parts, sprintf("Overall test p-value: %.4f", p_value))
             context_parts <- c(context_parts, sprintf("Significantly different between groups: %s", significant))
           }
@@ -67667,7 +70636,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             
             for (comp in names(test_results$posthoc)) {
               p_val <- test_results$posthoc[[comp]]
-              sig_marker <- if (p_val < 0.05) "*" else ""
+              sig_marker <- if (!is.na(p_val) && p_val < ctx_cutoff) "*" else ""
               context_parts <- c(context_parts,
                                  sprintf("  %s: p = %.4f %s", comp, p_val, sig_marker))
             }
@@ -68889,13 +71858,107 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     return(NULL)
   }
   
+  # Convert a block of markdown table lines to an HTML table
+  md_table_to_html <- function(tbl_lines) {
+    split_row <- function(ln) {
+      cells <- strsplit(gsub("^\\s*\\||\\|\\s*$", "", ln), "\\|")[[1]]
+      trimws(cells)
+    }
+    is_sep <- function(cells) {
+      length(cells) > 0 && all(grepl("^:?-{1,}:?$", cells))
+    }
+    rows <- lapply(tbl_lines, split_row)
+    rows <- rows[vapply(rows, length, integer(1)) > 0]
+    if (length(rows) == 0) return(paste(tbl_lines, collapse = "\n"))
+    is_empty_row <- function(cells) {
+      all(!nzchar(cells)) || all(grepl("^:?-{1,}:?$", cells))
+    }
+    has_header <- length(rows) >= 2 && is_sep(rows[[2]]) && !is_empty_row(rows[[1]])
+    body_start <- if (has_header) 3 else 1
+    # Drop empty / separator-like body rows (models emit these as filler)
+    if (length(rows) >= body_start) {
+      keep_body <- vapply(rows[body_start:length(rows)], function(r) !is_empty_row(r), logical(1))
+      rows <- c(if (has_header) rows[1:2] else list(), rows[body_start:length(rows)][keep_body])
+      if (length(rows) == 0) return(paste(tbl_lines, collapse = "\n"))
+      body_start <- if (has_header) 3 else 1
+    }
+    ncol_max <- max(vapply(rows, length, integer(1)))
+    pad <- function(cells) {
+      c(cells, rep("", max(0, ncol_max - length(cells))))
+    }
+    html <- c("<table class='jibosky-md-table'>")
+    if (has_header) {
+      html <- c(html, "<thead><tr>", paste0("<th>", pad(rows[[1]]), "</th>", collapse = ""),
+                "</tr></thead>")
+    }
+    if (length(rows) >= body_start) {
+      html <- c(html, "<tbody>")
+      for (r in rows[body_start:length(rows)]) {
+        html <- c(html, "<tr>", paste0("<td>", pad(r), "</td>", collapse = ""), "</tr>")
+      }
+      html <- c(html, "</tbody>")
+    }
+    html <- c(html, "</table>")
+    paste(html, collapse = "\n")
+  }
+
   # Function to convert markdown to HTML for chat messages
   format_markdown <- function(text) {
     # Escape HTML entities first
     text <- gsub("&", "&amp;", text)
     text <- gsub("<", "&lt;", text)
     text <- gsub(">", "&gt;", text)
-    
+
+    # Block-level pass (fences, headers, tables, rules) before inline formatting
+    md_lines <- strsplit(text, "\n", fixed = TRUE)[[1]]
+    md_out <- c()
+    fence_ph <- c()
+    fence_html <- c()
+    ii <- 1
+    while (ii <= length(md_lines)) {
+      ln <- md_lines[ii]
+      if (grepl("^```", ln)) {
+        fence_body <- c()
+        ii <- ii + 1
+        while (ii <= length(md_lines) && !grepl("^```\\s*$", md_lines[ii])) {
+          fence_body <- c(fence_body, md_lines[ii])
+          ii <- ii + 1
+        }
+        ii <- ii + 1  # skip closing fence (or run past the end if unclosed)
+        fence_id <- length(fence_html) + 1
+        fence_ph <- c(fence_ph, sprintf("ZZZJIBOSKYFENCE%dZZZ", fence_id))
+        fence_html <- c(fence_html, sprintf("<pre class='jibosky-md-pre'>%s</pre>",
+                                            paste(fence_body, collapse = "\n")))
+        md_out <- c(md_out, fence_ph[fence_id])
+        next
+      }
+      if (grepl("^\\s*\\|", ln)) {
+        tbl <- c()
+        while (ii <= length(md_lines) && grepl("^\\s*\\|", md_lines[ii])) {
+          tbl <- c(tbl, md_lines[ii])
+          ii <- ii + 1
+        }
+        md_out <- c(md_out, md_table_to_html(tbl))
+        next
+      }
+      if (grepl("^###\\s+", ln)) {
+        md_out <- c(md_out, sprintf("<h5 class='jibosky-md-h'>%s</h5>",
+                                    sub("^###\\s+", "", ln)))
+      } else if (grepl("^##\\s+", ln)) {
+        md_out <- c(md_out, sprintf("<h4 class='jibosky-md-h'>%s</h4>",
+                                    sub("^##\\s+", "", ln)))
+      } else if (grepl("^#\\s+", ln)) {
+        md_out <- c(md_out, sprintf("<h4 class='jibosky-md-h'>%s</h4>",
+                                    sub("^#\\s+", "", ln)))
+      } else if (grepl("^\\s*---\\s*$", ln)) {
+        md_out <- c(md_out, "<hr class='jibosky-md-hr'>")
+      } else {
+        md_out <- c(md_out, ln)
+      }
+      ii <- ii + 1
+    }
+    text <- paste(md_out, collapse = "\n")
+
     # Convert markdown formatting
     # Bold: **text** or __text__
     text <- gsub("\\*\\*([^*]+)\\*\\*", "<strong>\\1</strong>", text)
@@ -68920,7 +71983,22 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     
     # Convert line breaks
     text <- gsub("\n", "<br>", text)
-    
+
+    # Collapse runs of blank lines (models often emit many) to at most one gap
+    text <- gsub("(<br>\\s*){3,}", "<br><br>", text)
+    text <- gsub("^(<br>\\s*)+", "", text)
+
+    # Tables/pre blocks carry their own margins: strip breaks touching them
+    text <- gsub("(<br>\\s*)+(<table)", "\\2", text)
+    text <- gsub("(</table>)(<br>\\s*)+", "\\1", text)
+    text <- gsub("(<br>\\s*)+(<pre)", "\\2", text)
+    text <- gsub("(</pre>)(<br>\\s*)+", "\\1", text)
+
+    # Restore fenced code blocks (kept intact through inline formatting)
+    for (k in seq_along(fence_ph)) {
+      text <- gsub(fence_ph[k], fence_html[k], text, fixed = TRUE)
+    }
+
     return(text)
   }
   
@@ -68940,10 +72018,15 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         formatted_content <- format_markdown(msg$content)
         # Add provider badge if available (for bot messages)
         if (!is_user && !is.null(msg$provider)) {
+          credit <- if (!is.null(msg$provider$model) && nzchar(msg$provider$model)) {
+            sprintf("%s - %s", msg$provider$name, msg$provider$model)
+          } else {
+            msg$provider$name
+          }
           provider_badge <- sprintf(
             "<div style='font-size: 0.75em; color: #888; margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee;'>%s <em>Powered by %s</em></div>",
             msg$provider$icon,
-            msg$provider$name
+            credit
           )
           formatted_content <- paste0(formatted_content, provider_badge)
         }
@@ -69059,13 +72142,51 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     return(tagList(suggestion_buttons))
   })
   
+  # Per-tab "Ask Jibosky" buttons: open chat and request a summary of that tab.
+  # The normal send pipeline picks this up, with context already scoped to the
+  # active tab by get_context_info().
+  observeEvent(input$jibosky_tab_ask, {
+    tab <- trimws(as.character(input$jibosky_tab_ask %||% ""))
+    req(nzchar(tab))
+    msg <- sprintf(paste0("Please summarize and interpret the results shown on the '%s' tab. ",
+                          "Explain the key findings, what the charts/tables mean, and what I should do next in the app."),
+                   tab)
+    msg_json <- jsonlite::toJSON(msg, auto_unbox = TRUE)
+    shinyjs::runjs("if (window.jiboskyOpenChat) window.jiboskyOpenChat();")
+    shinyjs::runjs(sprintf("Shiny.setInputValue('jibosky_send', {message: %s, time: Date.now()});", msg_json))
+  })
+
   # Handle send message
   observeEvent(input$jibosky_send, {
     req(input$jibosky_send$message)
     user_message <- trimws(input$jibosky_send$message)
     
     if (user_message == "") return()
-    
+
+    # No keys configured: Jibosky asks for setup instead of calling the API
+    if (!any(ai_provider_status())) {
+      current_messages <- jibosky_messages()
+      current_messages[[length(current_messages) + 1]] <- list(
+        role = "user",
+        content = user_message,
+        time = Sys.time()
+      )
+      current_messages[[length(current_messages) + 1]] <- list(
+        role = "assistant",
+        content = paste0(
+          "\U0001F44B Hi! I can't chat yet because **no AI provider key is set**.\n\n",
+          "To activate me:\n",
+          "1. Click the **\u2699 AI Setup** button at the top of this chat window\n",
+          "2. Paste at least one key (Groq or Gemini have free tiers \u2014 see the **?** help icon for where to get one)\n",
+          "3. Pick a model, press **Test**, then **Save**\n\n",
+          "Once saved, just ask me anything about your analysis!"
+        ),
+        time = Sys.time()
+      )
+      jibosky_messages(current_messages)
+      return()
+    }
+
     # Disable input and change button to stop mode
     session$sendCustomMessage("jibosky_ui_state", list(
       action = "disable",
@@ -69167,15 +72288,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         # Prepare provider info (stored separately, not in content)
         provider_info <- NULL
         if (isTRUE(response$success) && !is.null(response$provider_name)) {
-          provider_info <- list(
-            name = response$provider_name,
-            icon = switch(response$provider,
-                          "claude" = "🤖",
-                          "gemini" = "✨",
-                          "openrouter" = "🔀",
-                          "ℹ️"
-            )
-          )
+          provider_info <- ai_provider_badge(response$provider, response$provider_name, response$model)
         }
         
         updated_messages[[length(updated_messages) + 1]] <- list(
@@ -69337,10 +72450,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         
         provider_info <- NULL
         if (isTRUE(response$success) && !is.null(response$provider_name)) {
-          provider_info <- list(
-            name = response$provider_name,
-            icon = switch(response$provider, "claude" = "\U0001F916", "gemini" = "\u2728", "openrouter" = "\U0001F500", "\u2139\uFE0F")
-          )
+          provider_info <- ai_provider_badge(response$provider, response$provider_name, response$model)
         }
         
         updated[[length(updated) + 1]] <- list(
@@ -69536,13 +72646,14 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     
     stat_method <- input$sig_method
     
-    # Determine if parametric or non-parametric based on Data tab settings
-    is_parametric <- stat_method %in% c("t.test", "anova")
+    # Determine if parametric or non-parametric based on Data tab settings.
+    # limma/voom use moderated t/F statistics, so they take the parametric path.
+    is_parametric <- stat_method %in% c("t.test", "anova", "limma", "limma_voom")
     is_anova_based <- stat_method %in% c("anova", "kruskal")
     
-    # For other tests (limma, rots, deseq2, edger, etc), use non-parametric approach
+    # For other tests (rots, deseq2, edger, etc), use non-parametric approach
     use_nonparametric_fallback <- FALSE
-    if (!stat_method %in% c("t.test", "wilcox", "anova", "kruskal")) {
+    if (!stat_method %in% c("t.test", "wilcox", "anova", "kruskal", "limma", "limma_voom")) {
       is_parametric <- FALSE
       use_nonparametric_fallback <- TRUE
       showNotification(
@@ -69626,14 +72737,6 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         current_n2 <- length(group2_cols)
         current_n <- min(current_n1, current_n2)
         
-        # === DEBUG ===
-        cat("\n=== POWER ANALYSIS COMPUTATION DEBUG ===\n")
-        cat("group1:", group1, "| group1_cols length:", current_n1, "\n")
-        cat("group2:", group2, "| group2_cols length:", current_n2, "\n")
-        cat("current_n (min of both):", class(current_n), "=", current_n, "\n")
-        cat("input$power_include_global:", input$power_include_global, "\n")
-        cat("=== END DEBUG ===\n\n")
-        
         setProgress(0.1, detail = "Calculating group statistics...")
         
         # Calculate statistics for each feature
@@ -69645,17 +72748,26 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         group2_means <- rowMeans(group2_data, na.rm = TRUE)
         group2_sds <- apply(group2_data, 1, sd, na.rm = TRUE)
         
-        # Get effect sizes
+        # Get effect sizes (multipliers of each feature's observed difference)
         effect_sizes <- as.numeric(input$power_effect_sizes[input$power_effect_sizes != "custom"])
         if ("custom" %in% input$power_effect_sizes) {
           effect_sizes <- c(effect_sizes, input$power_custom_es)
         }
         effect_sizes <- sort(unique(effect_sizes))
+        if (length(effect_sizes) == 0) {
+          showNotification("Select at least one effect-size scale to test.", type = "warning")
+          return()
+        }
         
         # Define sample size range
         sample_sizes <- seq(input$power_sample_range[1], input$power_sample_range[2], by = 5)
         
-        # Initialize results storage
+        # Initialize results storage (row lists: single bind at the end;
+        # incremental rbind() here is O(n^2) over features x effect sizes)
+        current_power_rows <- list()
+        all_result_rows <- list()
+        summary_rows <- list()
+        row_i <- 0L
         all_results <- data.frame()
         feature_power_summary <- data.frame()
         current_power_results <- data.frame()
@@ -69665,60 +72777,57 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         
         setProgress(0.2, detail = paste("Analyzing", num_features, "features..."))
         
-        # Calculate power for each feature
-        for (feature_idx in 1:num_features) {
-          if (isTRUE(values$power_analysis_abort)) {
-            analysis_aborted <- TRUE
-            stop("POWER_ANALYSIS_ABORT")
-          }
-          if (feature_idx %% 10 == 0) {
-            setProgress(0.2 + (0.7 * feature_idx / num_features),
-                        detail = paste("Feature", feature_idx, "of", num_features))
-          }
-          
-          feature_name <- feature_names[feature_idx]
-          mu1 <- group1_means[feature_idx]
-          sd1 <- group1_sds[feature_idx]
-          mu2 <- group2_means[feature_idx]
-          sd2 <- group2_sds[feature_idx]
+        # Per-feature worker: pure function of explicit arguments only
+        # (parallel-safe: references no reactives/session). Returns row-lists
+        # or NULL for skipped features. identical() output vs the old serial loop.
+        compute_one_feature <- function(fi, fnames, g1m, g1s, g2m, g2s,
+                                        esizes, nsizes, alpha, parametric,
+                                        cn1, cn2, tfrac, acc_ids) {
+          feature_name <- fnames[fi]
+          mu1 <- g1m[fi]
+          sd1 <- g1s[fi]
+          mu2 <- g2m[fi]
+          sd2 <- g2s[fi]
+          current_n <- min(cn1, cn2)
           
           # Skip if invalid
           if (is.na(mu1) || is.na(mu2) || is.na(sd1) || is.na(sd2) || sd1 == 0 || sd2 == 0) {
-            next
+            return(NULL)
           }
           
+          cur_rows <- list()
+          det_rows <- list()
+          sum_rows <- list()
+          
           # Calculate power for each effect size
-          for (effect_size in effect_sizes) {
-            if (isTRUE(values$power_analysis_abort)) {
-              analysis_aborted <- TRUE
-              stop("POWER_ANALYSIS_ABORT")
-            }
+          for (effect_size in esizes) {
             # Adjust mu2 based on effect size
             mu2_adjusted <- mu1 + effect_size * (mu2 - mu1)
             
             # Calculate power across sample sizes
-            power_values <- sapply(sample_sizes, function(n) {
+            power_values <- sapply(nsizes, function(n) {
               tryCatch({
                 if (!requireNamespace("pwrss", quietly = TRUE)) {
                   # Fallback to simpler calculation
                   pooled_sd <- sqrt((sd1^2 + sd2^2) / 2)
                   cohen_d <- abs(mu2_adjusted - mu1) / pooled_sd
                   ncp <- cohen_d * sqrt(n / 2)
-                  power <- pnorm(qnorm(1 - alpha_val / 2) - ncp) +
-                    pnorm(-qnorm(1 - alpha_val / 2) - ncp)
-                  return(1 - power)
+                  # Two-sided normal-approximation power (exact closed form)
+                  z_alpha <- qnorm(1 - alpha / 2)
+                  return(pnorm(ncp - z_alpha) + pnorm(-z_alpha - ncp))
                 } else {
                   # Use appropriate test based on Data tab method
-                  if (is_parametric) {
+                  if (parametric) {
                     # Parametric test (t-test or pairwise from ANOVA)
                     pwrss::pwrss.t.2means(
                       mu1 = mu1,
                       mu2 = mu2_adjusted,
                       sd1 = sd1,
                       sd2 = sd2,
-                      alpha = alpha_val,
+                      alpha = alpha,
                       n2 = n,
-                      alternative = "two.sided"
+                      alternative = "not equal",
+                      verbose = FALSE
                     )$power
                   } else {
                     # Non-parametric test (Wilcoxon/Mann-Whitney or pairwise from Kruskal-Wallis)
@@ -69728,10 +72837,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                       mu2 = mu2_adjusted,
                       sd1 = sd1,
                       sd2 = sd2,
-                      alpha = alpha_val,
+                      alpha = alpha,
                       power = NULL,
                       n2 = n,
-                      distribution = "normal"
+                      distribution = "normal",
+                      verbose = FALSE
                     )$power
                   }
                 }
@@ -69744,22 +72854,26 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                 pooled_sd <- sqrt((sd1^2 + sd2^2) / 2)
                 cohen_d <- abs(mu2_adjusted - mu1) / pooled_sd
                 ncp <- cohen_d * sqrt(current_n / 2)
-                power <- pnorm(qnorm(1 - alpha_val / 2) - ncp) +
-                  pnorm(-qnorm(1 - alpha_val / 2) - ncp)
-                1 - power
-              } else {
-                # Use appropriate test based on Data tab method
-                if (is_parametric) {
-                  # Parametric test (t-test or pairwise from ANOVA)
-                  pwrss::pwrss.t.2means(
-                    mu1 = mu1,
-                    mu2 = mu2_adjusted,
-                    sd1 = sd1,
-                    sd2 = sd2,
-                    alpha = alpha_val,
-                    n2 = current_n,
-                    alternative = "two.sided"
-                  )$power
+                # Two-sided normal-approximation power (exact closed form)
+                z_alpha <- qnorm(1 - alpha / 2)
+                pnorm(ncp - z_alpha) + pnorm(-z_alpha - ncp)
+                } else {
+                  # Use appropriate test based on Data tab method
+                  if (parametric) {
+                    # Parametric test (t-test or pairwise from ANOVA).
+                    # kappa carries the real unbalanced allocation; curves
+                    # below assume balanced n by design.
+                    pwrss::pwrss.t.2means(
+                      mu1 = mu1,
+                      mu2 = mu2_adjusted,
+                      sd1 = sd1,
+                      sd2 = sd2,
+                      alpha = alpha,
+                      kappa = cn1 / cn2,
+                      n2 = cn2,
+                      alternative = "not equal",
+                      verbose = FALSE
+                    )$power
                 } else {
                   # Non-parametric test (Wilcoxon/Mann-Whitney or pairwise from Kruskal-Wallis)
                   # Use normal approximation for non-parametric tests
@@ -69768,10 +72882,11 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                     mu2 = mu2_adjusted,
                     sd1 = sd1,
                     sd2 = sd2,
-                    alpha = alpha_val,
+                    alpha = alpha,
                     power = NULL,
                     n2 = current_n,
-                    distribution = "normal"
+                    distribution = "normal",
+                    verbose = FALSE
                   )$power
                 }
               }
@@ -69779,13 +72894,13 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             
             # Store current power
             # Add ID column if available
-            id_value <- if (!is.null(values$accession_ids) && length(values$accession_ids) >= feature_idx) {
-              values$accession_ids[feature_idx]
+            id_value <- if (!is.null(acc_ids) && length(acc_ids) >= fi) {
+              acc_ids[fi]
             } else {
               NA
             }
             
-            current_power_results <- rbind(current_power_results, data.frame(
+            cur_rows[[length(cur_rows) + 1L]] <- data.frame(
               Feature = feature_name,
               ID = id_value,
               EffectSize = effect_size,
@@ -69796,26 +72911,26 @@ Always format responses with clear headers, bullet points, and emphasis on key f
               Group2_Mean = mu2,
               Group2_SD = sd2,
               stringsAsFactors = FALSE
-            ))
+            )
             
             # Store detailed results
             # Add ID column if available
             df <- data.frame(
               Feature = feature_name,
               ID = id_value,
-              SampleSize = sample_sizes,
+              SampleSize = nsizes,
               Power = power_values,
               EffectSize = effect_size,
               stringsAsFactors = FALSE
             )
-            all_results <- rbind(all_results, df)
+            det_rows[[length(det_rows) + 1L]] <- df
             
             # Find minimum sample size for target power
-            target_power <- target_fraction
-            min_n_target <- sample_sizes[which.max(power_values >= target_power)]
+            target_power <- tfrac
+            min_n_target <- nsizes[which.max(power_values >= target_power)]
             if (length(min_n_target) == 0 || is.na(min_n_target)) min_n_target <- NA
             
-            feature_power_summary <- rbind(feature_power_summary, data.frame(
+            sum_rows[[length(sum_rows) + 1L]] <- data.frame(
               Feature = feature_name,
               ID = id_value,
               EffectSize = effect_size,
@@ -69823,8 +72938,65 @@ Always format responses with clear headers, bullet points, and emphasis on key f
               CurrentSampleSize = current_n,
               CurrentPower = current_power,
               stringsAsFactors = FALSE
-            ))
+            )
           }
+          list(current = cur_rows, detail = det_rows, summary = sum_rows)
+        }
+        
+        # Chunked parallel evaluation (multisession) with sequential fallback.
+        # Chunks run in order and each returns ordered rows, so output is
+        # identical to the old serial loop; abort/progress checked per chunk.
+        use_parallel <- requireNamespace("future.apply", quietly = TRUE) && num_features >= 20L
+        if (use_parallel) {
+          old_future_plan <- future::plan()
+          n_workers <- max(1L, min(4L, parallel::detectCores() - 1L))
+          use_parallel <- tryCatch({
+            future::plan(future::multisession, workers = n_workers)
+            TRUE
+          }, error = function(e) FALSE)
+          if (use_parallel) on.exit(future::plan(old_future_plan), add = TRUE)
+        }
+        chunk_ids <- split(seq_len(num_features), ceiling(seq_len(num_features) / 25L))
+        n_done <- 0L
+        for (chunk in chunk_ids) {
+          if (isTRUE(values$power_analysis_abort)) {
+            analysis_aborted <- TRUE
+            stop("POWER_ANALYSIS_ABORT")
+          }
+          chunk_args <- list(fnames = feature_names, g1m = group1_means, g1s = group1_sds,
+                             g2m = group2_means, g2s = group2_sds, esizes = effect_sizes,
+                             nsizes = sample_sizes, alpha = alpha_val, parametric = is_parametric,
+                             cn1 = current_n1, cn2 = current_n2, tfrac = target_fraction,
+                             acc_ids = if (!is.null(values$accession_ids)) values$accession_ids else NULL)
+          chunk_res <- tryCatch({
+            if (use_parallel) {
+              do.call(future.apply::future_lapply,
+                      c(list(X = chunk, FUN = compute_one_feature),
+                        chunk_args,
+                        list(future.packages = "pwrss", future.seed = FALSE)))
+            } else {
+              do.call(lapply, c(list(X = chunk, FUN = compute_one_feature), chunk_args))
+            }
+          }, error = function(e) {
+            # Parallel backend failed: rerun this chunk sequentially
+            do.call(lapply, c(list(X = chunk, FUN = compute_one_feature), chunk_args))
+          })
+          for (res in chunk_res) {
+            if (is.null(res)) next
+            current_power_rows <- c(current_power_rows, res$current)
+            all_result_rows <- c(all_result_rows, res$detail)
+            summary_rows <- c(summary_rows, res$summary)
+          }
+          n_done <- n_done + length(chunk)
+          setProgress(0.2 + (0.7 * n_done / num_features),
+                      detail = paste("Feature", n_done, "of", num_features))
+        }
+        
+        # Single bind per result set (identical content, linear time)
+        if (length(current_power_rows) > 0) {
+          current_power_results <- do.call(rbind, current_power_rows)
+          all_results <- do.call(rbind, all_result_rows)
+          feature_power_summary <- do.call(rbind, summary_rows)
         }
         
         setProgress(0.95, detail = "Finalizing results...")
@@ -69892,22 +73064,28 @@ Always format responses with clear headers, bullet points, and emphasis on key f
               
               f_statistic <- between_var / within_var
               
+              # Cohen's f^2 from the pilot F ratio: f^2 = F * df1/df2.
+              # Using the F ratio itself as f^2 inflates the effect ~df2/df1-fold.
+              pilot_df2 <- sum(group_ns) - num_groups
+              if (pilot_df2 <= 0) next
+              f2_pilot <- f_statistic * (num_groups - 1) / pilot_df2
+              
               # Calculate power for different sample sizes
               for (effect_size in effect_sizes) {
                 if (isTRUE(values$power_analysis_abort)) {
                   analysis_aborted <- TRUE
                   stop("POWER_ANALYSIS_ABORT")
                 }
-                # Scale the observed effect by the effect size multiplier
-                scaled_f <- f_statistic * effect_size
+                # Scale the pilot Cohen's f^2 by the effect-size multiplier
+                scaled_f <- f2_pilot * effect_size
                 
                 global_power_by_n <- sapply(sample_sizes, function(n_per_group) {
                   tryCatch({
                     if (!requireNamespace("pwrss", quietly = TRUE)) {
-                      # Fallback: approximate F-test power
+                      # Fallback: approximate F-test power (ncp uses total N)
                       df1 <- num_groups - 1
                       df2 <- num_groups * n_per_group - num_groups
-                      ncp <- scaled_f * df2
+                      ncp <- scaled_f * (num_groups * n_per_group)
                       f_crit <- qf(1 - alpha_val, df1, df2)
                       1 - pf(f_crit, df1, df2, ncp = ncp)
                     } else {
@@ -69916,15 +73094,16 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                         pwrss::pwrss.f.ancova(
                           eta2 = scaled_f / (scaled_f + 1),
                           alpha = alpha_val,
-                          k = num_groups,
-                          n = n_per_group
+                          n.levels = num_groups,
+                          n = num_groups * n_per_group,
+                          verbose = FALSE
                         )$power
                       } else {
                         # For Kruskal-Wallis, use approximate normal-based calculation
-                        # This is an approximation
+                        # This is an approximation (ncp uses total N)
                         df1 <- num_groups - 1
                         df2 <- num_groups * n_per_group - num_groups
-                        ncp <- scaled_f * df2
+                        ncp <- scaled_f * (num_groups * n_per_group)
                         f_crit <- qf(1 - alpha_val, df1, df2)
                         1 - pf(f_crit, df1, df2, ncp = ncp)
                       }
@@ -69937,21 +73116,22 @@ Always format responses with clear headers, bullet points, and emphasis on key f
                   if (!requireNamespace("pwrss", quietly = TRUE)) {
                     df1 <- num_groups - 1
                     df2 <- sum(group_ns) - num_groups
-                    ncp <- scaled_f * df2
+                    ncp <- scaled_f * sum(group_ns)
                     f_crit <- qf(1 - alpha_val, df1, df2)
                     1 - pf(f_crit, df1, df2, ncp = ncp)
                   } else {
                     if (is_parametric) {
-                      pwrss::pwrss.f.ancova(
-                        eta2 = scaled_f / (scaled_f + 1),
-                        alpha = alpha_val,
-                        k = num_groups,
-                        n = min_group_n
-                      )$power
+                        pwrss::pwrss.f.ancova(
+                          eta2 = scaled_f / (scaled_f + 1),
+                          alpha = alpha_val,
+                          n.levels = num_groups,
+                          n = sum(group_ns),
+                          verbose = FALSE
+                        )$power
                     } else {
                       df1 <- num_groups - 1
                       df2 <- sum(group_ns) - num_groups
-                      ncp <- scaled_f * df2
+                      ncp <- scaled_f * sum(group_ns)
                       f_crit <- qf(1 - alpha_val, df1, df2)
                       1 - pf(f_crit, df1, df2, ncp = ncp)
                     }
@@ -70030,6 +73210,13 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         } else {
           paste0("Power analysis based on ", method_text, " from Data tab.")
         }
+        # Honesty footer: post-hoc power restates significance; required-n
+        # targets nominal per-test alpha, not FDR-controlled discovery
+        analysis_note <- paste0(
+          analysis_note,
+          " | Current power uses observed pilot effects (plan with required-n, not as evidence).",
+          " Required-n targets nominal per-test alpha."
+        )
         values$power_analysis_note <- analysis_note
         
         # Update feature choices for power curve plot
@@ -71336,8 +74523,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         accession_id_column = values$accession_id_column,
         
         # Group information
-        # Create proper group assignment vector (one label per sample)
-        groups = create_proper_group_labels(values$unique_groups, values$group_column_indices),
+        # Create proper group assignment vector (one label per sample, sample-column order)
+        groups = create_sample_ordered_labels(values$unique_groups, values$group_column_indices,
+                                              ncol(values$normalized_data)),
         group_indices = values$group_column_indices,
         
         # Statistical results (if available)
@@ -72298,8 +75486,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         if (!is.null(settings$norm_method)) updateSelectInput(session, "norm_method", selected = settings$norm_method)
         if (!is.null(settings$log2_norm_timing)) {
           updateRadioButtons(session, "log2_norm_timing", selected = settings$log2_norm_timing)
-        } else if (!is.null(settings$log2_before_norm) || !is.null(settings$log2_after_norm)) {
-          legacy_timing <- if (isTRUE(settings$log2_before_norm)) "before" else if (isTRUE(settings$log2_after_norm)) "after" else "none"
+        } else if (!is.null(settings$log2_after_norm)) {
+          legacy_timing <- if (isTRUE(settings$log2_after_norm)) "after" else "none"
           updateRadioButtons(session, "log2_norm_timing", selected = legacy_timing)
         }
         if (!is.null(settings$sum_norm_percentage)) updateCheckboxInput(session, "sum_norm_percentage", value = settings$sum_norm_percentage)
@@ -72491,8 +75679,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             if (!is.null(settings$norm_method)) updateSelectInput(session, "norm_method", selected = settings$norm_method)
             if (!is.null(settings$log2_norm_timing)) {
               updateRadioButtons(session, "log2_norm_timing", selected = settings$log2_norm_timing)
-            } else if (!is.null(settings$log2_before_norm) || !is.null(settings$log2_after_norm)) {
-              legacy_timing <- if (isTRUE(settings$log2_before_norm)) "before" else if (isTRUE(settings$log2_after_norm)) "after" else "none"
+            } else if (!is.null(settings$log2_after_norm)) {
+              legacy_timing <- if (isTRUE(settings$log2_after_norm)) "after" else "none"
               updateRadioButtons(session, "log2_norm_timing", selected = legacy_timing)
             }
             if (!is.null(settings$sum_norm_percentage)) updateCheckboxInput(session, "sum_norm_percentage", value = settings$sum_norm_percentage)
@@ -75462,17 +78650,13 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             Y <- factor(multiomics$sample_metadata[, group_col_idx])
             names(Y) <- rownames(multiomics$sample_metadata)
           } else {
-            # No group variable selected - create dummy groups
-            n_samples <- length(multiomics$common_samples)
-            n_groups <- min(3, n_samples / 2)  # Ensure at least 2 samples per group
-            if (n_groups < 2) n_groups <- 2
-            Y <- factor(rep(paste0("Group_", 1:n_groups), length.out = n_samples))
-            names(Y) <- multiomics$common_samples
-            
+            # No group variable selected: refuse. Supervised DIABLO on
+            # arbitrary labels would fabricate group separation.
             showNotification(
-              "No grouping variable selected. Using demo groupings for illustration.",
-              type = "warning", duration = 5
+              "Select a grouping variable to run DIABLO. Real group labels are required; demo groupings are not modeled.",
+              type = "error", duration = 10
             )
+            return(NULL)
           }
           
           # Validate that Y has the right length
@@ -75502,10 +78686,12 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             X_list[[i]] <- X_list[[i]][sample_order, , drop = FALSE]
           }
           
-          incProgress(0.5, detail = "Setting up DIABLO tutorial framework...")
+          incProgress(0.5, detail = "Fitting DIABLO (block.splsda)...")
           
-          # Instead of running full DIABLO, use the tutorial framework
-          # For real data, keep tutorial mode off and store results under integration_results
+          # Fit real DIABLO: sparse multi-block PLS-DA (mixOmics). Supervised
+          # on the selected group labels; all downstream DIABLO tabs
+          # (scores, loadings, indiv/arrow/var plots, circos, CIM) read
+          # result$final_model, which previous code never set.
           diablo_tutorial$active <- FALSE
           diablo_tutorial$data <- NULL
           diablo_tutorial$Y <- NULL
@@ -75515,16 +78701,58 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           design <- matrix(1, ncol = n_blocks, nrow = n_blocks, dimnames = list(names(X_list), names(X_list)))
           diag(design) <- 0
           
-          incProgress(0.8, detail = "Computing pairwise correlations...")
+          # block.splsda needs complete data: drop samples missing in any
+          # block (Y re-aligned), with a count for honesty
+          keep <- Reduce(`&`, lapply(X_list, function(x) stats::complete.cases(x)))
+          if (any(!keep)) {
+            showNotification(paste(sum(!keep), "sample(s) with missing values excluded from the DIABLO fit."),
+                             type = "warning", duration = 6)
+            X_list <- lapply(X_list, function(x) x[keep, , drop = FALSE])
+            Y <- droplevels(Y[keep])
+          }
           
-          # The pairwise PLS correlations will be computed in the diablo_tutorial reactive
+          # Drop zero-variance features per block (they break the NIPALS fit)
+          X_list <- lapply(X_list, function(x) {
+            xm <- as.matrix(x)
+            v <- apply(xm, 2, function(col) suppressWarnings(stats::var(col, na.rm = TRUE)))
+            xm[, is.finite(v) & v > 0, drop = FALSE]
+          })
+          empty_blocks <- names(X_list)[vapply(X_list, ncol, integer(1)) == 0]
+          if (length(empty_blocks) > 0) {
+            showNotification(paste("DIABLO refused: block(s) with no varying features:",
+                                   paste(empty_blocks, collapse = ", ")),
+                             type = "error", duration = 10)
+            return(NULL)
+          }
+          
+          # Guard: need >= 2 classes represented after filtering
+          if (length(unique(Y)) < 2 || min(table(Y)) < 1) {
+            showNotification("DIABLO needs at least 2 groups with samples after filtering.",
+                             type = "error", duration = 10)
+            return(NULL)
+          }
+          
+          ncomp_fit <- 2L
+          keepX_list <- lapply(X_list, function(x) rep(min(50L, ncol(x)), ncomp_fit))
+          diablo_fit <- tryCatch({
+            mixOmics::block.splsda(X = X_list, Y = Y, ncomp = ncomp_fit,
+                                   keepX = keepX_list, design = design, scale = TRUE)
+          }, error = function(e) {
+            showNotification(paste("DIABLO fit failed:", e$message), type = "error", duration = 10)
+            NULL
+          })
+          if (is.null(diablo_fit)) return(NULL)
+          
+          incProgress(0.8, detail = "DIABLO fitted.")
           
           list(
             method = "diablo",
             data = X_list,
             Y = Y,
             design = design,
-            message = "DIABLO integration completed using pairwise PLS correlations"
+            final_model = diablo_fit,
+            ncomp = ncomp_fit,
+            message = "DIABLO integration completed (block.splsda, 2 components, up to 50 features per block/component)"
           )
           
         } else if (identical(input$integration_method, "pathway")) {
@@ -79749,9 +82977,14 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             showNotification("umap package is required for view-based UMAP", type = "warning")
             return()
           }
+          if (nrow(embedding) < 3) {
+            showNotification("Not enough samples for UMAP (need at least 3).", type = "warning")
+            return()
+          }
           showNotification("Computing UMAP (view-based)...", type = "message", duration = NULL, id = "dimred_progress")
           cfg <- umap::umap.defaults
-          cfg$n_neighbors <- input$dimred_umap_n_neighbors
+          # umap requires n_neighbors < n samples
+          cfg$n_neighbors <- min(input$dimred_umap_n_neighbors %||% 15, nrow(embedding) - 1)
           cfg$min_dist <- input$dimred_umap_min_dist
           um <- umap::umap(embedding, config = cfg)
           coords <- um$layout
@@ -79761,9 +82994,15 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             showNotification("Rtsne package is required for view-based t-SNE", type = "warning")
             return()
           }
+          if (nrow(embedding) < 4) {
+            showNotification("Not enough samples for t-SNE (need at least 4).", type = "warning")
+            return()
+          }
           showNotification("Computing t-SNE (view-based)...", type = "message", duration = NULL, id = "dimred_progress")
           set.seed(42)
-          ts <- Rtsne::Rtsne(embedding, dims = 2, perplexity = input$dimred_perplexity, check_duplicates = FALSE)
+          # Rtsne requires perplexity <= (n-1)/3
+          ts_perp <- min(input$dimred_perplexity %||% 30, max(1, floor((nrow(embedding) - 1) / 3)))
+          ts <- Rtsne::Rtsne(embedding, dims = 2, perplexity = ts_perp, check_duplicates = FALSE)
           coords <- ts$Y
           colnames(coords) <- c("tSNE1", "tSNE2")
         }
@@ -82504,11 +85743,20 @@ Always format responses with clear headers, bullet points, and emphasis on key f
               main = "DIABLO Design Matrix",
               xlab = "Blocks", ylab = "Blocks")
     } else {
-      # Normal mode - show user's design matrix if available
-      # For now, show a message since design matrix creation is not implemented for normal mode
-      plot.new()
-      text(0.5, 0.5, "Design matrix visualization\nnot yet implemented for user data.\nUse tutorial mode to see examples.", 
-           cex = 1.2, col = "#667eea")
+      # Normal mode - show the fitted design matrix when available
+      req(multiomics$integration_results)
+      result <- multiomics$integration_results
+      if (result$method == "diablo" && !is.null(result$design)) {
+        heatmap(result$design,
+                Colv = NA, Rowv = NA,
+                col = colorRampPalette(c("white", "blue"))(100),
+                main = "DIABLO Design Matrix",
+                xlab = "Blocks", ylab = "Blocks")
+      } else {
+        plot.new()
+        text(0.5, 0.5, "Design matrix visualization\nnot available for this result.\nUse tutorial mode to see examples.",
+             cex = 1.2, col = "#667eea")
+      }
     }
   })
   
@@ -90604,6 +93852,13 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       group_means <- matrix(as.numeric(as.character(group_means)), nrow = nrow(group_means), ncol = ncol(group_means), dimnames = dimnames(group_means))
     }
     if (any(!is.finite(group_means))) group_means[!is.finite(group_means)] <- NA
+    # Drop rows with any missing group mean (kmeans/scale cannot use them);
+    # all-NA rows were already removed upstream
+    na_rows <- rowSums(!is.finite(group_means)) > 0
+    if (any(na_rows)) {
+      message("Removing ", sum(na_rows), " feature(s) with missing group means before k-means.")
+      group_means <- group_means[!na_rows, , drop = FALSE]
+    }
     if (nrow(group_means) < input$kmeans_num_clusters) {
       showNotification(paste("Not enough features for", input$kmeans_num_clusters, "clusters."), type = "warning")
       return(NULL)
@@ -90671,6 +93926,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       group_means <- matrix(as.numeric(as.character(group_means)), nrow = nrow(group_means), ncol = ncol(group_means), dimnames = dimnames(group_means))
     }
     if (any(!is.finite(group_means))) group_means[!is.finite(group_means)] <- NA
+    # Same NA-row guard as the main run so elbow WSS never chokes on gaps
+    na_rows <- rowSums(!is.finite(group_means)) > 0
+    if (any(na_rows)) group_means <- group_means[!na_rows, , drop = FALSE]
     if (nrow(group_means) < 3) return(NULL)
     
     # Scale data
@@ -90707,7 +93965,10 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     wss <- tryCatch({
       sapply(1:max_k, function(k) {
         set.seed(123)
-        km <- kmeans(scaled_data, centers = k, nstart = 10, iter.max = 50)
+        # Elbow uses the same starts/iterations as the main clustering
+        km <- kmeans(scaled_data, centers = k,
+                     nstart = input$kmeans_nstart %||% 10,
+                     iter.max = input$kmeans_max_iter %||% 50)
         km$tot.withinss
       })
     }, error = function(e) {
@@ -90749,8 +94010,24 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     
     par(mfrow = c(nrow_plot, ncol_plot), mar = c(5, 4, 3, 1), oma = c(0, 0, 2, 0))
     
+    # Y-axis reflects what is actually plotted: per-feature z-scores when
+    # scaled, otherwise group means (NOT log2 ratios)
+    km_ylab <- if (isTRUE(input$kmeans_scale_data)) {
+      "Z-score (per-feature)"
+    } else if (is_data_log_scale()) {
+      "Group mean abundance (log scale)"
+    } else {
+      "Group mean abundance"
+    }
+    
     for (i in 1:n_clusters) {
       cluster_idx <- which(clusters == i)
+      if (length(cluster_idx) == 0) {
+        # kmeans can return empty clusters: hold the panel with a note
+        plot.new()
+        text(0.5, 0.5, paste0("subcluster_", i, " (empty)"), cex = 1.2)
+        next
+      }
       cluster_data <- scaled_data[cluster_idx, , drop = FALSE]
       n_in_cluster <- length(cluster_idx)
       
@@ -90761,8 +94038,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       # Initialize empty plot
       plot(1:length(group_names), rep(NA, length(group_names)), 
            type = "n", xlim = c(0.5, length(group_names) + 0.5), ylim = yrange,
-           xlab = "", ylab = "log2(ratio)", xaxt = "n",
-           main = paste0("subcluster_", i, ", ", n_in_cluster, " metabolites"),
+           xlab = "", ylab = km_ylab, xaxt = "n",
+           main = paste0("subcluster_", i, ", ", n_in_cluster, " features"),
            cex.main = input$kmeans_title_size / 12,
            cex.axis = input$kmeans_axis_text_size / 10)
       
@@ -90879,7 +94156,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       DT::formatStyle("Cluster", 
                       backgroundColor = DT::styleEqual(
                         1:input$kmeans_num_clusters,
-                        RColorBrewer::brewer.pal(min(input$kmeans_num_clusters, 9), "Set1")[1:min(input$kmeans_num_clusters, 9)]
+                        # Set1 holds 9 colors max: interpolate for larger k so
+                        # clusters never recycle each other's colors
+                        grDevices::colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))(input$kmeans_num_clusters)
                       ))
   })
   
@@ -90889,9 +94168,19 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     
     km <- kmeans_result()
     
-    # Calculate cluster statistics
+    # Calculate statistics (empty clusters report N = 0 with NA stats)
     cluster_stats <- lapply(1:input$kmeans_num_clusters, function(i) {
       idx <- which(km$cluster_assignments == i)
+      if (length(idx) == 0) {
+        return(data.frame(
+          Cluster = i,
+          N_Features = 0,
+          Mean_Expression = NA_real_,
+          SD_Expression = NA_real_,
+          Min_Expression = NA_real_,
+          Max_Expression = NA_real_
+        ))
+      }
       cluster_data <- km$original_data[idx, , drop = FALSE]
       
       data.frame(
@@ -90949,8 +94238,22 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       
       par(mfrow = c(nrow_plot, ncol_plot), mar = c(5, 4, 3, 1), oma = c(0, 0, 2, 0))
       
+      # Same axis label as the UI plot: z-scores when scaled, group means otherwise
+      dl_ylab <- if (isTRUE(input$kmeans_scale_data)) {
+        "Z-score (per-feature)"
+      } else if (is_data_log_scale()) {
+        "Group mean abundance (log scale)"
+      } else {
+        "Group mean abundance"
+      }
+      
       for (i in 1:n_clusters) {
         cluster_idx <- which(clusters == i)
+        if (length(cluster_idx) == 0) {
+          plot.new()
+          text(0.5, 0.5, paste0("subcluster_", i, " (empty)"), cex = 1.2)
+          next
+        }
         cluster_data <- scaled_data[cluster_idx, , drop = FALSE]
         n_in_cluster <- length(cluster_idx)
         
@@ -90959,8 +94262,8 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         
         plot(1:length(group_names), rep(NA, length(group_names)), 
              type = "n", xlim = c(0.5, length(group_names) + 0.5), ylim = yrange,
-             xlab = "", ylab = "log2(ratio)", xaxt = "n",
-             main = paste0("subcluster_", i, ", ", n_in_cluster, " metabolites"))
+             xlab = "", ylab = dl_ylab, xaxt = "n",
+             main = paste0("subcluster_", i, ", ", n_in_cluster, " features"))
         
         axis(1, at = 1:length(group_names), labels = group_names, las = 2)
         
@@ -91255,9 +94558,20 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       }
     }
     
+    # BH-adjust correlation p-values across the tested pairs: with dozens of
+    # features there are hundreds of tests, so raw p < 0.05 stars would be
+    # mostly false discoveries. Adjusted matrix mirrors the raw one (NA diag).
+    p_adj_matrix <- p_matrix
+    ut_vals <- p_matrix[upper.tri(p_matrix)]
+    if (length(ut_vals) > 0) {
+      p_adj_matrix[upper.tri(p_adj_matrix)] <- p.adjust(ut_vals, method = "BH")
+      p_adj_matrix[lower.tri(p_adj_matrix)] <- t(p_adj_matrix)[lower.tri(p_adj_matrix)]
+    }
+    
     list(
       cor_matrix = cor_matrix,
       p_matrix = p_matrix,
+      p_adj_matrix = p_adj_matrix,
       feature_names = rownames(filtered_data),
       title = data_list$title,
       n_features = data_list$n_features
@@ -91312,8 +94626,13 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     n <- nrow(cor_matrix)
     show_vals <- input$corr_show_values && n <= 50
     show_sig <- input$corr_show_sig && n <= 80
+    # Stars use BH-adjusted p-values at the tab's own P-value cutoff so the
+    # plot agrees with the Filtering Criteria card (raw p would drown in
+    # false positives across hundreds of pairs).
+    sig_pmat <- data$p_adj_matrix %||% p_matrix
+    sig_level <- input$corr_pvalue_cutoff %||% 0.05
     
-    plot_call <- function(add_coef = show_vals, pmat = if (show_sig) p_matrix else NULL) {
+    plot_call <- function(add_coef = show_vals, pmat = if (show_sig) sig_pmat else NULL) {
       corrplot::corrplot(
         cor_matrix,
         method = input$corr_shape,
@@ -91325,7 +94644,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         addCoef.col = if (add_coef) "black" else NULL,
         number.cex = input$corr_value_size / 10,
         p.mat = pmat,
-        sig.level = 0.05,
+        sig.level = sig_level,
         insig = if (!is.null(pmat)) "label_sig" else "n",
         pch.cex = 0.8,
         title = data$title,
@@ -91351,6 +94670,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     data <- corr_matrix_data()
     cor_matrix <- data$cor_matrix
     p_matrix <- data$p_matrix
+    p_adj_matrix <- data$p_adj_matrix %||% p_matrix
     feature_names <- data$feature_names
     
     # Convert to pairwise data frame
@@ -91364,6 +94684,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           Feature_2 = feature_names[j],
           Correlation = round(cor_matrix[i, j], 4),
           P_Value = if (!is.na(p_matrix[i, j])) signif(p_matrix[i, j], 4) else NA,
+          FDR = if (!is.na(p_adj_matrix[i, j])) signif(p_adj_matrix[i, j], 4) else NA,
           stringsAsFactors = FALSE
         )
         idx <- idx + 1
@@ -91396,8 +94717,15 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     data <- corr_matrix_data()
     cor_matrix <- data$cor_matrix
     
-    # Get lower triangle values (excluding diagonal)
+    # Get lower triangle values (excluding diagonal); drop non-finite
+    # entries from constant/low-variance pairs so hist() never chokes
     lower_tri <- cor_matrix[lower.tri(cor_matrix)]
+    lower_tri <- lower_tri[is.finite(lower_tri)]
+    if (length(lower_tri) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No finite correlations to display.", cex = 1.1)
+      return(invisible(NULL))
+    }
     
     hist(lower_tri, breaks = 30, col = "steelblue", border = "white",
          main = "Distribution of Correlations",
@@ -91539,6 +94867,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       n <- nrow(cor_matrix)
       show_vals <- input$corr_show_values && n <= 50
       show_sig <- input$corr_show_sig && n <= 80
+      # Stars use BH-adjusted p-values at the tab's P-value cutoff (mirrors UI)
+      dl_sig_pmat <- data$p_adj_matrix %||% p_matrix
+      dl_sig_level <- input$corr_pvalue_cutoff %||% 0.05
       
       # Adjust label size if too large
       label_cex <- min(input$corr_label_size / 10, 1.2)
@@ -91560,9 +94891,9 @@ Always format responses with clear headers, bullet points, and emphasis on key f
           tl.cex = label_cex,
           addCoef.col = if (show_vals) "black" else NULL,
           number.cex = value_cex,
-          p.mat = if (show_sig) p_matrix else NULL,
-          sig.level = 0.05,
-          insig = if (show_sig && !is.null(p_matrix)) "label_sig" else "n",
+          p.mat = if (show_sig) dl_sig_pmat else NULL,
+          sig.level = dl_sig_level,
+          insig = if (show_sig && !is.null(dl_sig_pmat)) "label_sig" else "n",
           pch.cex = 0.8,
           title = data$title,
           mar = c(0, 0, 2, 0),
@@ -91608,6 +94939,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
       data <- corr_matrix_data()
       cor_matrix <- data$cor_matrix
       p_matrix <- data$p_matrix
+      p_adj_matrix <- data$p_adj_matrix %||% p_matrix
       feature_names <- data$feature_names
       
       pairs_list <- list()
@@ -91620,6 +94952,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
             Feature_2 = feature_names[j],
             Correlation = round(cor_matrix[i, j], 4),
             P_Value = if (!is.na(p_matrix[i, j])) signif(p_matrix[i, j], 4) else NA,
+            FDR = if (!is.na(p_adj_matrix[i, j])) signif(p_adj_matrix[i, j], 4) else NA,
             stringsAsFactors = FALSE
           )
           idx <- idx + 1
@@ -91665,15 +94998,12 @@ Always format responses with clear headers, bullet points, and emphasis on key f
   
   # Dynamic UI: trait column selector (when metadata is chosen)
   output$wgcna_trait_columns_ui <- renderUI({
-    req(values$normalized_data)
-    # Try to get metadata columns from the data
-    meta_cols <- character(0)
-    if (!is.null(values$uploaded_data)) {
-      # Look for non-numeric columns or known metadata columns
-      all_cols <- colnames(values$uploaded_data)
-      meta_cols <- all_cols[1:min(5, length(all_cols))]
+    req(values$metadata)
+    meta_cols <- colnames(values$metadata)
+    if (is.null(meta_cols) || length(meta_cols) == 0) {
+      return(helpText("No metadata columns available. Upload data with a metadata sheet."))
     }
-    selectizeInput("wgcna_trait_columns", "Select Trait Columns:",
+    selectizeInput("wgcna_trait_columns", "Select Trait Columns (numeric):",
                    choices = meta_cols, multiple = TRUE, width = "100%",
                    options = list(placeholder = "Select trait columns..."))
   })
@@ -91687,6 +95017,13 @@ Always format responses with clear headers, bullet points, and emphasis on key f
     load_package_group("visualization")
     
     showNotification("Starting WGCNA analysis...", type = "message", duration = 3)
+    
+    # Reset trait products up front: trait source/columns may have changed
+    # since the last run, and stale traits would silently mislabel results
+    wgcna_vals$trait_data <- NULL
+    wgcna_vals$module_trait_cor <- NULL
+    wgcna_vals$module_trait_pval <- NULL
+    wgcna_vals$gene_trait_significance <- NULL
     
     tryCatch({
       # ------------------------------------------------------------------
@@ -91742,7 +95079,7 @@ Always format responses with clear headers, bullet points, and emphasis on key f
         # Determine network type
         net_type <- input$wgcna_network_type %||% "signed"
         
-        powers <- c(seq(1, 10, by = 1), seq(12, 20, by = 2))
+        powers <- c(seq(1, 10, by = 1), seq(12, 30, by = 2))
         sft <- WGCNA::pickSoftThreshold(expr_data, powerVector = powers,
                                          networkType = net_type, verbose = 0)
         wgcna_vals$sft <- sft
@@ -91834,6 +95171,42 @@ Always format responses with clear headers, bullet points, and emphasis on key f
               trait_df[[g]] <- as.numeric(groups == g)
             }
             wgcna_vals$trait_data <- trait_df
+          }
+        } else if (trait_source == "metadata") {
+          # Metadata traits: positional alignment (metadata row i <-> sample i,
+          # the app-wide convention also used for batch columns). Only numeric
+          # columns are usable as correlation traits.
+          trait_cols <- input$wgcna_trait_columns %||% character(0)
+          md <- values$metadata
+          all_samples <- colnames(values$normalized_data)
+          pos <- match(rownames(expr_data), all_samples)
+          if (is.null(md) || length(trait_cols) == 0) {
+            showNotification("Select at least one metadata trait column (or switch Trait Source to Group Labels).",
+                             type = "warning", duration = 6)
+          } else {
+            trait_df <- data.frame(row.names = rownames(expr_data))
+            for (tc in trait_cols) {
+              if (!tc %in% colnames(md)) next
+              vec <- md[[tc]]
+              v <- rep(NA_real_, nrow(expr_data))
+              ok <- !is.na(pos) & pos >= 1 & pos <= length(vec)
+              v[ok] <- suppressWarnings(as.numeric(vec[pos[ok]]))
+              if (all(is.na(v))) {
+                showNotification(paste0("Trait column '", tc, "' is not numeric; skipped. Encode categories numerically to use them."),
+                                 type = "warning", duration = 6)
+                next
+              }
+              if (any(is.na(v))) {
+                showNotification(paste0("Trait column '", tc, "' has missing values for some samples; those samples are excluded pairwise."),
+                                 type = "warning", duration = 6)
+              }
+              trait_df[[tc]] <- v
+            }
+            if (ncol(trait_df) > 0) {
+              wgcna_vals$trait_data <- trait_df
+            } else {
+              showNotification("No usable numeric trait columns selected.", type = "warning", duration = 6)
+            }
           }
         }
         

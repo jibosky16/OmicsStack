@@ -54,6 +54,7 @@ Purpose: Analyze overlaps and unique features across multiple feature sets using
 - Only up: Focus on activated/increased features
 - Only down: Focus on repressed/decreased features
 - Use direction filtering to focus on specific biological processes
+- Up/down always refers to the comparison as you picked it (Group1-vs-Group2), even if the stored statistics run the opposite way; unbalanced or missing statistics for a set skip that set gracefully instead of aborting the analysis
 
 *intersection_set_selection (dynamic UI):*
 - Displays available comparison sets from differential analysis

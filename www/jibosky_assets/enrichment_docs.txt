@@ -18,6 +18,7 @@
 - File Upload: Supports single column (.txt), CSV, or tab-delimited files
 - Column Selection: For multi-column files, specify which column contains the identifiers
 - P-value and Fold Change columns: Optional columns for GSEA analysis (required for ranked gene lists)
+- t-statistic / Stat column: Optional column (e.g., DESeq2 'stat' column, auto-detected) enabling t-statistic GSEA ranking from a manual file
 - Text Paste: Direct input of identifiers, one per line
 
 **ENRICHMENT TOOLS:**
@@ -76,28 +77,32 @@
 - Purpose: More accurate enrichment when your experiment doesn't include all possible genes
 
 **VISUALIZATION OPTIONS:**
-- Plot Type: Bar plot, Dot plot, Gene-Concept Network, Enrichment Map, GSEA plots, etc.
+- Plot Type: Bar plot, Dot plot, Gene-Concept Network, Enrichment Map, GSEA plots, Chord Diagram, etc.
 - Number of terms: How many top enriched terms to display (5-50)
 - Color Theme: Default, Viridis, Plasma, Blues, Reds, Greens, Purple-Orange, Blue-Red
 - GSEA Plot 2: Advanced GSEA visualization with multiple gene sets, p-value table, expression profile, gene ranking
 - Manhattan Plot: For g:Profiler results with highlighting capabilities
 - GO Graph: For topGO results showing GO term relationships
+- Chord Diagram (ClusterProfiler Plot Type): Circular term-gene link diagram. Controls: Number of terms (top N by adjusted p-value), Max genes per term (default 10, strongest responders by |fold change| first -- visualization-only filtering, enrichment statistics are unaffected), Term colors (Single color with a color-picker field, or Distinct color per term via Rainbow/Set3/Paired palettes; genes shade by fold change on a blue-white-red gradient, deeper = stronger, grey = unknown), Sector label orientation (tangential default vs radial), Rotation in degrees as a numeric field (default 90), Term name size and Gene name size as separate numeric fields (cex units, defaults 0.9/0.7). Gene labels control (All/Top 10/Top 5/Top 3/Hide, default Top 5 strongest responders by |fold change|; unlabeled genes keep their colored sectors) prevents label overlap on dense diagrams. The drawing canvas auto-expands with sector count and the display frame is taller for Chord so labels are not clipped top/bottom. No title is drawn (it collided with top labels); term sectors get wider gaps than gene sectors to separate long labels. When Chord is selected, the Color Theme dropdown and the shared Font Sizes card are hidden because the chord has its own color/size controls. Long term names wrap onto multiple lines in all bar charts
+- Bar chart labels: Long enrichment term names automatically wrap onto multiple lines (e.g., oxidoreductase activity terms) instead of being cut off
 
 **NETWORK VIEW OPTIONS:**
 - Network Type: Term-Gene Network, Term Similarity Network, KEGG Pathview
 - Max Terms: Number of terms to include in network (5-100)
 - Similarity Cutoff: For term similarity networks (0.2-1.0)
-- KEGG Pathview: Visualize gene expression on actual pathway diagrams (requires KEGG pathway selection)
+- KEGG Pathview: Visualize gene expression on actual pathway diagrams (requires KEGG pathway selection). Multi-omics layers: the gene layer defaults to the current enrichment data, or pick any saved transcriptomics/proteomics analysis; the compound layer picks a saved metabolomics/lipidomics/glycomics analysis (None = genes only), exactly like saving/loading analyses for the multi-omics tab. The compound controls stay hidden behind an "Overlay compound data" checkbox so gene-only users get a compact UI (the server also ignores the compound source unless the overlay is enabled). Gene ID type (Auto-to-Entrez/Symbol/Ensembl) and compound ID type (Auto-detect/KEGG/HMDB/CAS/DrugBank/LipidMaps; ChEBI and PubChem are not mappable by pathview and need KEGG accessions) are selectable. Options: same-layer overlay, multi-sample slices (per-group mean columns, mean-centered; needs a saved analysis with 2+ groups), node summary (sum/mean/median/max/max.abs), compound color limit, color bins and absolute-value transforms per layer
 
 **ANALYSIS TYPES:**
 - Over-Representation Analysis (ORA): Tests if significant genes are over-represented in gene sets (requires significance thresholds)
-- Gene Set Enrichment Analysis (GSEA): Tests if gene sets are enriched in ranked gene lists (uses all genes, requires fold change data)
+- Gene Set Enrichment Analysis (GSEA): Tests if gene sets are enriched in ranked gene lists (uses all genes, requires fold change data). Ranking (log2FC or signed p-value) is always oriented Group1-vs-Group2, so enrichment direction (up/down) matches the volcano plots regardless of the order groups were picked in
+- GSEA ranking metrics: Log2 Fold Change; Signed p-value (-log10(p) * sign(log2FC)); t-statistic (uses limma moderated t / DESeq2 Wald stat / stored Welch t when available, otherwise a Welch t computed from the expression data; manual files can supply a stat column). Duplicate Entrez IDs after ID conversion are collapsed keeping the maximum absolute value (required by the GSEA engine)
 - Key difference: ORA uses only significant genes; GSEA uses ranked list of all genes
 
 **OUTPUTS AND RESULTS:**
 - Enrichment Results Table: Shows enriched terms with p-values, FDR, gene counts, etc.
 - Visualization Plots: Various plot types showing enrichment results
 - Network Views: Interactive networks showing relationships between terms and genes
+- KEGG Pathview files (PNG/PDF/XML) render into a per-session temporary folder that is automatically deleted when the session ends (they no longer accumulate in the app folder)
 - Download options: Results tables, plots, and network visualizations
 
 **INTERPRETATION GUIDANCE:**

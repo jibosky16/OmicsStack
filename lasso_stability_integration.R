@@ -3,7 +3,7 @@
 
 # Load required packages for stability analysis
 if (!requireNamespace("dplyr", quietly = TRUE)) {
-  install.packages("dplyr")
+  stop("Package 'dplyr' is required for stability analysis. Install it with install.packages('dplyr'), then retry.")
 }
 library(dplyr)
 

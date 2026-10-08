@@ -1,0 +1,60 @@
+=== OMICSSTACK APP GUIDE (NAVIGATION + DATA FORMAT + EXACT CONTROL NAMES) ===
+Use ONLY these tab, card, and control names when telling the user where to click.
+Never invent tab or control names. If unsure, say so instead of guessing.
+
+--- TOP-LEVEL TABS (left-to-right in the top navigation bar) ---
+1. Data
+2. Dimensionality Reduction (sub-tabs: PCA, sPCA, UMAP, t-SNE; PCA has PCA Plot, Variance Explained, Loadings, Feature Contributions, Results Table)
+3. ML Feature Selection
+4. Heatmaps (sub-tabs: Interactive Heatmap, Static Heatmap)
+5. Distribution Analysis (sub-tabs: Plot, Statistics, Data Table)
+6. Differential Analysis (sub-tabs: MA Plot, Volcano Plot, Results Table, Summary)
+7. K-Means Clustering (sub-tabs: Cluster Plots, Elbow Plot, Cluster Table, Cluster Summary)
+8. Feature Correlation (sub-tabs: Correlation Plot, Correlation Table, Summary Statistics)
+9. Network Analysis (WGCNA: Soft Threshold, Sample Clustering, Module Detection, Module-Trait, Eigengene Network, Hub Genes, Module Genes)
+10. Intersection Analysis
+11. ROC/PR Analysis (sub-tabs: ROC Curves, PR Curves, Combined View)
+12. Enrichment Analysis
+13. Glycomics (sub-tabs include ID Mapping, Classification Table, Visualization, Pathways, Associations, Ontology Browser)
+14. Metabolomics
+15. Multi-Omics Integration
+16. Power Analysis
+17. Help & About
+
+--- DATA TAB LAYOUT (Data tab, left sidebar cards + right content tabs) ---
+Sidebar cards (top to bottom): data upload, Missing Value Handling, Normalization card, Batch & QC Correction card, Statistical Testing card, Bootstrap Analysis card, then the "Process Data" button.
+Right-side content tabs: Raw Data, Normalized Data, Group Summary, Missing Values, Imputation Comparison, Statistics Results, Bootstrap Results, Data Visualizations, Batch Correction, Signal Drift.
+
+--- REQUIRED DATA FORMAT ---
+Excel (.xlsx/.xls) or CSV/TSV/TXT.
+Sheet 1 (data matrix): first column = feature names/identifiers, remaining columns = samples (one column per sample). Column headers are sample names.
+Sheet 2 (metadata, Excel only): one row per sample with columns such as sample ID, group/condition, batch, and repeated-unit IDs (e.g., Patient ID).
+On upload the "Configure Data Columns & Group Mapping" dialog opens:
+ Step 1: Column roles — "Feature name" (primary IDs), "Database IDs (optional)" (UniProt/KEGG/HMDB for enrichment), "Ignore columns (optional)".
+ Step 2: Groups — confirm "Biological groups" levels and optional "Experimental groups"; table edits override the metadata sheet. Then declare Design roles: Repeated unit (subject, e.g., Patient ID) for replicate samples from the same subject; Batch/block for nuisance variation; Time/ordered facet for longitudinal structure. Convention: factors (groups) are compared; blocks/batches are adjusted, never compared; the repeated unit is modeled, never treated as independent samples.
+ Step 3: Samples — assign each sample to a group in the table, then Confirm Mapping. Declared roles pre-fill downstream selectors (LMM random variable, batch column, limma blocking) and trigger a batch-vs-group confounding warning when perfectly confounded.
+
+--- FIXING COMMON FORMATTING PROBLEMS ---
+- Samples in metadata don't match data headers: make spelling/case identical (extra spaces break matching); keep one row per sample in sheet 2.
+- Feature names in column 1 with data starting in column 2: standard layout, auto-detected.
+- Numbers stored as text / commas / currency symbols: convert cells to plain numbers; remove symbols.
+- Blank rows/columns inside the matrix: delete them; notes go in "Ignore columns", not inside the matrix.
+- Duplicate feature names: the app offers Keep first / Remove all / Consolidate by summing / Add number suffixes.
+- Missing values: handle first via Missing Value Handling (Impute missing values with KNN/Min/MinProb, or Remove); Quantile/VSN/PQN/Cyclic Loess need complete data.
+- Repeated measures (same patient sampled twice): keep one row per SAMPLE in sheet 2, add a Patient ID column, then use a mixed-effects method (see LMM workflow below).
+
+--- CORE WORKFLOWS (exact click paths) ---
+A. PROCESS DATA: Data tab → set Missing Value Handling, Normalization card, Statistical Testing card, Bootstrap Analysis card (optional) → click "Process Data". Results appear under Statistics Results; plots under Data Visualizations.
+B. NORMALIZATION + LOG + SCALING (two stages, in order): Data tab → Normalization card → (1) "Sample Normalization" dropdown (Sum, Median, Quantile, PQN, VSN, Cyclic Loess, None) fixes between-sample bias → (2) "Log2 Transformation" radio (None, Log2(x), Log2(x + 1)) → (3) optional "Feature Scaling" (None, Mean Centering, Z-score, Pareto Scaling) for per-feature comparability in multivariate methods. Note: for log-scale data, fold changes are mean differences. Sum + "Use percentage values" multiplies by 100. Metabolomics default: Pareto Scaling as stage 3. Do NOT scale before logging (centering creates negatives); the app enforces normalize → log → scale. While any Feature Scaling is active, the PCA/UMAP/t-SNE/sPCA Scale toggles auto-disable to prevent double-scaling; set scaling back to None to re-enable them.
+C. REPEATED-MEASURES (LMM) WORKFLOW: Data tab → Statistical Testing card → Test Method = "Linear Mixed-Effects (lme4)" → in LMM options set "Random-Effects Grouping Variable" (e.g., Patient ID) and check the Wilkinson-Rogers Formula Preview. Model per feature, fit jointly across all groups (REML, Satterthwaite df): value ~ Group + fixed covariates + random terms; Type-III F for Group, pairwise t-contrasts from the same fit, BH-adjusted p-values. Columns: Comparison_PValue/_AdjPValue/_FoldChange/_Log2FC plus LMM_Global_PValue/_AdjPValue. Extensions: "Additional Fixed Effects" for covariates (Batch, Period for crossover, Age); "Random Effects" accepts multiples and nesting, e.g. (1|Site/Patient). First-order carryover is assumed for crossover — add a sequence column as well when available. Alternatives already in-app: ROTS mode lmeROTS with random "(1|Individual)", or Limma/Limma-voom with "Account for repeated measures (mixed effects)" via duplicateCorrelation.
+D. BOOTSTRAP: Data tab → Bootstrap Analysis card → Enable Bootstrap Analysis = Yes → Number of Bootstrap Replicates (100-10000), Confidence Level, Random Seed (blank = automatic), Bootstrap Strategy (Standard = within-group resampling; Stratified = within group x batch cells, needs batch info; Balanced = Davison-Hinkley equal representation), Use Parallel Processing → results under Bootstrap Results; merged columns appear in Statistics Results. Skipped automatically for ROTS/Limma/DESeq2/edgeR/Limma-voom/LMM.
+E. PCA FOR BATCH EFFECTS: Dimensionality Reduction tab → PCA sub-tab → PCA Plot. Colour first by Group (want separation by biology), then re-colour by Patient ID / batch column (tight patient clustering is expected; clustering by run/date = batch effect). If batch effect: Data tab → Batch & QC Correction card → Apply Batch Correction = Yes, pick method (ComBat parametric/non-parametric, limma, SVA) and the batch column from metadata → Process Data again.
+F. VOLCANO + TOP HITS: Differential Analysis tab → Volcano Plot (thresholds from P-value cutoff and Log2FC Cutoff), Results Table for the ranked list, Summary for counts.
+G. HEATMAP OF TOP HITS: Heatmaps tab → Interactive Heatmap (Z-scores of top significant features show group separation).
+H. ENRICHMENT: Enrichment Analysis tab (KEGG/Reactome/GO over-representation or GSEA on significant features).
+I. ML FEATURE SELECTION: ML Feature Selection tab (Random Forest/Boruta/LASSO, Enhanced Stability Analysis, Model Performance/Validation tabs).
+J. JIBOSKY SUPERPOWERS (lightning button in chat): Data Quality Report, Missing Data Analysis, Outlier Detection, Experimental Design Validation, Statistical Method Suggestions, Power / Sample Size Check, Data Transformation Suggestions, Comparison Recommendations, Automated Result Summary, Biological Context & Pathways, Multiple Testing Interpretation, Pipeline Code Generation, Batch Processing Scripts, Generate Analysis Report; Download Full HTML Report button exports everything.
+K. AI SETUP: robot-head button is the chat; gear "AI Setup" button in the chat header manages provider keys/models/order; "?" opens How to get API keys.
+
+--- JIBOSKY CHAT ATTACHMENTS ---
+The paperclip "Attach workbook/metadata" input accepts CSV/TSV/TXT/XLSX/XLS. Attached files are summarized (structure, row x col counts, missingness, numeric ranges) and marked attached-not-loaded; they are NOT the analyzed dataset unless also uploaded via the Data tab.

@@ -38,7 +38,7 @@ expected_pkgs <- sort(unique(c(
   # ML and stats
   "randomForest", "randomForestExplainer", "glmnet", "mixOmics", "missMDA", "plyr", "multcomp",
   "agricolae", "PMCMRplus", "caret", "e1071", "Boruta", "ranger", "gbm", "xgboost", "iml",
-  "MLmetrics", "rstatix", "car", "emmeans", "dunn.test", "mice", "foreach",
+  "MLmetrics", "rstatix", "car", "emmeans", "dunn.test", "mice", "foreach", "lme4", "lmerTest",
   "doParallel", "WGCNA", "dynamicTreeCut", "flashClust", "RSpectra", "pROC", "PRROC", "pwrss",
   "moments", "umap", "Rtsne",
   # Multi-omics and metabolomics
@@ -47,7 +47,9 @@ expected_pkgs <- sort(unique(c(
   # Utilities and infra
   "httr", "httr2", "jsonlite", "markdown", "png", "future", "future.apply", "promises", "later",
   "cli", "rlang", "xfun", "zip", "DBI", "RSQLite", "reticulate", "gprofiler2", "enrichR",
-  "BiocParallel", "BiocManager", "data.table", "htmltools"
+  "BiocParallel", "BiocManager", "data.table", "htmltools",
+  # Testing (tests/ suite; also enforced by CI)
+  "testthat"
 )))
 
 scan_r_file <- function(path) {

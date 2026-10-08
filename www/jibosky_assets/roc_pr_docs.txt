@@ -107,13 +107,13 @@ Purpose: Evaluate individual feature performance as biomarkers using ROC (Receiv
   - Curves below diagonal: Worse than random (inverted relationship, consider flipping)
   - Top-left corner (0,1): Perfect classifier (100% sensitivity, 0% FPR)
 - **rocTable**: AUC (Area Under Curve) results for each feature
+  - AUC is orientation-adjusted (direction flipped per feature so cases score higher), hence always >= 0.5; the Regulation column gives the direction (higher in Group 2 = Upregulated, higher in Group 1 = Downregulated). Note this is cases-centric and intentionally differs from the Data tab's Group1-positive Up/Down wording
   - AUC = 1.0: Perfect discrimination (no overlap between groups)
   - AUC = 0.9-1.0: Excellent biomarker
   - AUC = 0.8-0.9: Good biomarker
   - AUC = 0.7-0.8: Fair biomarker
   - AUC = 0.6-0.7: Poor biomarker
-  - AUC = 0.5: No discrimination (random)
-  - AUC < 0.5: Inverted relationship (flip groups or negate feature)
+  - AUC = 0.5: No discrimination (random; floor value after orientation adjustment, never below)
 - **downloadRocPlotBtn**: Download ROC plot as high-resolution image
 - **downloadRocDataBtn**: Download AUC table and ROC coordinates
 
@@ -239,8 +239,8 @@ Purpose: Evaluate individual feature performance as biomarkers using ROC (Receiv
 
 1. **Group Assignment:**
    - Assign control/reference as Group 1, case/treatment as Group 2 (standard convention)
-   - AUC > 0.5: Group 2 has higher feature values (upregulated)
-   - AUC < 0.5: Group 1 has higher values (downregulated), consider swapping or negating
+   - Regulation is cases-centric: Upregulated = higher in Group 2, Downregulated = higher in Group 1 (opposite wording to the Data tab's Group1-positive convention, by design for biomarker reading)
+   - AUC never drops below 0.5 (orientation-adjusted per feature); strength is read from distance above 0.5
 
 2. **Threshold Selection:**
    - Start with default (p < 0.05, Log2FC > 1.0) to focus on significant features
